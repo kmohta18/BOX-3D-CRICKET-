@@ -1,0 +1,546 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Box Cricket 3D · Phone Controller</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+      body {
+        margin: 0;
+        background-color: #090f1d;
+        color: #f8fafc;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .font-display { font-family: 'Chakra Petch', sans-serif; }
+      .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+
+  <body class="min-h-screen flex flex-col justify-between p-3 max-w-md mx-auto bg-slate-950 text-slate-100">
+    <!-- Top Bar: Connection, Room Code Input & Built-in QR Scanner Button -->
+    <header class="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="font-display text-base font-bold text-amber-400">BOX CRICKET CONTROLLER</div>
+          <div id="ctrl-status" class="text-[11px] font-mono text-emerald-400">Connecting...</div>
+        </div>
+        <div class="text-right">
+          <div class="text-[10px] text-slate-400">ROOM · PING</div>
+          <div id="ctrl-room-ping" class="font-mono text-xs font-bold text-white">CRIC · 12ms</div>
+        </div>
+      </div>
+
+      <!-- Direct Room Code Pairing + In-App QR Camera Scanner -->
+      <div class="flex items-center gap-1.5 pt-1 border-t border-slate-800/80">
+        <input
+          id="ctrl-room-input"
+          type="text"
+          maxlength="4"
+          placeholder="ROOM"
+          class="w-20 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold uppercase text-amber-400 text-center"
+        />
+        <button
+          id="btn-ctrl-join"
+          class="px-3 py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
+        >
+          Pair Room
+        </button>
+        <button
+          id="btn-ctrl-scan-qr"
+          class="flex-1 py-1.5 px-2.5 bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs rounded-xl cursor-pointer text-center"
+        >
+          Scan Screen QR
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Stretch Zone: Pre-Selected Shot Mode (GROUND / FLY) + Telemetry + Gesture Pad -->
+    <main class="my-2 flex-1 flex flex-col gap-2">
+      <!-- iOS / Android Motion Permission Button -->
+      <button id="btn-ios-permission" class="w-full min-h-[44px] py-2 px-4 bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 font-bold text-xs rounded-2xl shadow-lg transition-transform cursor-pointer">
+        Enable iOS / Android Motion Sensors (85 Hz)
+      </button>
+
+      <!-- PRE-SELECTED SHOT TYPE SYSTEM: Large GROUND & FLY Buttons -->
+      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5">
+        <div class="flex items-center justify-between px-1 mb-2">
+          <span class="text-[11px] font-semibold text-slate-300">PRE-SELECTED SHOT MODE</span>
+          <span id="shot-lock-badge" class="font-mono text-[11px] font-bold text-emerald-400">
+            UNLOCKED · SELECT NOW
+          </span>
+        </div>
+
+        <div class="grid grid-cols-2 gap-2.5">
+          <button
+            id="btn-mode-ground"
+            class="min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg"
+          >
+            <span>GROUND</span>
+            <span class="text-[10px] font-sans font-semibold opacity-85">0–8° · Flat Carpet Shot</span>
+          </button>
+
+          <button
+            id="btn-mode-fly"
+            class="min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
+          >
+            <span>FLY</span>
+            <span class="text-[10px] font-sans font-semibold opacity-80">20–50° · Rising Six Loft</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Live Telemetry Readout -->
+      <div class="grid grid-cols-3 gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2 text-center">
+        <div>
+          <div class="text-[10px] text-slate-400">SWING SPEED</div>
+          <div id="tel-speed" class="font-mono text-base font-bold text-amber-400">0°/s</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400">YAW (ALPHA)</div>
+          <div id="tel-yaw" class="font-mono text-base font-bold text-sky-400">0°</div>
+        </div>
+        <div>
+          <div class="text-[10px] text-slate-400">PITCH (BETA)</div>
+          <div id="tel-pitch" class="font-mono text-base font-bold text-emerald-400">0°</div>
+        </div>
+      </div>
+
+      <!-- Interactive Bat/Bowl Gesture & Swipe Area -->
+      <div id="touch-gesture-pad" class="flex-1 min-h-[125px] bg-slate-900/90 border-2 border-dashed border-slate-700 rounded-3xl flex flex-col items-center justify-center p-3 text-center relative overflow-hidden">
+        <div class="font-display text-base font-bold text-white mb-0.5" id="pad-mode-title">
+          SWING PHONE OR SWIPE HERE
+        </div>
+        <p class="text-[11px] text-slate-400 max-w-xs leading-relaxed">
+          GROUND = flat swing (0–8°). FLY = swing low-to-high (20–50°). Or swipe across this pad to test shots.
+        </p>
+        <div id="pad-feedback" class="mt-2 font-mono text-xs text-amber-400">
+          Mode: GROUND (0–8°) · Stream Ready
+        </div>
+      </div>
+    </main>
+
+    <!-- Bottom Natural Thumb Zone: Primary Tactile Controls -->
+    <footer class="space-y-2">
+      <!-- Bowling Run-Up Hold Button + Bowler Type -->
+      <div class="grid grid-cols-3 gap-2">
+        <button id="btn-runup-hold" class="col-span-2 min-h-[48px] bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-xs rounded-2xl shadow-lg cursor-pointer">
+          HOLD FOR RUN-UP &amp; SWING OVERARM
+        </button>
+        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[48px] bg-slate-900 border border-slate-700 text-xs font-semibold text-white rounded-2xl px-2 text-center">
+          <option value="fast">Fast</option>
+          <option value="medium">Medium</option>
+          <option value="spin">Spin</option>
+        </select>
+      </div>
+
+      <!-- Calibration (3s Upright) & Quick Flick 2nd Run -->
+      <div class="grid grid-cols-2 gap-2">
+        <button id="btn-ctrl-calibrate" class="min-h-[44px] bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-xs rounded-2xl cursor-pointer">
+          Calibrate Stance (3s)
+        </button>
+        <button id="btn-ctrl-run" class="min-h-[44px] bg-slate-800 active:bg-slate-700 text-white font-bold text-xs rounded-2xl border border-slate-700 cursor-pointer">
+          Quick Flick · 2nd Run
+        </button>
+      </div>
+    </footer>
+
+    <!-- Built-In Camera QR Scanner Modal -->
+    <div id="modal-ctrl-scanner" class="hidden fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-4 text-center space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="font-display text-base font-bold text-amber-400">Scan Host Screen QR Code</h3>
+          <button id="btn-close-ctrl-scanner" class="text-slate-400 hover:text-white px-2 py-1 text-sm cursor-pointer">✕</button>
+        </div>
+        <div class="relative rounded-xl overflow-hidden bg-black aspect-square flex items-center justify-center border border-slate-800">
+          <video id="qr-scanner-video" playsinline muted class="w-full h-full object-cover"></video>
+          <div class="pointer-events-none absolute inset-8 border-2 border-amber-400/80 rounded-xl"></div>
+        </div>
+        <p id="qr-scanner-msg" class="text-xs text-slate-300">
+          Point your rear camera at the QR code shown on the game screen.
+        </p>
+      </div>
+    </div>
+
+    <script type="module">
+      const params = new URLSearchParams(window.location.search);
+      let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
+      const slot = params.get('slot') || 'p1';
+
+      const statusEl = document.getElementById('ctrl-status');
+      const roomPingEl = document.getElementById('ctrl-room-ping');
+      const roomInputEl = document.getElementById('ctrl-room-input');
+      const speedEl = document.getElementById('tel-speed');
+      const yawEl = document.getElementById('tel-yaw');
+      const pitchEl = document.getElementById('tel-pitch');
+      const padFeedback = document.getElementById('pad-feedback');
+      const btnGround = document.getElementById('btn-mode-ground');
+      const btnFly = document.getElementById('btn-mode-fly');
+      const lockBadge = document.getElementById('shot-lock-badge');
+
+      roomInputEl.value = roomCode;
+      roomPingEl.textContent = `${roomCode} · 12ms`;
+
+      let ws = null;
+      const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('box_cricket_3d_bus') : null;
+      let rttMs = 11;
+
+      let selectedShotMode = 'ground'; // Default GROUND
+      let isModeLocked = false;
+
+      // Sensor state streamed at ~85Hz
+      const sensor = {
+        alpha: 0,
+        beta: 75,
+        gamma: 0,
+        gx: 0,
+        gy: 0,
+        gz: 0,
+        ax: 0,
+        ay: 0,
+        az: 0
+      };
+
+      function updateShotModeUI() {
+        const isGround = selectedShotMode === 'ground';
+        btnGround.className = `min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+          isGround
+            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg'
+            : 'bg-slate-950 text-slate-400 border-slate-800'
+        } ${isModeLocked ? 'opacity-65' : ''}`;
+
+        btnFly.className = `min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+          !isGround
+            ? 'bg-amber-400 text-slate-950 border-amber-200 shadow-lg'
+            : 'bg-slate-950 text-slate-400 border-slate-800'
+        } ${isModeLocked ? 'opacity-65' : ''}`;
+
+        if (isModeLocked) {
+          lockBadge.textContent = `LOCKED (${selectedShotMode.toUpperCase()})`;
+          lockBadge.className = 'font-mono text-[11px] font-bold text-amber-400';
+        } else {
+          lockBadge.textContent = `UNLOCKED · ${selectedShotMode.toUpperCase()}`;
+          lockBadge.className = 'font-mono text-[11px] font-bold text-emerald-400';
+        }
+      }
+
+      function selectShotMode(mode) {
+        if (isModeLocked) {
+          padFeedback.textContent = `Mode locked (${selectedShotMode.toUpperCase()}) after bowler release!`;
+          if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
+          return;
+        }
+        selectedShotMode = mode;
+        if (navigator.vibrate) navigator.vibrate(35);
+        updateShotModeUI();
+        sendPacket({ type: 'shot_mode', mode: selectedShotMode });
+        padFeedback.textContent = mode === 'ground'
+          ? 'GROUND Selected (0–8° flat swing)'
+          : 'FLY Selected (20–50° rising swing)';
+      }
+
+      btnGround.addEventListener('click', () => selectShotMode('ground'));
+      btnFly.addEventListener('click', () => selectShotMode('fly'));
+
+      function switchRoom(newRoom) {
+        const cleaned = (newRoom || '').trim().toUpperCase().slice(0, 4);
+        if (cleaned.length !== 4) return;
+        roomCode = cleaned;
+        roomInputEl.value = roomCode;
+        roomPingEl.textContent = `${roomCode} · ${rttMs}ms`;
+        connectWS();
+        padFeedback.textContent = `Paired with Room ${roomCode}`;
+        if (navigator.vibrate) navigator.vibrate(40);
+      }
+
+      document.getElementById('btn-ctrl-join').addEventListener('click', () => {
+        switchRoom(roomInputEl.value);
+      });
+
+      // Built-in Camera QR Code Scanner for controller.html
+      let scannerStream = null;
+      let scannerRaf = null;
+
+      function stopCameraScanner() {
+        if (scannerRaf) cancelAnimationFrame(scannerRaf);
+        scannerRaf = null;
+        if (scannerStream) {
+          scannerStream.getTracks().forEach((t) => t.stop());
+          scannerStream = null;
+        }
+        document.getElementById('modal-ctrl-scanner').classList.add('hidden');
+      }
+
+      document.getElementById('btn-close-ctrl-scanner').addEventListener('click', stopCameraScanner);
+
+      document.getElementById('btn-ctrl-scan-qr').addEventListener('click', async () => {
+        const modal = document.getElementById('modal-ctrl-scanner');
+        const video = document.getElementById('qr-scanner-video');
+        const msgEl = document.getElementById('qr-scanner-msg');
+        modal.classList.remove('hidden');
+
+        try {
+          scannerStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+            audio: false
+          });
+          video.srcObject = scannerStream;
+          await video.play();
+
+          if ('BarcodeDetector' in window) {
+            const detector = new window.BarcodeDetector({ formats: ['qr_code'] });
+            const scanLoop = async () => {
+              if (!scannerStream) return;
+              try {
+                const codes = await detector.detect(video);
+                if (codes && codes.length > 0) {
+                  const raw = codes[0].rawValue || '';
+                  stopCameraScanner();
+                  try {
+                    const parsed = new URL(raw, window.location.origin);
+                    const scannedRoom = parsed.searchParams.get('r') || parsed.searchParams.get('room');
+                    if (scannedRoom) {
+                      switchRoom(scannedRoom);
+                      return;
+                    }
+                  } catch {}
+                  if (raw.trim().length === 4) {
+                    switchRoom(raw.trim());
+                  }
+                  return;
+                }
+              } catch {}
+              scannerRaf = requestAnimationFrame(scanLoop);
+            };
+            scannerRaf = requestAnimationFrame(scanLoop);
+          } else {
+            msgEl.textContent = 'Use your phone native Camera app to scan the QR code, or type the 4-letter Room Code in the top bar.';
+          }
+        } catch {
+          msgEl.textContent = 'Camera permission denied. Type the 4-letter Room Code in the top bar instead.';
+        }
+      });
+
+      function connectWS() {
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${proto}//${window.location.host}/ws?room=${roomCode}&role=controller&slot=${slot}`;
+        if (ws) {
+          ws.onclose = null;
+          ws.close();
+        }
+        ws = new WebSocket(url);
+
+        ws.onopen = () => {
+          statusEl.textContent = `Connected · Room ${roomCode}`;
+          statusEl.className = 'text-[11px] font-mono text-emerald-400';
+          sendPacket({ type: 'join', role: 'controller', slot });
+          sendPacket({ type: 'shot_mode', mode: selectedShotMode });
+        };
+
+        ws.onmessage = (ev) => {
+          try {
+            handleIncoming(JSON.parse(ev.data));
+          } catch {}
+        };
+
+        ws.onclose = () => {
+          statusEl.textContent = 'Reconnecting...';
+          statusEl.className = 'text-[11px] font-mono text-amber-400';
+          setTimeout(connectWS, 1500);
+        };
+      }
+
+      if (bc) {
+        bc.onmessage = (ev) => handleIncoming(ev.data);
+      }
+
+      function sendPacket(payload) {
+        const msg = { ...payload, room: roomCode, slot };
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
+        }
+        if (bc) {
+          bc.postMessage(msg);
+        }
+      }
+
+      function handleIncoming(msg) {
+        if (!msg || (msg.room && msg.room !== roomCode)) return;
+        if (msg.type === 'pong' && msg.clientTs) {
+          rttMs = Math.max(2, Math.round((Date.now() - msg.clientTs) * 0.5));
+          roomPingEl.textContent = `${roomCode} · ${rttMs}ms`;
+        } else if (msg.type === 'vibrate') {
+          if (navigator.vibrate) {
+            navigator.vibrate(msg.pattern || [70]);
+          }
+          padFeedback.textContent = 'CONTACT VIBRATION!';
+        } else if (msg.type === 'shot_mode_lock') {
+          isModeLocked = Boolean(msg.locked);
+          if (msg.mode) selectedShotMode = msg.mode;
+          updateShotModeUI();
+        }
+      }
+
+      // iOS 13+ & Android Motion Sensor Permission Handler
+      document.getElementById('btn-ios-permission').addEventListener('click', async () => {
+        try {
+          if (
+            typeof DeviceMotionEvent !== 'undefined' &&
+            typeof DeviceMotionEvent.requestPermission === 'function'
+          ) {
+            const p1 = await DeviceMotionEvent.requestPermission();
+            if (
+              typeof DeviceOrientationEvent !== 'undefined' &&
+              typeof DeviceOrientationEvent.requestPermission === 'function'
+            ) {
+              await DeviceOrientationEvent.requestPermission();
+            }
+            padFeedback.textContent = `iOS Sensors: ${p1.toUpperCase()}`;
+          } else {
+            padFeedback.textContent = 'Hardware Motion Sensors Active (85 Hz)';
+          }
+          if (navigator.vibrate) navigator.vibrate(40);
+        } catch {
+          padFeedback.textContent = 'Using Touch Swipe Sensor Simulation';
+        }
+      });
+
+      // Cross-platform DeviceOrientation (handles both Android alpha and iOS webkitCompassHeading)
+      window.addEventListener('deviceorientation', (e) => {
+        if (typeof e.webkitCompassHeading === 'number') {
+          sensor.alpha = 360 - e.webkitCompassHeading;
+        } else if (e.alpha !== null) {
+          sensor.alpha = e.alpha;
+        }
+        if (e.beta !== null) sensor.beta = e.beta;
+        if (e.gamma !== null) sensor.gamma = e.gamma;
+      });
+
+      window.addEventListener('devicemotion', (e) => {
+        if (e.rotationRate) {
+          sensor.gx = e.rotationRate.beta || 0;
+          sensor.gy = e.rotationRate.alpha || 0;
+          sensor.gz = e.rotationRate.gamma || 0;
+        }
+        const acc = e.accelerationIncludingGravity || e.acceleration;
+        if (acc) {
+          sensor.ax = acc.x || 0;
+          sensor.ay = acc.y || 0;
+          sensor.az = acc.z || 0;
+        }
+      });
+
+      // Stream Sensor Data at ~85 Hz (every 12ms)
+      setInterval(() => {
+        sendPacket({
+          type: 'sensor',
+          alpha: Math.round(sensor.alpha * 10) / 10,
+          beta: Math.round(sensor.beta * 10) / 10,
+          gamma: Math.round(sensor.gamma * 10) / 10,
+          gx: Math.round(sensor.gx),
+          gy: Math.round(sensor.gy),
+          gz: Math.round(sensor.gz),
+          ax: Math.round(sensor.ax * 10) / 10,
+          ay: Math.round(sensor.ay * 10) / 10,
+          az: Math.round(sensor.az * 10) / 10,
+          rtt: rttMs
+        });
+
+        const omegaMag = Math.round(Math.hypot(sensor.gx, sensor.gy, sensor.gz));
+        speedEl.textContent = `${omegaMag}°/s`;
+        yawEl.textContent = `${Math.round(sensor.alpha)}°`;
+        pitchEl.textContent = `${Math.round(sensor.beta)}°`;
+
+        sensor.gx *= 0.82;
+        sensor.gy *= 0.82;
+        sensor.gz *= 0.82;
+      }, 12);
+
+      setInterval(() => {
+        sendPacket({ type: 'ping', clientTs: Date.now() });
+      }, 2000);
+
+      // Touch Swipe Pad on Controller
+      const pad = document.getElementById('touch-gesture-pad');
+      let startPt = null;
+      let startTs = 0;
+
+      pad.addEventListener('pointerdown', (e) => {
+        startPt = { x: e.clientX, y: e.clientY };
+        startTs = performance.now();
+      });
+
+      pad.addEventListener('pointermove', (e) => {
+        if (!startPt) return;
+        const dx = e.clientX - startPt.x;
+        const dy = e.clientY - startPt.y;
+        sensor.gx = -dy * 4.2;
+        sensor.gz = -dx * 3.8;
+        sensor.alpha = (dx / 110) * 32;
+        sensor.beta = 75 - (dy / 110) * 40;
+      });
+
+      pad.addEventListener('pointerup', (e) => {
+        if (!startPt) return;
+        const dx = e.clientX - startPt.x;
+        const dy = e.clientY - startPt.y;
+        const dt = Math.max(16, performance.now() - startTs);
+        const dist = Math.hypot(dx, dy);
+        startPt = null;
+
+        if (dist > 15) {
+          const speedDeg = Math.min(580, Math.max(200, (dist / dt) * 285));
+          // Upward swipe (dy < -40) produces rising bat path (25-40°), horizontal/flat swipe produces flat path (3-6°)
+          const planePitchDeg = dy < -40 ? Math.min(45, (-dy / 130) * 38) : 4;
+          sendPacket({
+            type: 'touch_swipe',
+            speedDeg,
+            dirX: Math.max(-1, Math.min(1, dx / 110)),
+            planePitchDeg
+          });
+          padFeedback.textContent = `Swung ${selectedShotMode.toUpperCase()} at ${Math.round(speedDeg)}°/s (Plane ${Math.round(planePitchDeg)}°)`;
+        }
+      });
+
+      const runupBtn = document.getElementById('btn-runup-hold');
+      runupBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        sendPacket({ type: 'runup_hold', held: true });
+        padFeedback.textContent = 'Run-Up Active! Swing Phone Overarm to Release!';
+      });
+      runupBtn.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        sendPacket({ type: 'runup_hold', held: false });
+      });
+
+      document.getElementById('ctrl-bowler-type').addEventListener('change', (e) => {
+        sendPacket({ type: 'bowler_type', bowlerType: e.target.value });
+      });
+
+      document.getElementById('btn-ctrl-calibrate').addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate(40);
+        sendPacket({ type: 'calibrate' });
+        padFeedback.textContent = 'Hold upright and steady for 3 seconds...';
+      });
+
+      document.getElementById('btn-ctrl-run').addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate(30);
+        sendPacket({ type: 'quick_flick' });
+        padFeedback.textContent = 'Called for 2nd Run!';
+      });
+
+      window.addEventListener('beforeunload', () => {
+        sendPacket({ type: 'controller_disconnect' });
+      });
+
+      updateShotModeUI();
+      connectWS();
+    </script>
+  </body>
+</html>

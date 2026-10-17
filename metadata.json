@@ -1,0 +1,6 @@
+{
+  "name": "Box Cricket 3D",
+  "description": "High-speed 3D arcade cricket game in Three.js with real-time smartphone gyroscope and accelerometer motion controls, custom ball physics, and multi-stadium gameplay.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

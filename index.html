@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="en" class="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Box Cricket 3D</title>
+    <meta name="description" content="High-speed 3D arcade cricket game in Three.js with real-time smartphone gyroscope and accelerometer motion controls, custom ball physics, and multi-stadium gameplay." />
+    <meta property="og:title" content="Box Cricket 3D" />
+    <meta property="og:description" content="High-speed 3D arcade cricket game in Three.js with real-time smartphone gyroscope and accelerometer motion controls, custom ball physics, and multi-stadium gameplay." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+
+    <!-- Plain ES Module Import Map (No build step required) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+      }
+    </script>
+
+    <style>
+      body {
+        margin: 0;
+        overflow: hidden;
+        background-color: #090f1d;
+        color: #f8fafc;
+        font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      .font-display {
+        font-family: 'Chakra Petch', sans-serif;
+      }
+      .font-mono {
+        font-family: 'JetBrains Mono', monospace;
+        font-variant-numeric: tabular-nums;
+      }
+      .tabular-nums {
+        font-variant-numeric: tabular-nums;
+      }
+    </style>
+  </head>
+
+  <body class="relative w-screen h-screen overflow-hidden bg-slate-950 text-slate-100">
+    <!-- Dedicated Isolated WebGL Canvas Container -->
+    <div id="canvas-mount" class="fixed inset-0 w-full h-full z-0"></div>
+
+    <!-- Top Navigation & Broadcast Header (Strict 3-Zone Contract) -->
+    <header class="fixed top-0 left-0 right-0 z-20 flex items-center justify-between gap-8 px-5 py-2.5 bg-slate-950/90 border-b border-slate-800/80">
+      <!-- Zone 1: Single-line Brand Wordmark -->
+      <a href="#" class="font-display text-lg font-bold tracking-wider text-amber-400 whitespace-nowrap shrink-0">
+        BOX CRICKET 3D
+      </a>
+
+      <!-- Zone 2: Concise Single-Line Navigation Links -->
+      <nav class="hidden md:flex items-center gap-6 text-xs font-medium text-slate-300">
+        <button id="btn-open-modes" class="hover:text-white hover:underline transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+          Match Setup
+        </button>
+        <button id="btn-open-calibrate" class="hover:text-white hover:underline transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+          Calibrate (3s)
+        </button>
+        <button id="btn-open-scorecard" class="hover:text-white hover:underline transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+          Scorecard &amp; Wheel
+        </button>
+        <button id="btn-open-settings" class="hover:text-white hover:underline transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+          Settings
+        </button>
+      </nav>
+
+      <!-- Zone 3: 1 Primary Action -->
+      <div class="flex items-center gap-3 shrink-0">
+        <button id="btn-open-qr" class="px-3.5 py-1.5 text-xs font-semibold text-slate-950 bg-amber-400 hover:bg-amber-300 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+          Pair Phone (QR)
+        </button>
+      </div>
+    </header>
+
+    <!-- Broadcast Scorebug Strip (Top-Center Below Header) -->
+    <section class="fixed top-12 left-1/2 -translate-x-1/2 z-10 w-[min(980px,96vw)] pointer-events-none">
+      <div class="bg-slate-950/92 border border-slate-800 rounded-xl px-4 py-2 shadow-xl flex flex-wrap items-center justify-between gap-3">
+        <!-- Score & Overs -->
+        <div class="flex items-center gap-4">
+          <div>
+            <div id="hud-score" class="font-display text-2xl md:text-3xl font-bold text-white tabular-nums leading-none">
+              MET 0/0
+            </div>
+            <div id="hud-match-flags" class="text-[11px] text-amber-400 font-medium mt-0.5">
+              POWERPLAY · Metro Meteors vs Deccan Dynamos
+            </div>
+          </div>
+
+          <div class="h-8 w-px bg-slate-800"></div>
+
+          <div>
+            <div id="lbl-overs-title" class="text-[10px] text-slate-400 font-semibold">OVERS</div>
+            <div id="hud-overs" class="font-mono text-sm font-bold text-slate-100 tabular-nums">0.0 / 5</div>
+          </div>
+
+          <div>
+            <div id="lbl-crr-title" class="text-[10px] text-slate-400 font-semibold">CRR</div>
+            <div id="hud-crr" class="font-mono text-sm font-bold text-emerald-400 tabular-nums">0.00</div>
+          </div>
+        </div>
+
+        <!-- Selected Shot Mode HUD Indicator (GROUND vs FLY + Lock Icon) -->
+        <div class="flex items-center gap-2 bg-slate-900 border border-slate-700/80 rounded-lg px-3 py-1">
+          <span id="hud-shot-mode-icon" class="font-display text-xs font-bold text-emerald-400">
+            GROUND (0–8°)
+          </span>
+          <span class="text-slate-600">·</span>
+          <span id="hud-shot-mode-lock" class="font-mono text-[10px] text-slate-400">
+            UNLOCKED
+          </span>
+        </div>
+
+        <!-- Current Over Ball-by-Ball Dots -->
+        <div class="flex items-center gap-1.5" id="hud-over-dots"></div>
+
+        <!-- Speed Gun & Timing Meter -->
+        <div class="flex items-center gap-4">
+          <div class="text-right">
+            <div id="lbl-speed-title" class="text-[10px] text-slate-400 font-semibold">SPEED</div>
+            <div id="hud-speed" class="font-mono text-sm font-bold text-sky-400 tabular-nums">134.0 km/h</div>
+          </div>
+
+          <div class="w-36">
+            <div class="flex items-center justify-between text-[10px]">
+              <span id="lbl-timing-title" class="text-slate-400 font-semibold">TIMING</span>
+              <span id="hud-timing" class="font-mono text-amber-300 truncate max-w-[105px]">READY</span>
+            </div>
+            <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden mt-1">
+              <div id="hud-timing-bar" class="h-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-150" style="width: 50%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Active Batter / Bowler + On-Screen Sensor & Shot Telemetry Debug Bar -->
+      <div class="mt-1.5 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 bg-slate-950/90 border border-slate-800/80 rounded-lg text-[11px] font-mono tabular-nums">
+        <div id="hud-players-strip" class="text-slate-200 truncate">
+          BAT: Aarav Varma 0*(0) · BOWL: Mayank Tiwari 0-0 (0.0)
+        </div>
+        <div id="hud-phone-status" class="text-slate-400">
+          Keyboard / Touch Active
+        </div>
+      </div>
+
+      <!-- ON-SCREEN SENSOR & SHOT DEBUG PANEL -->
+      <div id="debug-telemetry-panel" class="mt-1.5 px-3 py-1.5 bg-slate-950/92 border border-slate-800 rounded-lg grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 text-[11px] font-mono tabular-nums">
+        <div>
+          <span class="text-slate-500 block text-[9px]">MODE / PLANE</span>
+          <span id="dbg-mode" class="text-emerald-400 font-bold">GROUND · FLAT</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px]">RAW α / β / γ</span>
+          <span id="dbg-raw" class="text-slate-200">0° / 75° / 0°</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px]">CAL YAW / PITCH / ROLL</span>
+          <span id="dbg-cal" class="text-sky-400">0° / 0° / 0°</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px]">SWING SPEED</span>
+          <span id="dbg-speed" class="text-amber-400 font-bold">0 °/s (Pk 0)</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px]">TIMING GAP</span>
+          <span id="dbg-timing" class="text-emerald-300">0 ms (READY)</span>
+        </div>
+        <div>
+          <span class="text-slate-500 block text-[9px]">LAUNCH ANGLE / CONTACT</span>
+          <span id="dbg-launch" class="text-white font-bold">0.0° · Sweet Spot</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Center Event Banner (FOUR / SIX / BOWLED / FREE HIT) -->
+    <div id="hud-event-banner" class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-20 text-center pointer-events-none opacity-0 scale-95 transition-all duration-200">
+      <div class="bg-slate-950/95 border border-slate-700 px-8 py-4 rounded-2xl shadow-2xl">
+        <div id="hud-event-title" class="font-display text-4xl md:text-5xl font-extrabold text-amber-400">
+          MAXIMUM SIX!
+        </div>
+        <div id="hud-event-sub" class="text-sm text-slate-200 mt-1 font-medium">
+          Cracking shot over the ropes!
+        </div>
+      </div>
+    </div>
+
+    <!-- 30-Second Phone Reconnect Pause Banner -->
+    <div id="pause-reconnect-banner" class="hidden fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-30 bg-slate-950/95 border border-amber-500/60 rounded-2xl p-6 text-center max-w-md shadow-2xl">
+      <h3 class="font-display text-xl font-bold text-amber-400">PHONE CONTROLLER DISCONNECTED</h3>
+      <p class="text-xs text-slate-300 mt-2">
+        Match paused while waiting for your phone to reconnect on Wi-Fi...
+      </p>
+      <div id="pause-reconnect-sec" class="font-mono text-3xl font-bold text-white mt-3 tabular-nums">30s</div>
+    </div>
+
+    <!-- Unified Collapsible Bottom Control Dock (Zero Viewport Occlusion) -->
+    <aside class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-[min(960px,96vw)]">
+      <div class="flex justify-center mb-1">
+        <button id="btn-toggle-dock" class="px-3 py-1 text-[11px] font-medium bg-slate-900/95 hover:bg-slate-800 text-slate-300 border border-slate-700/80 rounded-t-lg cursor-pointer whitespace-nowrap">
+          ▾ Hide Controls (H)
+        </button>
+      </div>
+
+      <div id="bottom-dock-body" class="bg-slate-950/92 border border-slate-800 rounded-2xl p-3 shadow-2xl">
+        <!-- Live Commentary Line -->
+        <div id="hud-commentary" class="text-xs text-amber-300 font-medium mb-2 truncate text-center">
+          Select GROUND (0–8°) or FLY (20–50°) before bowler release, then press SPACE or swing your paired phone!
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <!-- Pre-Selected Shot Mode Buttons (GROUND / FLY) + Primary Action Controls -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <!-- Pre-selected GROUND / FLY toggle buttons -->
+            <div class="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-700 mr-1">
+              <button id="btn-hud-ground" class="px-3 py-1.5 text-xs font-bold rounded-md bg-emerald-500 text-slate-950 transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+                GROUND (G)
+              </button>
+              <button id="btn-hud-fly" class="px-3 py-1.5 text-xs font-bold rounded-md text-slate-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+                FLY (F)
+              </button>
+            </div>
+
+            <button id="btn-action-bowl" class="px-3.5 py-2 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+              Bowl / Swing (SPACE)
+            </button>
+            <button id="btn-action-defend" class="px-3 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+              Defend
+            </button>
+            <button id="btn-action-run" class="px-3 py-2 text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer">
+              2nd Run (R)
+            </button>
+          </div>
+
+          <!-- Tactical Field & Bowler Selectors -->
+          <div class="flex items-center gap-2">
+            <select id="select-bowler-type" aria-label="Bowler Type" class="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-1.5">
+              <option value="fast">Fast (130-150)</option>
+              <option value="medium">Medium (100-125)</option>
+              <option value="spin">Spin (60-90)</option>
+            </select>
+
+            <select id="select-field-preset" aria-label="Fielding Preset" class="bg-slate-900 border border-slate-700 text-xs text-slate-200 rounded-lg px-2 py-1.5">
+              <option value="attacking">Field: Attacking</option>
+              <option value="normal" selected>Field: Normal</option>
+              <option value="defensive">Field: Defensive</option>
+            </select>
+          </div>
+
+          <!-- Stadium & Camera Switchers -->
+          <div class="flex items-center gap-1.5">
+            <button data-stadium="street" class="px-2.5 py-1.5 text-xs font-medium bg-slate-800 text-slate-200 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              Street
+            </button>
+            <button data-stadium="club" class="px-2.5 py-1.5 text-xs font-medium bg-slate-800 text-slate-200 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              Club
+            </button>
+            <button data-stadium="night" class="px-2.5 py-1.5 text-xs font-medium bg-emerald-500 text-slate-950 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              Night
+            </button>
+
+            <span class="text-slate-700">|</span>
+
+            <button data-cam="broadcast" class="px-2.5 py-1.5 text-xs font-medium bg-amber-500 text-slate-950 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              TV Cam
+            </button>
+            <button data-cam="pro" class="px-2.5 py-1.5 text-xs font-medium bg-slate-800 text-slate-200 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              Bat Cam
+            </button>
+            <button data-cam="overhead" class="px-2.5 py-1.5 text-xs font-medium bg-slate-800 text-slate-200 rounded-lg whitespace-nowrap shrink-0 cursor-pointer">
+              Overhead
+            </button>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- MODAL 1: QR Code Phone Controller Pairing -->
+    <div id="modal-qr" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-5 shadow-2xl">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-display text-xl font-bold text-white">Pair Smartphone Controller</h2>
+          <button id="btn-close-qr" class="text-slate-400 hover:text-white text-sm px-2 py-1 cursor-pointer">✕</button>
+        </div>
+
+        <p class="text-xs text-slate-300 leading-relaxed mb-3">
+          Point your phone camera at the QR code below, or open the companion link and enter the 4-letter Room Code.
+        </p>
+
+        <!-- URL Mode Switcher (Shared Cloud URL vs Current Origin vs LAN IP) -->
+        <div class="grid grid-cols-3 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 mb-3 text-[11px] font-semibold">
+          <button data-qr-mode="shared" class="py-1.5 px-2 rounded-lg bg-amber-400 text-slate-950 transition-colors cursor-pointer">
+            Shared URL
+          </button>
+          <button data-qr-mode="origin" class="py-1.5 px-2 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer">
+            Origin URL
+          </button>
+          <button data-qr-mode="lan" class="py-1.5 px-2 rounded-lg text-slate-300 hover:text-white transition-colors cursor-pointer">
+            Wi-Fi LAN IP
+          </button>
+        </div>
+
+        <div class="flex flex-col items-center justify-center bg-slate-950 border border-slate-800 rounded-xl p-4 mb-3">
+          <div id="qr-live-status" class="mb-2.5 text-xs font-mono font-bold text-amber-400">
+            Waiting for phone scan...
+          </div>
+
+          <div id="qr-svg-container" class="mb-3 flex items-center justify-center bg-white p-2 rounded-2xl shadow-xl"></div>
+
+          <div class="text-[11px] text-slate-400">Room Code</div>
+          <div id="qr-room-code" class="font-mono text-2xl font-bold text-amber-400 tracking-widest">CRIC</div>
+
+          <a id="qr-url-text" href="/controller.html" target="_blank" rel="noopener" class="text-xs text-sky-400 hover:underline mt-1.5 break-all text-center">
+            /controller.html
+          </a>
+
+          <div class="flex items-center gap-2 mt-3 w-full">
+            <button id="btn-copy-qr-url" class="flex-1 py-1.5 px-3 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer">
+              Copy Pairing Link
+            </button>
+            <a id="btn-open-ctrl-tab" href="/controller.html" target="_blank" rel="noopener" class="flex-1 py-1.5 px-3 text-xs font-semibold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg text-center">
+              Open Controller
+            </a>
+          </div>
+        </div>
+
+        <!-- Optional Custom Host / LAN IP Override -->
+        <div class="mb-2.5">
+          <label class="block text-[11px] text-slate-400 mb-1">Custom Host / Wi-Fi IP Override (optional)</label>
+          <input id="input-custom-host" type="text" placeholder="e.g. http://192.168.1.15:8080" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-1.5 text-xs font-mono text-white" />
+        </div>
+
+        <div class="flex items-center gap-2">
+          <input id="input-room-code" type="text" maxlength="4" placeholder="Enter 4-letter Room Code" class="flex-1 bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-xs font-mono uppercase text-white" />
+          <button id="btn-join-room" class="px-4 py-2 text-xs font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-lg whitespace-nowrap cursor-pointer">
+            Set Room
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 2: 3-Second Upright Phone Calibration -->
+    <div id="modal-calibrate" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-sm w-full p-6 text-center shadow-2xl">
+        <h2 class="font-display text-xl font-bold text-amber-400">Calibrating Stance (3 Seconds)</h2>
+        <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+          Hold your phone upright and steady in your natural batting stance for 3 seconds. This records <code>q_stance</code> and applies <code>q_current * inverse(q_stance)</code>.
+        </p>
+        <div class="w-full h-3 bg-slate-950 rounded-full overflow-hidden my-5 border border-slate-800">
+          <div id="calib-progress-bar" class="h-full bg-emerald-400 transition-all duration-100" style="width: 0%"></div>
+        </div>
+        <button id="btn-cancel-calibrate" class="px-4 py-2 text-xs font-medium bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg cursor-pointer">
+          Close
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL 3: Match Setup -->
+    <div id="modal-setup" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-lg w-full p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-display text-xl font-bold text-white">Match Modes &amp; Team Setup</h2>
+          <button id="btn-close-setup" class="text-slate-400 hover:text-white text-sm px-2 py-1 cursor-pointer">✕</button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+          <div>
+            <label class="block text-slate-400 mb-1">Format</label>
+            <select id="setup-mode" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="t5" selected>T5 (5 Overs, Max 1, PP 1)</option>
+              <option value="t20">T20 (20 Overs, Max 4, PP 6)</option>
+              <option value="oneday">One Day (10/20/30/50 Overs)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Overs Per Side</label>
+            <select id="setup-overs" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="5">5 Overs (Max 1 / bowler)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Match Type</label>
+            <select id="setup-match-type" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="ai">Quick Match vs AI</option>
+              <option value="local1v1">Local 1v1 (One Screen, Two Phones)</option>
+              <option value="online1v1">Online 1v1 (4-Letter Room Code)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">AI Difficulty &amp; Timing Window</label>
+            <select id="setup-difficulty" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="easy">Easy (±120 ms Perfect Window)</option>
+              <option value="pro" selected>Pro (±80 ms Perfect Window)</option>
+              <option value="legend">Legend (±55 ms Perfect Window)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Your Fictional Team</label>
+            <select id="setup-team-a" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"></select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Opponent Fictional Team</label>
+            <select id="setup-team-b" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white"></select>
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Custom Jersey Color</label>
+            <input id="setup-jersey-color" type="color" value="#0284c7" class="w-full h-9 bg-slate-950 border border-slate-700 rounded-lg p-1 cursor-pointer" />
+          </div>
+
+          <div>
+            <label class="block text-slate-400 mb-1">Jersey Number (1–99)</label>
+            <input id="setup-jersey-num" type="number" min="1" max="99" value="18" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 font-mono text-white" />
+          </div>
+        </div>
+
+        <div class="mt-4 p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+          <div>
+            <div class="text-xs font-semibold text-white">Coin Toss &amp; Innings Role</div>
+            <div id="toss-result-text" class="text-[11px] text-slate-400">Flip the coin or pick your starting role</div>
+          </div>
+          <div class="flex items-center gap-2">
+            <button id="btn-flip-coin" class="px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-400 rounded-lg cursor-pointer">
+              Flip Coin
+            </button>
+            <select id="setup-role" class="bg-slate-900 border border-slate-700 text-xs text-white rounded-lg px-2.5 py-1.5">
+              <option value="bat" selected>Bat First</option>
+              <option value="bowl">Bowl First</option>
+            </select>
+          </div>
+        </div>
+
+        <button id="btn-start-match" class="mt-5 w-full py-2.5 text-xs font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl cursor-pointer">
+          Start Match
+        </button>
+      </div>
+    </div>
+
+    <!-- MODAL 4: Scorecard & 2D Wagon Wheel -->
+    <div id="modal-scorecard" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4 overflow-y-auto">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-4xl w-full p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-display text-xl font-bold text-white">Match Scorecard &amp; 360° Wagon Wheel</h2>
+          <button id="btn-close-scorecard" class="text-slate-400 hover:text-white text-sm px-2 py-1 cursor-pointer">✕</button>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 overflow-x-auto">
+            <h3 class="text-xs font-semibold text-amber-400 mb-2">Batting Card</h3>
+            <table class="w-full text-left text-xs border-collapse mb-4">
+              <thead>
+                <tr class="border-b border-slate-700 text-slate-400">
+                  <th class="py-1.5 px-2">Batter</th>
+                  <th class="py-1.5 px-2">Dismissal</th>
+                  <th class="py-1.5 px-2 text-right">R</th>
+                  <th class="py-1.5 px-2 text-right">B</th>
+                  <th class="py-1.5 px-2 text-right">4s</th>
+                  <th class="py-1.5 px-2 text-right">6s</th>
+                  <th class="py-1.5 px-2 text-right">SR</th>
+                </tr>
+              </thead>
+              <tbody id="scorecard-batting-body"></tbody>
+            </table>
+
+            <h3 class="text-xs font-semibold text-sky-400 mb-2">Bowling Figures</h3>
+            <table class="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr class="border-b border-slate-700 text-slate-400">
+                  <th class="py-1.5 px-2">Bowler</th>
+                  <th class="py-1.5 px-2 text-right">O</th>
+                  <th class="py-1.5 px-2 text-right">R</th>
+                  <th class="py-1.5 px-2 text-right">W</th>
+                  <th class="py-1.5 px-2 text-right">ECON</th>
+                </tr>
+              </thead>
+              <tbody id="scorecard-bowling-body"></tbody>
+            </table>
+          </div>
+
+          <div class="flex flex-col items-center justify-center bg-slate-950 border border-slate-800 rounded-xl p-4">
+            <div class="text-xs font-semibold text-slate-300 mb-2">Shot Wagon Wheel</div>
+            <canvas id="wagon-wheel-canvas" width="240" height="240" class="rounded-lg"></canvas>
+            <div class="flex items-center gap-4 text-[11px] text-slate-400 mt-3">
+              <span>1-3 Runs: White</span>
+              <span class="text-sky-400">4s: Cyan</span>
+              <span class="text-amber-400">6s: Gold</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL 5: Settings -->
+    <div id="modal-settings" class="hidden fixed inset-0 z-40 bg-black/80 flex items-center justify-center p-4">
+      <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-md w-full p-6 shadow-2xl">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="font-display text-xl font-bold text-white">Game Settings</h2>
+          <button id="btn-close-settings" class="text-slate-400 hover:text-white text-sm px-2 py-1 cursor-pointer">✕</button>
+        </div>
+
+        <div class="space-y-4 text-xs">
+          <div>
+            <div class="flex justify-between mb-1">
+              <label class="text-slate-300">Phone Swing Sensitivity</label>
+              <span id="lbl-sensitivity-val" class="font-mono text-amber-400">1.0x</span>
+            </div>
+            <input id="setting-sensitivity" type="range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-amber-400" />
+          </div>
+
+          <div>
+            <label class="block text-slate-300 mb-1">Bowling Aim Assist (Default: Off)</label>
+            <select id="setting-assist" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+              <option value="off" selected>Off (100% Raw Phone Angle &amp; Speed)</option>
+              <option value="light">Light Assist (38% Line/Length Blend)</option>
+              <option value="full">Full Assist (78% Line/Length Blend)</option>
+            </select>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-slate-300 mb-1">Resolution</label>
+              <select id="setting-resolution" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                <option value="720p">720p Performance</option>
+                <option value="1080p" selected>1080p Crisp</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-slate-300 mb-1">Target Frame Rate</label>
+              <select id="setting-fps" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                <option value="30">30 FPS</option>
+                <option value="60" selected>60 FPS</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 items-center">
+            <div>
+              <label class="block text-slate-300 mb-1">Language (भाषा)</label>
+              <select id="setting-lang" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-3 py-2 text-white">
+                <option value="en" selected>English</option>
+                <option value="hi">हिंदी (Hindi)</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2 pt-4">
+              <input id="setting-sound" type="checkbox" checked class="w-4 h-4 accent-amber-400" />
+              <label for="setting-sound" class="text-slate-200">Sound &amp; Commentary Audio</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
