@@ -4,7 +4,7 @@ import os from 'os';
 import path from 'path';
 import { WebSocketServer, WebSocket } from 'ws';
 
-const PORT = Number(process.env.PORT) || 3000;
+const PORT = 3000;
 const app = express();
 const server = http.createServer(app);
 
@@ -55,6 +55,37 @@ app.get('/api/info', (req, res) => {
     devUrl: baseUrl,
     lanUrl: `http://${lanIp}:${PORT}`
   });
+});
+
+// Cloud TV Spoken Commentary TTS proxy endpoint for Smart TV browsers where window.speechSynthesis has no local voices
+app.get('/api/tts', async (req, res) => {
+  try {
+    const rawText = String(req.query.text || '').trim().slice(0, 200);
+    const tl = String(req.query.tl || 'en-IN').trim();
+    if (!rawText) {
+      res.status(400).end();
+      return;
+    }
+    const ttsUrl = `https://translate.googleapis.com/translate_tts?ie=UTF-8&client=tw-ob&tl=${encodeURIComponent(
+      tl
+    )}&q=${encodeURIComponent(rawText)}`;
+    const upstream = await fetch(ttsUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Linux; Android 12; SmartTV) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      }
+    });
+    if (!upstream.ok) {
+      res.status(upstream.status).end();
+      return;
+    }
+    const arrayBuffer = await upstream.arrayBuffer();
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.send(Buffer.from(arrayBuffer));
+  } catch {
+    res.status(502).end();
+  }
 });
 
 // Short route /c for low-density, instant-scan QR codes (/c?r=XXXX)

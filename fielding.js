@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { PITCH_HALF_LENGTH, CREASE_Z } from './physics.js';
+import { getDifficultyProfile } from './config.js';
 
 /**
  * 9 AI Fielders + Wicketkeeper Auto-Positioning & Probabilistic Catching System (fielding.js)
@@ -173,11 +174,12 @@ export class FieldingSystem {
     // 3. Distance factor: sprinting >8m lowers balance and catch completion chance
     const distFactor = THREE.MathUtils.clamp(1.0 - (distFromHome / 18.0) * 0.55, 0.35, 1.0);
 
-    // Difficulty scalar
-    const diffScalar = difficulty === 'legend' ? 0.95 : difficulty === 'easy' ? 0.68 : 0.82;
+    // Difficulty scalar from Rookie (0.56) -> Club (0.72) -> Pro (0.85) -> Legend (0.95)
+    const diffProfile = getDifficultyProfile(difficulty);
+    const diffScalar = diffProfile ? diffProfile.fielderCatchSkill : 0.82;
 
-    // Combine and cap strictly below 1.0 (max 0.78)
-    return THREE.MathUtils.clamp(heightFactor * speedFactor * distFactor * diffScalar, 0.08, 0.78);
+    // Combine and cap strictly below 1.0 (max 0.84)
+    return THREE.MathUtils.clamp(heightFactor * speedFactor * distFactor * diffScalar, 0.08, 0.84);
   }
 
   update(dt, ball, difficulty = 'pro', callbacks = {}) {
@@ -191,12 +193,16 @@ export class FieldingSystem {
 
     if (ball.state === 'fielded' && this.throwInFlight) {
       const targetZ = this.throwTargetEnd === 'striker' ? PITCH_HALF_LENGTH : -PITCH_HALF_LENGTH;
+      if (this.throwTargetEnd === 'striker') {
+        this.keeper.pos.x = THREE.MathUtils.lerp(this.keeper.pos.x, 0.14, Math.min(1, dt * 8));
+        this.keeper.pos.z = THREE.MathUtils.lerp(this.keeper.pos.z, PITCH_HALF_LENGTH + 0.32, Math.min(1, dt * 8));
+      }
       const dx = 0 - ball.pos.x;
       const dz = targetZ - ball.pos.z;
       const dist = Math.hypot(dx, dz);
       const step = this.throwSpeed * dt;
       if (dist <= step + 0.35) {
-        ball.pos.set(0, 0.45, targetZ);
+        ball.pos.set(0, 0.52, targetZ);
         ball.vel.set(0, 0, 0);
         this.throwInFlight = false;
         ball.state = 'dead';
@@ -209,7 +215,7 @@ export class FieldingSystem {
       return;
     }
 
-    if (ball.state !== 'hit') return;
+    if (ball.state !== 'hit' || ball.isPlayedOn) return;
 
     // 1. Wicketkeeper Low-Edge / Caught-Behind check (reduced radius 1.15m, probabilistic)
     const keeperDist = Math.hypot(ball.pos.x - this.keeper.pos.x, ball.pos.z - this.keeper.pos.z);
@@ -239,7 +245,8 @@ export class FieldingSystem {
     }
 
     // 2. Find nearest fielder to ball
-    const speedMultiplier = difficulty === 'legend' ? 1.10 : difficulty === 'easy' ? 0.84 : 0.96;
+    const diffProfile = getDifficultyProfile(difficulty);
+    const speedMultiplier = diffProfile ? diffProfile.fielderSpeedMultiplier : 0.96;
     const predictPosX = ball.pos.x + ball.vel.x * 0.35;
     const predictPosZ = ball.pos.z + ball.vel.z * 0.35;
 

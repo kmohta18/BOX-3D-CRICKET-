@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <link rel="stylesheet" href="./styles.css" />
     <style>
       body {
         margin: 0;
@@ -23,130 +23,146 @@
     </style>
   </head>
 
-  <body class="min-h-screen flex flex-col justify-between p-3 max-w-md mx-auto bg-slate-950 text-slate-100">
-    <!-- Top Bar: Connection, Room Code Input & Built-in QR Scanner Button -->
-    <header class="p-3 bg-slate-900 border border-slate-800 rounded-2xl space-y-2">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="font-display text-base font-bold text-amber-400">BOX CRICKET CONTROLLER</div>
-          <div id="ctrl-status" class="text-[11px] font-mono text-emerald-400">Connecting...</div>
+  <body class="h-[100dvh] max-h-[100dvh] w-full overflow-hidden flex flex-col justify-between p-2 sm:p-2.5 max-w-md mx-auto bg-slate-950 text-slate-100 select-none">
+    <!-- Compact Top Bar: Connection, Room Code Input, QR Scanner & Motion Sensor Enable -->
+    <header class="shrink-0 p-2 bg-slate-900 border border-slate-800 rounded-xl space-y-1.5">
+      <div class="flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2 min-w-0">
+          <span class="font-display text-xs sm:text-sm font-bold text-amber-400 truncate">BOX CRICKET PAD</span>
+          <span id="ctrl-status" class="text-[10px] font-mono text-emerald-400 truncate">Connecting...</span>
         </div>
-        <div class="text-right">
-          <div class="text-[10px] text-slate-400">ROOM · PING</div>
-          <div id="ctrl-room-ping" class="font-mono text-xs font-bold text-white">CRIC · 12ms</div>
-        </div>
+        <div id="ctrl-room-ping" class="font-mono text-[11px] font-bold text-white shrink-0">CRIC · 12ms</div>
       </div>
 
-      <!-- Direct Room Code Pairing + In-App QR Camera Scanner -->
-      <div class="flex items-center gap-1.5 pt-1 border-t border-slate-800/80">
+      <!-- Live Broadcast Score & Ball Status Strip on Phone -->
+      <div class="flex items-center justify-between gap-1.5 bg-slate-950/90 border border-slate-800 rounded-lg px-2 py-1 text-[10px]">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span id="ctrl-live-score" class="font-display font-bold text-white truncate">IND v AUS 0/0 (0.0)</span>
+          <span id="ctrl-live-need" class="font-mono text-amber-400 truncate">READY</span>
+        </div>
+        <span id="ctrl-ball-status" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono font-bold text-[9px] shrink-0">
+          READY
+        </span>
+      </div>
+
+      <!-- Direct Room Code Pairing + In-App QR Camera Scanner + Motion Enable in 1 Compact Row -->
+      <div class="flex items-center gap-1 pt-0.5">
         <input
           id="ctrl-room-input"
           type="text"
           maxlength="4"
           placeholder="ROOM"
-          class="w-20 bg-slate-950 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-mono font-bold uppercase text-amber-400 text-center"
+          class="w-14 bg-slate-950 border border-slate-700 rounded-lg px-1.5 py-1 text-[11px] font-mono font-bold uppercase text-amber-400 text-center shrink-0"
         />
         <button
           id="btn-ctrl-join"
-          class="px-3 py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-xs rounded-xl cursor-pointer"
+          class="px-2 py-1 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-[11px] rounded-lg cursor-pointer shrink-0"
         >
-          Pair Room
+          Pair
         </button>
         <button
           id="btn-ctrl-scan-qr"
-          class="flex-1 py-1.5 px-2.5 bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-xs rounded-xl cursor-pointer text-center"
+          class="px-2 py-1 bg-slate-800 active:bg-slate-700 text-slate-200 border border-slate-700 font-semibold text-[11px] rounded-lg cursor-pointer shrink-0"
         >
-          Scan Screen QR
+          Scan QR
+        </button>
+        <button
+          id="btn-ios-permission"
+          class="flex-1 py-1 px-2 bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-300 font-bold text-[10px] rounded-lg cursor-pointer truncate text-center"
+        >
+          Enable Sensors (85Hz)
         </button>
       </div>
     </header>
 
-    <!-- Main Stretch Zone: Pre-Selected Shot Mode (GROUND / FLY) + Telemetry + Gesture Pad -->
-    <main class="my-2 flex-1 flex flex-col gap-2">
-      <!-- iOS / Android Motion Permission Button -->
-      <button id="btn-ios-permission" class="w-full min-h-[44px] py-2 px-4 bg-sky-500 hover:bg-sky-400 active:scale-[0.99] text-slate-950 font-bold text-xs rounded-2xl shadow-lg transition-transform cursor-pointer">
-        Enable iOS / Android Motion Sensors (85 Hz)
-      </button>
-
-      <!-- PRE-SELECTED SHOT TYPE SYSTEM: Large GROUND & FLY Buttons -->
-      <div class="bg-slate-900 border border-slate-800 rounded-2xl p-2.5">
-        <div class="flex items-center justify-between px-1 mb-2">
-          <span class="text-[11px] font-semibold text-slate-300">PRE-SELECTED SHOT MODE</span>
-          <span id="shot-lock-badge" class="font-mono text-[11px] font-bold text-emerald-400">
-            UNLOCKED · SELECT NOW
+    <!-- Main Auto-Fit Zone: Pre-Selected Shot Mode (GROUND / FLY) + Inline Telemetry + Flex Gesture Pad -->
+    <main class="my-1.5 flex-1 min-h-0 flex flex-col gap-1.5">
+      <!-- PRE-SELECTED SHOT TYPE SYSTEM + COMPACT TELEMETRY -->
+      <div class="shrink-0 bg-slate-900 border border-slate-800 rounded-xl p-2 space-y-1.5">
+        <div class="flex items-center justify-between gap-1 text-[10px]">
+          <span id="shot-lock-badge" class="font-mono font-bold text-emerald-400 truncate">
+            UNLOCKED · GROUND
           </span>
+          <div class="flex items-center gap-2 font-mono text-[10px] shrink-0">
+            <span class="text-slate-400">SPD <strong id="tel-speed" class="text-amber-400">0°/s</strong></span>
+            <span class="text-slate-400">YAW <strong id="tel-yaw" class="text-sky-400">0°</strong></span>
+            <span class="text-slate-400">PIT <strong id="tel-pitch" class="text-emerald-400">0°</strong></span>
+          </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-2.5">
+        <div class="grid grid-cols-2 gap-1.5">
           <button
             id="btn-mode-ground"
-            class="min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg"
+            class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-emerald-500 text-slate-950 border-emerald-300 shadow"
           >
-            <span>GROUND</span>
-            <span class="text-[10px] font-sans font-semibold opacity-85">0–8° · Flat Carpet Shot</span>
+            <span class="leading-tight">GROUND</span>
+            <span class="text-[9px] font-sans font-semibold opacity-85 leading-tight">0–8° · Flat Shot</span>
           </button>
 
           <button
             id="btn-mode-fly"
-            class="min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
+            class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
           >
-            <span>FLY</span>
-            <span class="text-[10px] font-sans font-semibold opacity-80">20–50° · Rising Six Loft</span>
+            <span class="leading-tight">FLY</span>
+            <span class="text-[9px] font-sans font-semibold opacity-80 leading-tight">20–50° · Lofted Six</span>
+          </button>
+        </div>
+
+        <!-- Manual Crease Guard / Step Left & Right Buttons -->
+        <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+          <button
+            id="btn-ctrl-left"
+            class="py-1.5 px-2 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
+          >
+            <span>◀</span> <span>STEP LEFT</span>
+          </button>
+          <button
+            id="btn-ctrl-right"
+            class="py-1.5 px-2 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
+          >
+            <span>STEP RIGHT</span> <span>▶</span>
           </button>
         </div>
       </div>
 
-      <!-- Live Telemetry Readout -->
-      <div class="grid grid-cols-3 gap-2 bg-slate-900 border border-slate-800 rounded-2xl p-2 text-center">
-        <div>
-          <div class="text-[10px] text-slate-400">SWING SPEED</div>
-          <div id="tel-speed" class="font-mono text-base font-bold text-amber-400">0°/s</div>
-        </div>
-        <div>
-          <div class="text-[10px] text-slate-400">YAW (ALPHA)</div>
-          <div id="tel-yaw" class="font-mono text-base font-bold text-sky-400">0°</div>
-        </div>
-        <div>
-          <div class="text-[10px] text-slate-400">PITCH (BETA)</div>
-          <div id="tel-pitch" class="font-mono text-base font-bold text-emerald-400">0°</div>
-        </div>
-      </div>
-
-      <!-- Interactive Bat/Bowl Gesture & Swipe Area -->
-      <div id="touch-gesture-pad" class="flex-1 min-h-[125px] bg-slate-900/90 border-2 border-dashed border-slate-700 rounded-3xl flex flex-col items-center justify-center p-3 text-center relative overflow-hidden">
-        <div class="font-display text-base font-bold text-white mb-0.5" id="pad-mode-title">
+      <!-- Interactive Bat/Bowl Gesture & Swipe Area (Auto-scales to remaining viewport height) -->
+      <div id="touch-gesture-pad" class="flex-1 min-h-[60px] bg-slate-900/90 border-2 border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center p-2 text-center relative overflow-hidden">
+        <div class="font-display text-xs sm:text-sm font-bold text-white" id="pad-mode-title">
           SWING PHONE OR SWIPE HERE
         </div>
-        <p class="text-[11px] text-slate-400 max-w-xs leading-relaxed">
-          GROUND = flat swing (0–8°). FLY = swing low-to-high (20–50°). Or swipe across this pad to test shots.
+        <p class="text-[10px] text-slate-400 max-w-xs leading-snug mt-0.5 line-clamp-2">
+          Swing phone like a bat or swipe in 360° across this pad. Tap to bowl/skip replay.
         </p>
-        <div id="pad-feedback" class="mt-2 font-mono text-xs text-amber-400">
+        <div id="pad-feedback" class="mt-1 font-mono text-[10px] text-amber-400 truncate max-w-full">
           Mode: GROUND (0–8°) · Stream Ready
         </div>
       </div>
     </main>
 
-    <!-- Bottom Natural Thumb Zone: Primary Tactile Controls -->
-    <footer class="space-y-2">
+    <!-- Bottom Thumb Zone: Always Visible On Screen -->
+    <footer class="shrink-0 space-y-1.5 pb-[max(4px,env(safe-area-inset-bottom,4px))]">
       <!-- Bowling Run-Up Hold Button + Bowler Type -->
-      <div class="grid grid-cols-3 gap-2">
-        <button id="btn-runup-hold" class="col-span-2 min-h-[48px] bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-xs rounded-2xl shadow-lg cursor-pointer">
-          HOLD FOR RUN-UP &amp; SWING OVERARM
+      <div class="grid grid-cols-3 gap-1.5">
+        <button id="btn-runup-hold" class="col-span-2 min-h-[40px] py-1.5 px-2 bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-[11px] rounded-xl shadow cursor-pointer truncate">
+          HOLD RUN-UP &amp; SWING
         </button>
-        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[48px] bg-slate-900 border border-slate-700 text-xs font-semibold text-white rounded-2xl px-2 text-center">
+        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[40px] bg-slate-900 border border-slate-700 text-[11px] font-semibold text-white rounded-xl px-1.5 text-center">
           <option value="fast">Fast</option>
           <option value="medium">Medium</option>
           <option value="spin">Spin</option>
         </select>
       </div>
 
-      <!-- Calibration (3s Upright) & Quick Flick 2nd Run -->
-      <div class="grid grid-cols-2 gap-2">
-        <button id="btn-ctrl-calibrate" class="min-h-[44px] bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-xs rounded-2xl cursor-pointer">
-          Calibrate Stance (3s)
+      <!-- Calibration (3s Upright), Hold to Run & Turn Back -->
+      <div class="grid grid-cols-3 gap-1.5">
+        <button id="btn-ctrl-calibrate" class="min-h-[40px] py-1.5 bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
+          Calibrate (3s)
         </button>
-        <button id="btn-ctrl-run" class="min-h-[44px] bg-slate-800 active:bg-slate-700 text-white font-bold text-xs rounded-2xl border border-slate-700 cursor-pointer">
-          Quick Flick · 2nd Run
+        <button id="btn-ctrl-run" class="min-h-[40px] py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
+          Hold/Jog · Run
+        </button>
+        <button id="btn-ctrl-turnback" class="min-h-[40px] py-1.5 bg-slate-800 active:bg-slate-700 text-amber-300 font-bold text-[11px] rounded-xl border border-slate-700 cursor-pointer px-1 truncate">
+          Turn Back
         </button>
       </div>
     </footer>
@@ -209,24 +225,24 @@
 
       function updateShotModeUI() {
         const isGround = selectedShotMode === 'ground';
-        btnGround.className = `min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+        btnGround.className = `min-h-[44px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
           isGround
-            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow-lg'
+            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
             : 'bg-slate-950 text-slate-400 border-slate-800'
         } ${isModeLocked ? 'opacity-65' : ''}`;
 
-        btnFly.className = `min-h-[66px] rounded-xl font-display font-bold text-base flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+        btnFly.className = `min-h-[44px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
           !isGround
-            ? 'bg-amber-400 text-slate-950 border-amber-200 shadow-lg'
+            ? 'bg-amber-400 text-slate-950 border-amber-200 shadow'
             : 'bg-slate-950 text-slate-400 border-slate-800'
         } ${isModeLocked ? 'opacity-65' : ''}`;
 
         if (isModeLocked) {
           lockBadge.textContent = `LOCKED (${selectedShotMode.toUpperCase()})`;
-          lockBadge.className = 'font-mono text-[11px] font-bold text-amber-400';
+          lockBadge.className = 'font-mono font-bold text-amber-400 truncate';
         } else {
           lockBadge.textContent = `UNLOCKED · ${selectedShotMode.toUpperCase()}`;
-          lockBadge.className = 'font-mono text-[11px] font-bold text-emerald-400';
+          lockBadge.className = 'font-mono font-bold text-emerald-400 truncate';
         }
       }
 
@@ -370,6 +386,27 @@
         }
       }
 
+      const liveScoreEl = document.getElementById('ctrl-live-score');
+      const liveNeedEl = document.getElementById('ctrl-live-need');
+      const ballStatusEl = document.getElementById('ctrl-ball-status');
+
+      // Screen Wake Lock so phone never dims or locks while swinging in the air
+      let wakeLockSentinel = null;
+      async function requestScreenWakeLock() {
+        if ('wakeLock' in navigator && !wakeLockSentinel) {
+          try {
+            wakeLockSentinel = await navigator.wakeLock.request('screen');
+            wakeLockSentinel.addEventListener('release', () => {
+              wakeLockSentinel = null;
+            });
+          } catch {}
+        }
+      }
+      window.addEventListener('pointerdown', requestScreenWakeLock, { passive: true });
+      document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) requestScreenWakeLock();
+      });
+
       function handleIncoming(msg) {
         if (!msg || (msg.room && msg.room !== roomCode)) return;
         if (msg.type === 'pong' && msg.clientTs) {
@@ -384,6 +421,19 @@
           isModeLocked = Boolean(msg.locked);
           if (msg.mode) selectedShotMode = msg.mode;
           updateShotModeUI();
+        } else if (msg.type === 'match_hud') {
+          if (liveScoreEl && msg.scoreText) liveScoreEl.textContent = msg.scoreText;
+          if (liveNeedEl && msg.needText) liveNeedEl.textContent = msg.needText;
+          if (ballStatusEl && msg.ballStatus) {
+            ballStatusEl.textContent = msg.ballStatus;
+            ballStatusEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
+              msg.ballStatus.includes('SWING')
+                ? 'bg-amber-400 text-slate-950 animate-pulse'
+                : msg.ballStatus.includes('RUN')
+                  ? 'bg-sky-400 text-slate-950'
+                  : 'bg-emerald-500/20 text-emerald-300'
+            }`;
+          }
         }
       }
 
@@ -482,7 +532,7 @@
         const dy = e.clientY - startPt.y;
         sensor.gx = -dy * 4.2;
         sensor.gz = -dx * 3.8;
-        sensor.alpha = (dx / 110) * 32;
+        sensor.alpha = -(dx / 110) * 32;
         sensor.beta = 75 - (dy / 110) * 40;
       });
 
@@ -496,15 +546,29 @@
 
         if (dist > 15) {
           const speedDeg = Math.min(580, Math.max(200, (dist / dt) * 285));
-          // Upward swipe (dy < -40) produces rising bat path (25-40°), horizontal/flat swipe produces flat path (3-6°)
-          const planePitchDeg = dy < -40 ? Math.min(45, (-dy / 130) * 38) : 4;
+          // Full 360-degree swipe angle: 0° = straight up (over bowler), +90° = right, -90° = left, ±180° = down (behind wicket)
+          const shotAngleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
+          const planePitchDeg = selectedShotMode === 'fly'
+            ? Math.max(22, Math.min(46, (dist / 130) * 34))
+            : 4;
           sendPacket({
             type: 'touch_swipe',
             speedDeg,
             dirX: Math.max(-1, Math.min(1, dx / 110)),
+            shotAngleDeg: Math.round(shotAngleDeg),
             planePitchDeg
           });
-          padFeedback.textContent = `Swung ${selectedShotMode.toUpperCase()} at ${Math.round(speedDeg)}°/s (Plane ${Math.round(planePitchDeg)}°)`;
+          padFeedback.textContent = `Swung ${selectedShotMode.toUpperCase()} · ${Math.round(shotAngleDeg)}° (${Math.round(speedDeg)}°/s)`;
+        } else {
+          // Single tap on phone gesture pad skips active replay or bowls next ball
+          sendPacket({
+            type: 'touch_swipe',
+            isTap: true,
+            speedDeg: 0,
+            dirX: 0,
+            planePitchDeg: 0
+          });
+          padFeedback.textContent = 'Tapped (Skip Replay / Bowl Next)';
         }
       });
 
@@ -529,11 +593,51 @@
         padFeedback.textContent = 'Hold upright and steady for 3 seconds...';
       });
 
-      document.getElementById('btn-ctrl-run').addEventListener('click', () => {
-        if (navigator.vibrate) navigator.vibrate(30);
+      const ctrlRunBtn = document.getElementById('btn-ctrl-run');
+      ctrlRunBtn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate(25);
+        sendPacket({ type: 'run_hold', held: true });
         sendPacket({ type: 'quick_flick' });
-        padFeedback.textContent = 'Called for 2nd Run!';
+        padFeedback.textContent = 'Running between wickets (or walk/jog with phone)!';
       });
+      ctrlRunBtn.addEventListener('pointerup', (e) => {
+        e.preventDefault();
+        sendPacket({ type: 'run_hold', held: false });
+      });
+      ctrlRunBtn.addEventListener('pointercancel', () => {
+        sendPacket({ type: 'run_hold', held: false });
+      });
+
+      const ctrlTurnBackBtn = document.getElementById('btn-ctrl-turnback');
+      if (ctrlTurnBackBtn) {
+        ctrlTurnBackBtn.addEventListener('click', () => {
+          if (navigator.vibrate) navigator.vibrate([30, 30]);
+          sendPacket({ type: 'turn_back' });
+          padFeedback.textContent = 'Turning back to crease!';
+        });
+      }
+
+      // Manual Crease Step Left / Right Buttons
+      const bindStepBtn = (id, dir) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          if (navigator.vibrate) navigator.vibrate(18);
+          sendPacket({ type: 'crease_step', dir, held: true });
+          padFeedback.textContent = dir < 0 ? 'Stepping Left in Crease' : 'Stepping Right in Crease';
+        });
+        const release = (e) => {
+          if (e) e.preventDefault();
+          sendPacket({ type: 'crease_step', dir, held: false });
+        };
+        el.addEventListener('pointerup', release);
+        el.addEventListener('pointercancel', release);
+        el.addEventListener('pointerleave', release);
+      };
+      bindStepBtn('btn-ctrl-left', -1);
+      bindStepBtn('btn-ctrl-right', 1);
 
       window.addEventListener('beforeunload', () => {
         sendPacket({ type: 'controller_disconnect' });

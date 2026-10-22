@@ -23,10 +23,10 @@ export class NetworkManager {
     this.disconnectPaused = false;
     this.disconnectDeadline = 0;
 
-    // URL modes for QR code generation: 'shared' | 'origin' | 'lan'
-    this.urlMode = 'shared';
-    this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
+    // URL modes for QR code generation: 'origin' (default first) | 'shared' | 'lan'
+    this.urlMode = 'origin';
     this.originBaseUrl = window.location.origin;
+    this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
     this.lanBaseUrl = window.location.origin;
     this.customBaseUrl = '';
 
@@ -36,9 +36,12 @@ export class NetworkManager {
       onCalibrateStart: null,
       onShotModeChange: null,
       onRunupHold: null,
+      onRunHold: null,
+      onTurnBack: null,
       onBowlerTypeChange: null,
       onQuickFlick: null,
       onTouchSwipe: null,
+      onCreaseStep: null,
       onPauseChange: null,
       onOnlineState: null
     };
@@ -63,17 +66,22 @@ export class NetworkManager {
       if (res.ok) {
         const info = await res.json();
         if (info.lanUrl) this.lanBaseUrl = info.lanUrl;
-        if (info.devUrl) this.originBaseUrl = info.devUrl;
         const isLocal =
           window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        if (isLocal && info.url && !info.url.includes('MY_APP_URL')) {
-          this.sharedBaseUrl = info.url;
+        if (isLocal) {
+          if (info.devUrl) this.originBaseUrl = info.devUrl;
+          if (info.url && !info.url.includes('MY_APP_URL')) {
+            this.sharedBaseUrl = info.url;
+          }
           this.urlMode = 'lan';
         } else {
+          // Keep exact current browser origin (e.g. https://boxcricket.ai.studio) as Origin URL!
+          this.originBaseUrl = window.location.origin;
           this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
         }
       }
     } catch {
+      this.originBaseUrl = window.location.origin;
       this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
     }
     return this.getControllerUrl();
@@ -87,9 +95,9 @@ export class NetworkManager {
       return (this.originBaseUrl || window.location.origin).replace(/\/$/, '');
     }
     if (this.urlMode === 'lan') {
-      return (this.lanBaseUrl || this.sharedBaseUrl || window.location.origin).replace(/\/$/, '');
+      return (this.lanBaseUrl || this.originBaseUrl || window.location.origin).replace(/\/$/, '');
     }
-    return (this.sharedBaseUrl || window.location.origin).replace(/\/$/, '');
+    return (this.sharedBaseUrl || this.originBaseUrl || window.location.origin).replace(/\/$/, '');
   }
 
   getControllerUrl(slot = 'p1') {
@@ -181,6 +189,13 @@ export class NetworkManager {
     });
   }
 
+  syncMatchStateToControllers(hudState = {}) {
+    this.send({
+      type: 'match_hud',
+      ...hudState
+    });
+  }
+
   handleMessage(msg) {
     if (!msg || (msg.room && msg.room !== this.roomCode)) return;
 
@@ -243,6 +258,16 @@ export class NetworkManager {
       return;
     }
 
+    if (msg.type === 'run_hold' && this.callbacks.onRunHold) {
+      this.callbacks.onRunHold(Boolean(msg.held), slot);
+      return;
+    }
+
+    if (msg.type === 'turn_back' && this.callbacks.onTurnBack) {
+      this.callbacks.onTurnBack(slot);
+      return;
+    }
+
     if (msg.type === 'bowler_type' && this.callbacks.onBowlerTypeChange) {
       this.callbacks.onBowlerTypeChange(msg.bowlerType, slot);
       return;
@@ -255,6 +280,11 @@ export class NetworkManager {
 
     if (msg.type === 'touch_swipe' && this.callbacks.onTouchSwipe) {
       this.callbacks.onTouchSwipe(msg, slot);
+      return;
+    }
+
+    if (msg.type === 'crease_step' && this.callbacks.onCreaseStep) {
+      this.callbacks.onCreaseStep(msg, slot);
       return;
     }
 
