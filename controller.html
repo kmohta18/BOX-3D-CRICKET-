@@ -75,14 +75,28 @@
       </div>
     </header>
 
-    <!-- Main Auto-Fit Zone: Pre-Selected Shot Mode (GROUND / FLY) + Inline Telemetry + Flex Gesture Pad -->
+    <!-- Main Auto-Fit Zone: Context-Sensitive Batting / Bowling Controls + Flex Gesture Pad -->
     <main class="my-1.5 flex-1 min-h-0 flex flex-col gap-1.5">
-      <!-- PRE-SELECTED SHOT TYPE SYSTEM + COMPACT TELEMETRY -->
-      <div class="shrink-0 bg-slate-900 border border-slate-800 rounded-xl p-2 space-y-1.5">
+      <!-- One-Tap TV Start / Instant Rematch Banner Button (Shown when TV is waiting at Play Gate or Match Over) -->
+      <button
+        id="btn-ctrl-play-rematch"
+        type="button"
+        class="hidden shrink-0 w-full py-2.5 px-3 rounded-xl font-display font-extrabold text-sm bg-emerald-400 active:bg-emerald-300 text-slate-950 shadow-lg border-2 border-emerald-200 cursor-pointer animate-pulse"
+      >
+        ▶ START MATCH ON TV
+      </button>
+
+      <!-- BATTING MODE PANEL: Pre-Selected Shot Mode (GROUND / FLY) + Crease Step + Streak Telemetry -->
+      <div id="ctrl-batting-panel" class="shrink-0 bg-slate-900 border border-slate-800 rounded-xl p-2 space-y-1.5">
         <div class="flex items-center justify-between gap-1 text-[10px]">
-          <span id="shot-lock-badge" class="font-mono font-bold text-emerald-400 truncate">
-            UNLOCKED · GROUND
-          </span>
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span id="shot-lock-badge" class="font-mono font-bold text-emerald-400 truncate">
+              UNLOCKED · GROUND
+            </span>
+            <span id="ctrl-streak-badge" class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono font-bold text-[9px] shrink-0">
+              🔥 0/3
+            </span>
+          </div>
           <div class="flex items-center gap-2 font-mono text-[10px] shrink-0">
             <span class="text-slate-400">SPD <strong id="tel-speed" class="text-amber-400">0°/s</strong></span>
             <span class="text-slate-400">YAW <strong id="tel-yaw" class="text-sky-400">0°</strong></span>
@@ -96,7 +110,7 @@
             class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-emerald-500 text-slate-950 border-emerald-300 shadow"
           >
             <span class="leading-tight">GROUND</span>
-            <span class="text-[9px] font-sans font-semibold opacity-85 leading-tight">0–8° · Flat Shot</span>
+            <span class="text-[9px] font-sans font-semibold opacity-85 leading-tight">0–8° · Safe Carpet</span>
           </button>
 
           <button
@@ -104,7 +118,7 @@
             class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
           >
             <span class="leading-tight">FLY</span>
-            <span class="text-[9px] font-sans font-semibold opacity-80 leading-tight">20–50° · Lofted Six</span>
+            <span class="text-[9px] font-sans font-semibold opacity-80 leading-tight">24–44° · Big Six</span>
           </button>
         </div>
 
@@ -130,7 +144,7 @@
         <div class="font-display text-xs sm:text-sm font-bold text-white" id="pad-mode-title">
           SWING PHONE OR SWIPE HERE
         </div>
-        <p class="text-[10px] text-slate-400 max-w-xs leading-snug mt-0.5 line-clamp-2">
+        <p id="pad-mode-sub" class="text-[10px] text-slate-400 max-w-xs leading-snug mt-0.5 line-clamp-2">
           Swing phone like a bat or swipe in 360° across this pad. Tap to bowl/skip replay.
         </p>
         <div id="pad-feedback" class="mt-1 font-mono text-[10px] text-amber-400 truncate max-w-full">
@@ -139,14 +153,14 @@
       </div>
     </main>
 
-    <!-- Bottom Thumb Zone: Always Visible On Screen -->
+    <!-- Bottom Thumb Zone: Context-Sensitive for Batting vs Bowling -->
     <footer class="shrink-0 space-y-1.5 pb-[max(4px,env(safe-area-inset-bottom,4px))]">
-      <!-- Bowling Run-Up Hold Button + Bowler Type -->
-      <div class="grid grid-cols-3 gap-1.5">
-        <button id="btn-runup-hold" class="col-span-2 min-h-[40px] py-1.5 px-2 bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-[11px] rounded-xl shadow cursor-pointer truncate">
+      <!-- Bowling Run-Up Hold Button + Bowler Type (Shown ONLY when user is Bowling!) -->
+      <div id="ctrl-bowling-row" class="hidden grid grid-cols-3 gap-1.5">
+        <button id="btn-runup-hold" class="col-span-2 min-h-[42px] py-1.5 px-2 bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-xs rounded-xl shadow cursor-pointer truncate">
           HOLD RUN-UP &amp; SWING
         </button>
-        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[40px] bg-slate-900 border border-slate-700 text-[11px] font-semibold text-white rounded-xl px-1.5 text-center">
+        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[42px] bg-slate-900 border border-slate-700 text-[11px] font-semibold text-white rounded-xl px-1.5 text-center">
           <option value="fast">Fast</option>
           <option value="medium">Medium</option>
           <option value="spin">Spin</option>
@@ -155,13 +169,13 @@
 
       <!-- Calibration (3s Upright), Hold to Run & Turn Back -->
       <div class="grid grid-cols-3 gap-1.5">
-        <button id="btn-ctrl-calibrate" class="min-h-[40px] py-1.5 bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
+        <button id="btn-ctrl-calibrate" class="min-h-[42px] py-1.5 bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
           Calibrate (3s)
         </button>
-        <button id="btn-ctrl-run" class="min-h-[40px] py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
+        <button id="btn-ctrl-run" class="min-h-[42px] py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
           Hold/Jog · Run
         </button>
-        <button id="btn-ctrl-turnback" class="min-h-[40px] py-1.5 bg-slate-800 active:bg-slate-700 text-amber-300 font-bold text-[11px] rounded-xl border border-slate-700 cursor-pointer px-1 truncate">
+        <button id="btn-ctrl-turnback" class="min-h-[42px] py-1.5 bg-slate-800 active:bg-slate-700 text-amber-300 font-bold text-[11px] rounded-xl border border-slate-700 cursor-pointer px-1 truncate">
           Turn Back
         </button>
       </div>
@@ -389,6 +403,20 @@
       const liveScoreEl = document.getElementById('ctrl-live-score');
       const liveNeedEl = document.getElementById('ctrl-live-need');
       const ballStatusEl = document.getElementById('ctrl-ball-status');
+      const streakBadgeEl = document.getElementById('ctrl-streak-badge');
+      const battingPanelEl = document.getElementById('ctrl-batting-panel');
+      const bowlingRowEl = document.getElementById('ctrl-bowling-row');
+      const playRematchBtn = document.getElementById('btn-ctrl-play-rematch');
+      const padTitleEl = document.getElementById('pad-mode-title');
+      const padSubEl = document.getElementById('pad-mode-sub');
+
+      if (playRematchBtn) {
+        playRematchBtn.addEventListener('click', () => {
+          if (navigator.vibrate) navigator.vibrate([40, 30, 50]);
+          sendPacket({ type: 'start_or_rematch' });
+          playRematchBtn.classList.add('hidden');
+        });
+      }
 
       // Screen Wake Lock so phone never dims or locks while swinging in the air
       let wakeLockSentinel = null;
@@ -407,6 +435,20 @@
         if (!document.hidden) requestScreenWakeLock();
       });
 
+      function applyRoleUI(role = 'bat') {
+        const isBowl = role === 'bowl';
+        if (battingPanelEl) battingPanelEl.classList.toggle('hidden', isBowl);
+        if (bowlingRowEl) bowlingRowEl.classList.toggle('hidden', !isBowl);
+        if (padTitleEl) {
+          padTitleEl.textContent = isBowl ? 'HOLD RUN-UP OR SWIPE TO BOWL' : 'SWING PHONE OR SWIPE HERE';
+        }
+        if (padSubEl) {
+          padSubEl.textContent = isBowl
+            ? 'Hold Run-Up button below and swing phone overarm to release ball!'
+            : 'Swing phone like a bat or swipe in 360° across this pad. Tap to skip replay.';
+        }
+      }
+
       function handleIncoming(msg) {
         if (!msg || (msg.room && msg.room !== roomCode)) return;
         if (msg.type === 'pong' && msg.clientTs) {
@@ -421,17 +463,42 @@
           isModeLocked = Boolean(msg.locked);
           if (msg.mode) selectedShotMode = msg.mode;
           updateShotModeUI();
+        } else if (msg.type === 'role_sync' || msg.type === 'joined_ack') {
+          const myRole = slot === 'p2' ? msg.p2Role : msg.p1Role;
+          if (myRole) applyRoleUI(myRole);
         } else if (msg.type === 'match_hud') {
           if (liveScoreEl && msg.scoreText) liveScoreEl.textContent = msg.scoreText;
           if (liveNeedEl && msg.needText) liveNeedEl.textContent = msg.needText;
+          if (msg.userRole) applyRoleUI(msg.userRole);
+          if (streakBadgeEl && msg.streakText) {
+            streakBadgeEl.textContent = msg.streakText;
+            streakBadgeEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
+              msg.isOnFire
+                ? 'bg-orange-500 text-slate-950 animate-pulse'
+                : 'bg-amber-400/20 text-amber-300'
+            }`;
+          }
+          if (playRematchBtn) {
+            if (msg.gateState === 'waiting_play') {
+              playRematchBtn.textContent = '▶ TAP TO START MATCH ON TV';
+              playRematchBtn.classList.remove('hidden');
+            } else if (msg.gateState === 'match_over') {
+              playRematchBtn.textContent = '🔥 TAP FOR INSTANT REMATCH';
+              playRematchBtn.classList.remove('hidden');
+            } else {
+              playRematchBtn.classList.add('hidden');
+            }
+          }
           if (ballStatusEl && msg.ballStatus) {
             ballStatusEl.textContent = msg.ballStatus;
             ballStatusEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
               msg.ballStatus.includes('SWING')
                 ? 'bg-amber-400 text-slate-950 animate-pulse'
-                : msg.ballStatus.includes('RUN')
-                  ? 'bg-sky-400 text-slate-950'
-                  : 'bg-emerald-500/20 text-emerald-300'
+                : msg.ballStatus.includes('DANGER')
+                  ? 'bg-red-500 text-white animate-pulse'
+                  : msg.ballStatus.includes('RUN') || msg.ballStatus.includes('SAFE')
+                    ? 'bg-sky-400 text-slate-950'
+                    : 'bg-emerald-500/20 text-emerald-300'
             }`;
           }
         }

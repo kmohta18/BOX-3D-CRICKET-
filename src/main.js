@@ -55,7 +55,11 @@ import { NetworkManager } from '../net.js';
 import { UIManager } from '../ui.js';
 import { sound } from '../assets/audio.js';
 import { commentary } from '../commentary.js';
-import { gameConfig, getDifficultyProfile, rollRunChaseTarget } from '../config.js';
+import {
+  gameConfig,
+  getDifficultyProfile,
+  rollRunChaseTarget
+} from '../config.js';
 import {
   CHARACTER_STYLE,
   detectHardwareQualityPreset,
@@ -155,10 +159,17 @@ export class BoxCricketApp {
     this.lastCountdownWholeSec = -1;
     // One-time Play Gate so the bowler waits until the player connects their phone controller or clicks PLAY
     this.matchPlayConfirmed = false;
+    this.runRiskLevel = 'safe';
+    this.lastMatchRpGain = 0;
+    this.lastLiveSixMeterShown = 0;
 
     // 3D Umpire signal animation state ('idle' | 'four' | 'six' | 'out' | 'wide' | 'noball')
     this.umpireSignal = 'idle';
     this.umpireSignalTimer = 0;
+
+    // Real Batting Impact Feel: Hit-Stop Freeze (45ms) & Camera Punch Impulse
+    this.hitStopTimer = 0;
+    this.cameraShakeIntensity = 0;
 
     // Interactive Catch / Direct-Hit Reflex QTE state
     this.qteActive = false;
@@ -749,7 +760,9 @@ export class BoxCricketApp {
     strikerBatPivot.add(detailedBat);
     this.strikerMesh.add(strikerBatPivot);
     this.strikerMesh.userData.batPivot = strikerBatPivot;
+    this.strikerMesh.userData.batMesh = detailedBat;
     this.actorsGroup.add(this.strikerMesh);
+    this.updateEquippedBatVisuals();
 
     // 2. Non-Striker (Low-Poly Rigged Character + Detailed Willow Bat)
     this.nonStrikerPlayer = new RiggedCricketPlayer({
@@ -874,6 +887,27 @@ export class BoxCricketApp {
   triggerUmpireSignal(signal = 'idle') {
     this.umpireSignal = signal;
     this.umpireSignalTimer = signal === 'idle' ? 0 : 2.8;
+  }
+
+  updateEquippedBatVisuals() {
+    const batMesh = this.strikerMesh?.userData?.batMesh;
+    if (!batMesh) return;
+    const onFire = typeof this.batting?.isOnFire === 'function' && this.batting.isOnFire();
+    const bladeHex = onFire ? 0xf97316 : 0xe2c799;
+    const emissiveHex = onFire ? 0xff4500 : 0x000000;
+    const emissiveInt = onFire ? 0.85 : 0.0;
+
+    batMesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        if (child.position.y < 0) {
+          child.material.color?.setHex(bladeHex);
+          if (child.material.emissive) {
+            child.material.emissive.setHex(emissiveHex);
+            child.material.emissiveIntensity = emissiveInt;
+          }
+        }
+      }
+    });
   }
 
   addStadiumFloodlightPylons(group, nightSprites, nightPanelMats, pylonAngles, height = 42) {
@@ -1530,6 +1564,14 @@ export class BoxCricketApp {
             if (this.physics.state === 'hit' || this.physics.state === 'fielded') {
               this.triggerExtraRun();
             }
+          },
+          onCreaseTap: () => {
+            if (this.ui.cornerMenuOpen || this.ui.isAnyModalOpen()) return;
+            if (this.physics.state === 'idle' || this.physics.state === 'runup') {
+              sound.playPitchBounce('normal', 68, 0);
+              this.net.vibratePhone(slot, [18]);
+              this.spawnDustPuff(new THREE.Vector3(this.batting.creaseX, 0.03, CREASE_Z + 0.18), 0.18);
+            }
           }
         });
       }
@@ -1638,6 +1680,15 @@ export class BoxCricketApp {
       if (overlay) overlay.classList.toggle('hidden', !paused);
       if (secEl) secEl.textContent = `${remainingSec}s`;
     };
+
+    this.net.callbacks.onStartOrRematch = () => {
+      sound.init();
+      if (!this.matchPlayConfirmed) {
+        this.confirmPlayAndStartMatch();
+      } else if (this.match.isMatchOver) {
+        this.triggerInstantRematch();
+      }
+    };
   }
 
   setupInputListeners() {
@@ -1653,6 +1704,19 @@ export class BoxCricketApp {
         ) {
           e.preventDefault();
           this.confirmPlayAndStartMatch();
+          return;
+        }
+      }
+
+      // Allow Smart TV Remote OK (Enter) on the Match Over Scorecard screen to trigger Instant Rematch!
+      const scModal = document.getElementById('modal-scorecard');
+      if (scModal && !scModal.classList.contains('hidden') && this.match.isMatchOver) {
+        if (
+          (e.code === 'Enter' || e.code === 'NumpadEnter' || e.key === 'Enter') &&
+          (!e.target || e.target.tagName !== 'BUTTON' || e.target.id === 'btn-scorecard-rematch')
+        ) {
+          e.preventDefault();
+          this.triggerInstantRematch();
           return;
         }
       }
@@ -1902,11 +1966,11 @@ export class BoxCricketApp {
     }
   }
 
-  startConfiguredMatchFromUI() {
+  startConfiguredMatchFromUI(skipPlayGate = false) {
     sound.init();
     const modeId = document.getElementById('setup-mode')?.value || this.ui.setupMode || 'run_chase';
     const customT20Overs = Number(document.getElementById('setup-t20-overs')?.value) || 20;
-    const overs = modeId === 't20' ? customT20Overs : 5;
+    const overs = modeId === 't20' ? customT20Overs : modeId === 'last_over' ? 1 : 5;
     const matchType = document.getElementById('setup-match-type')?.value || 'ai';
     const difficulty = document.getElementById('setup-difficulty')?.value || 'medium';
     const stadium = document.getElementById('setup-stadium')?.value || 'eden_gardens';
@@ -1916,12 +1980,13 @@ export class BoxCricketApp {
     const teamAData = FICTIONAL_TEAMS[teamAIndex % FICTIONAL_TEAMS.length];
     const jerseyColorA = teamAData?.primaryColor || '#0284c7';
     const jerseyNumberA = teamAData?.defaultNumber || 18;
-    const roleChoice = modeId === 'run_chase' ? 'bat' : (document.getElementById('setup-role')?.value || 'bat');
+    const isChaseFormat = modeId === 'run_chase' || modeId === 'last_over';
+    const roleChoice = isChaseFormat ? 'bat' : (document.getElementById('setup-role')?.value || 'bat');
     const pitchType = document.getElementById('setup-pitch-type')?.value || 'normal';
     const handedness = document.getElementById('setup-handedness')?.value || this.handedness;
 
-    // Pick a fresh random target within the selected difficulty range every time Run Chase starts!
-    const freshChaseTarget = modeId === 'run_chase' ? rollRunChaseTarget(difficulty) : null;
+    // Pick a fresh random target within the selected difficulty range every time Run Chase or 1-Over Finisher starts!
+    const freshChaseTarget = isChaseFormat ? rollRunChaseTarget(difficulty, modeId) : null;
     if (freshChaseTarget) {
       this.ui.rolledChaseTarget = freshChaseTarget;
       this.ui.refreshRunChaseTargetPreview(false);
@@ -1942,9 +2007,11 @@ export class BoxCricketApp {
       customTargetRuns: freshChaseTarget
     });
 
+    this.batting.resetStreak();
+    this.lastMatchRpGain = 0;
     this.ui.t20TossDone = false;
-    // Require one-time Play confirmation on the Ready-to-Play + QR Gate popup before the first ball is bowled!
-    this.matchPlayConfirmed = false;
+    // Require one-time Play confirmation on the Ready-to-Play + QR Gate popup unless Instant Rematch was triggered!
+    this.matchPlayConfirmed = Boolean(skipPlayGate);
     this.setStadium(this.match.stadium, this.match.timeOfDay);
     this.ui.syncStadiumAndDayNightUI(this.match.stadium, this.match.timeOfDay);
     this.setHandedness(handedness);
@@ -1953,6 +2020,17 @@ export class BoxCricketApp {
     this.resetBallAndFielders();
     this.updateMatchTension();
     this.ui.updateHUD();
+  }
+
+  triggerInstantRematch() {
+    sound.init();
+    if (this.isReplaying || this.pendingReplayStartTimer) {
+      this.skipReplay();
+    }
+    this.ui.closeAllModals();
+    this.startConfiguredMatchFromUI(true);
+    this.confirmPlayAndStartMatch();
+    this.ui.showStatusToast('🔥 Instant Rematch Started! New Target Rolled!', true);
   }
 
   confirmPlayAndStartMatch() {
@@ -1965,7 +2043,13 @@ export class BoxCricketApp {
     const groundName = groundObj ? groundObj.shortEn : 'Eden Gardens';
     const timeLabel = this.match.timeOfDay === 'day' ? 'Day' : 'Night';
 
-    if (this.match.modeId === 'run_chase') {
+    if (this.match.modeId === 'last_over') {
+      this.ui.showEventBanner(
+        `⚡ NEED ${this.match.targetRuns} IN 6 BALLS!`,
+        `${this.match.battingTeam.short} v ${this.match.bowlingTeam.short} · 1-Over Finisher Thriller (2 Wickets in Hand) · ${groundName}`,
+        'text-rose-400'
+      );
+    } else if (this.match.modeId === 'run_chase') {
       this.ui.showEventBanner(
         `TARGET: ${this.match.targetRuns} RUNS`,
         `${this.match.battingTeam.short} v ${this.match.bowlingTeam.short} · Chase in 5 Overs (30 Balls) · ${groundName} (${timeLabel})`,
@@ -1978,6 +2062,7 @@ export class BoxCricketApp {
         'text-emerald-400'
       );
     }
+    this.ui.syncPhoneMatchHUD();
     commentary.trigger('match_start', this.getCommentaryContext(), true);
   }
 
@@ -2208,7 +2293,9 @@ export class BoxCricketApp {
         if (isEdge) {
           const isThick = info.contactType.toLowerCase().includes('thick') || info.timingQuality > 0.55;
           sound.playBatHit(batPower, false, isThick ? 'thick_edge' : 'thin_edge', pan);
-          this.net.vibratePhone('p1', [35]);
+          // 3-stage wooden handle rattle vibration on edge!
+          this.net.vibratePhone('p1', [16, 22, 32]);
+          this.cameraShakeIntensity = 0.04;
           this.registerReplayHighlight({
             category: 'edge_nearmiss',
             priority: 50,
@@ -2221,14 +2308,33 @@ export class BoxCricketApp {
             `${info.contactType}! लॉन्च कोण ${info.launchAngleDeg}°`
           );
         } else {
-          sound.playBatHit(batPower, info.timingQuality >= 0.72, info.timingQuality >= 0.72 ? 'sweet' : 'thick_edge', pan);
-          this.net.vibratePhone('p1', [75]);
+          const isSweet = info.timingQuality >= 0.72;
+          sound.playBatHit(batPower, isSweet, isSweet ? 'sweet' : 'thick_edge', pan);
+          // Crisp heavy willow thud vibration + 45ms Hit-Stop Impact Freeze + Camera Punch on Sweet Spot!
+          if (isSweet) {
+            this.net.vibratePhone('p1', [55, 25, 85]);
+            this.hitStopTimer = 0.046;
+            this.cameraShakeIntensity = info.exitSpeedKmh >= 95 ? 0.18 : 0.11;
+          } else {
+            this.net.vibratePhone('p1', [40, 30, 40]);
+            this.hitStopTimer = 0.022;
+            this.cameraShakeIntensity = 0.06;
+          }
           this.savedCameraMode = this.cameraMode;
           this.cameraMode = 'follow';
 
           // Do NOT auto-run on shot contact! Keep batter safe in the crease (runnerProgress = 0)
           // and open the Run Window so the player only runs when pressing Run/+1/R or stepping with the phone.
           this.batting.startRunWindow();
+          this.lastLiveSixMeterShown = 0;
+
+          if (info.exitSpeedKmh >= 82) {
+            const onFireTag = this.batting.isOnFire() ? '🔥 ON FIRE · ' : '';
+            this.ui.showStatusToast(
+              `${onFireTag}⚡ ${info.shotNameEn} · ${info.exitSpeedKmh} km/h (${info.timingLabelEn.split(' ')[0]})`,
+              true
+            );
+          }
 
           this.ui.setCommentary(
             `${info.shotNameEn} [${info.shotDirectionDeg ?? 0}° · ${info.shotMode.toUpperCase()} · ${info.launchAngleDeg}°]! ${info.timingLabelEn} (${info.exitSpeedKmh} km/h). Press Run (R) to take a single!`,
@@ -2356,6 +2462,22 @@ export class BoxCricketApp {
     this.ui.updateRunningBar({ active: false });
 
     const status = this.match.recordDeliveryOutcome(outcome);
+
+    // Update ON FIRE / Power Surge Streak & Career Ball Progression when User is Batting or Bowling
+    if (!outcome.isWide) {
+      const streakRes = this.batting.registerDeliveryStreakOutcome({
+        runsScored: outcome.runsScored || 0,
+        isBoundary: Boolean(outcome.isBoundary),
+        isWicket: Boolean(outcome.isWicket && !status.freeHitDismissalPrevented),
+        timingQuality: this.batting.lastContact?.timingQuality || 0
+      });
+      this.updateEquippedBatVisuals();
+      if (streakRes.triggeredOnFire) {
+        this.net.vibratePhone('p1', [90, 40, 110, 40, 160]);
+        this.ui.showStatusToast('🔥 ON FIRE ACTIVATED! +22% Sweet Spot & +12% Power for 2 Balls!', true);
+      }
+    }
+
     this.ui.updateHUD();
 
     if (this.match.matchType === 'online1v1') {
@@ -2424,6 +2546,8 @@ export class BoxCricketApp {
     }
 
     // Trigger 3D Match Umpire Signal for Wickets, Boundaries, Wides, and No-Balls
+    // Give the Umpire a proper broadcast spotlight phase before replay or next-ball reset!
+    let hasUmpireDecisionSignal = true;
     if (outcome.isWicket && !status.freeHitDismissalPrevented) {
       this.triggerUmpireSignal('out');
     } else if (outcome.isBoundary && outcome.runsScored === 6) {
@@ -2434,11 +2558,17 @@ export class BoxCricketApp {
       this.triggerUmpireSignal('wide');
     } else if (outcome.isNoBall) {
       this.triggerUmpireSignal('noball');
+    } else {
+      hasUmpireDecisionSignal = false;
     }
 
     // Rebuild jersey numbers if a new batter walked in serially, bowler rotated, or innings changed
     if (outcome.isWicket || status.overCompleted || status.inningsEndState === 'innings_break') {
       this.rebuildTeamCharacters();
+      // Preserve active umpire signal on the freshly rebuilt umpire mesh!
+      if (hasUmpireDecisionSignal && this.umpireSignal !== 'idle') {
+        this.umpireSignalTimer = 2.8;
+      }
       if (!this.match.isMatchOver && !status.inningsEndState) {
         if (outcome.isWicket && !status.freeHitDismissalPrevented) {
           const nextBatter = this.match.getActiveStriker();
@@ -2456,21 +2586,27 @@ export class BoxCricketApp {
     const replayBadge = document.getElementById('hud-replay-badge');
     const replayReasonEl = document.getElementById('hud-replay-reason');
 
+    // Broadcast Timing Sequence:
+    // If Umpire raises a signal (OUT / SIX / FOUR / WIDE / NO-BALL), hold on the live field for 1.65s
+    // so the player clearly sees the Umpire raise their arms BEFORE cutting to replay or resetting for next ball!
+    const preReplayHoldMs = hasUmpireDecisionSignal ? 1650 : 900;
+    const noReplayResetMs = hasUmpireDecisionSignal ? 2650 : 1850;
+
     if (shouldReplay && highlight) {
       this.activeReplayHighlight = highlight;
       if (replayReasonEl) {
         replayReasonEl.textContent = highlight.label;
       }
-      if (replayBadge) {
-        replayBadge.classList.remove('hidden');
-      }
 
       this.pendingReplayStartTimer = setTimeout(() => {
         this.pendingReplayStartTimer = null;
+        if (replayBadge) {
+          replayBadge.classList.remove('hidden');
+        }
         this.isReplaying = true;
         this.replayIndex = Math.max(0, this.replayFrames.length - 68);
         this.cameraMode = 'replay';
-      }, 750);
+      }, preReplayHoldMs);
 
       this.pendingReplayEndTimer = setTimeout(() => {
         this.pendingReplayEndTimer = null;
@@ -2479,14 +2615,14 @@ export class BoxCricketApp {
         if (replayBadge) replayBadge.classList.add('hidden');
         this.cameraMode = this.savedCameraMode;
         this.resetBallAndFielders();
-      }, 3850);
+      }, preReplayHoldMs + 3100);
     } else {
       if (replayBadge) replayBadge.classList.add('hidden');
       this.postDeliveryResetTimer = setTimeout(() => {
         this.postDeliveryResetTimer = null;
         this.cameraMode = this.savedCameraMode;
         this.resetBallAndFielders();
-      }, 1500);
+      }, noReplayResetMs);
     }
 
     if (this.match.isMatchOver) {
@@ -2689,10 +2825,11 @@ export class BoxCricketApp {
     // 1. Update Batting Stance & Crease Movement
     this.batting.updateFrame(dt);
 
-    // 1.5 Automatic Pre-Delivery Bowler Countdown (Waits until one-time Play Gate is confirmed!)
+    // 1.5 Automatic Pre-Delivery Bowler Countdown (Waits until one-time Play Gate is confirmed AND Umpire finishes signaling!)
     if (
       this.matchPlayConfirmed &&
       this.physics.state === 'idle' &&
+      this.umpireSignalTimer <= 0.15 &&
       this.autoBowlScheduled &&
       gameConfig.autoBowl !== 'manual' &&
       !this.match.isMatchOver &&
@@ -2816,8 +2953,15 @@ export class BoxCricketApp {
       this.checkAndExecuteBattingContact();
     }
 
+    // 4.5 Micro Hit-Stop Impact Freeze (45ms on Sweet Spot) so bat-ball contact feels weighty & physical!
+    let physicsDt = dt;
+    if (this.hitStopTimer > 0) {
+      this.hitStopTimer = Math.max(0, this.hitStopTimer - dt);
+      physicsDt = dt * 0.08;
+    }
+
     // 5. Step Ball Physics
-    this.physics.update(dt, {
+    this.physics.update(physicsDt, {
       onPitchBounce: (bouncePos, surface, localWear) => {
         const pan = THREE.MathUtils.clamp(bouncePos.x / 20.0, -0.9, 0.9);
         sound.playPitchBounce(surface, this.physics.speedKmh, pan);
@@ -3074,11 +3218,16 @@ export class BoxCricketApp {
           this.bowlerPlayer.playClip('catch', 0.08);
         }
 
-        // Check if runner is out of the crease when keeper/bowler collects the throw
+        // Realistic Crease Dive & Direct-Hit vs Keeper Collection Window:
+        // If the batter is >= 84% of the way to the crease (or <= 12% when turning back),
+        // they slide/dive their bat safely across the popping crease!
+        const safeProgressThreshold = 0.84;
+        const isDivingSafe =
+          this.runnersInMotion && !this.runnerReturning && this.runnerProgress >= safeProgressThreshold;
         const isOutOfCrease =
           (this.runnersInMotion || this.runnerStoppedMidPitch) &&
-          this.runnerProgress > 0.06 &&
-          this.runnerProgress < 0.94;
+          this.runnerProgress > 0.12 &&
+          this.runnerProgress < safeProgressThreshold;
 
         if (isOutOfCrease) {
           this.dislodgeWickets(targetEnd);
@@ -3104,9 +3253,16 @@ export class BoxCricketApp {
             wicketTypeHi: 'रन आउट'
           });
         } else {
-          // Runner safely inside the crease (>= 0.92 or <= 0.08)
-          if (this.runnersInMotion && this.runnerProgress >= 0.92 && !this.runnerReturning) {
+          // Runner safely inside the crease or slid bat in on a tight dive (>= 0.84)!
+          if (isDivingSafe) {
+            if (this.runnerProgress < 0.96) {
+              // Dramatic crease dive dust puff + haptic thud!
+              this.spawnDustPuff(new THREE.Vector3(0, 0.05, targetZ), 0.55);
+              this.net.vibratePhone('p1', [50, 30, 60]);
+              this.ui.showStatusToast('🏏 DIVE SAFE! Bat slid over the crease in time!', true);
+            }
             this.runsCompletedThisBall++;
+            this.runnerProgress = 0;
           }
           this.runnersInMotion = false;
           this.runnerReturning = false;
@@ -3129,40 +3285,29 @@ export class BoxCricketApp {
       }
     });
 
-    // 7. Update Real Step-Driven Running Between Wickets
+    // 7. Update Running Between Wickets (No Mid-Pitch Freeze Trap on Single Tap!)
     const isBallInPlayForRun = this.physics.state === 'hit' || this.physics.state === 'fielded';
     if (isBallInPlayForRun && (this.runnersInMotion || this.runnerStoppedMidPitch || this.runsCompletedThisBall > 0)) {
-      const phoneConnected = this.net.controllers.p1.connected;
       let activeSpeed = 0;
       let displayCadence = this.batting.cadenceSps || 0;
 
       if (this.runButtonHeld) {
-        // Holding R or Hold-to-Run button simulates a 2.8 Hz sprint cadence
-        activeSpeed = 0.72;
-        displayCadence = Math.max(displayCadence, 2.8);
+        // Holding R or Hold-to-Run button gives full Turbo Sprint + Dive boost!
+        activeSpeed = 1.06;
+        displayCadence = Math.max(displayCadence, 3.6);
         this.runnerStoppedMidPitch = false;
         this.runnersInMotion = true;
-      } else if (phoneConnected && this.batting.isCalibrated) {
-        // Phone connected: runner speed is driven by physical walking/jogging step cadence
-        if (displayCadence > 0.4) {
-          activeSpeed = THREE.MathUtils.clamp(displayCadence * 0.26, 0.25, 0.92);
-          this.runnerStoppedMidPitch = false;
-          this.runnersInMotion = true;
-        } else if (this.runnerProgress > 0.06 && this.runnerProgress < 0.94) {
-          // Player stopped stepping mid-pitch!
-          activeSpeed = 0;
-          this.runnerStoppedMidPitch = true;
-          if (this.strikerPlayer && this.strikerPlayer.currentClipName !== 'stance') {
-            this.strikerPlayer.playClip('stance', 0.15);
-          }
-          if (this.nonStrikerPlayer && this.nonStrikerPlayer.currentClipName !== 'stance') {
-            this.nonStrikerPlayer.playClip('stance', 0.15);
-          }
-        }
+      } else if (displayCadence > 0.4) {
+        // Jogging with phone boosts sprint speed up to 1.12x
+        activeSpeed = THREE.MathUtils.clamp(0.84 + displayCadence * 0.08, 0.88, 1.14);
+        this.runnerStoppedMidPitch = false;
+        this.runnersInMotion = true;
       } else if (this.runnersInMotion) {
-        // Keyboard/mouse fallback when no phone is connected
-        activeSpeed = 0.65;
-        displayCadence = 2.5;
+        // Single tap on +1 Run / R / Quick Flick: batter commits and sprints all the way to the crease!
+        // Never freeze the batter mid-pitch once a run is called!
+        activeSpeed = 0.90;
+        displayCadence = 2.9;
+        this.runnerStoppedMidPitch = false;
       }
 
       if (activeSpeed > 0) {
@@ -3198,15 +3343,30 @@ export class BoxCricketApp {
         if (this.nonStrikerPlayer) this.nonStrikerPlayer.playClip('stance', 0.2);
       }
 
+      // Compute real-time Safe / Tight / Danger Run Call indicator based on nearest fielder distance & throw state
+      const minFDist = this.fielding.fielders.reduce(
+        (m, f) => Math.min(m, Math.hypot(this.physics.pos.x - f.pos.x, this.physics.pos.z - f.pos.z)),
+        99
+      );
+      if (this.physics.state === 'fielded' || minFDist < 4.5) {
+        this.runRiskLevel = clampedProg > 0.12 && clampedProg < 0.84 ? 'danger' : 'tight';
+      } else if (minFDist < 11.5) {
+        this.runRiskLevel = 'tight';
+      } else {
+        this.runRiskLevel = 'safe';
+      }
+
       this.ui.updateRunningBar({
         active: true,
         runsCompleted: this.runsCompletedThisBall,
         progress: clampedProg,
         cadenceHz: displayCadence,
         returning: this.runnerReturning,
-        stoppedMidPitch: this.runnerStoppedMidPitch
+        stoppedMidPitch: this.runnerStoppedMidPitch,
+        riskLevel: this.runRiskLevel
       });
     } else {
+      this.runRiskLevel = 'safe';
       this.ui.updateRunningBar({ active: false });
     }
 
@@ -3269,8 +3429,23 @@ export class BoxCricketApp {
       const lPulse = 0.9 + Math.sin(performance.now() * 0.016) * 0.14;
       this.landingRing.scale.setScalar(lPulse);
 
-      // Show Interactive Reflex Meter if ball is catchable in the outfield (< 53m)
-      if (!isSixProj && tFlight > 0.35 && !this.qteResolved) {
+      // Live Six Distance Counter in the top pill while a huge six is flying through the air!
+      if (isSixProj) {
+        const liveDistM = Math.min(118, Math.round(Math.hypot(this.physics.pos.x, this.physics.pos.z - CREASE_Z) * 1.48));
+        if (liveDistM >= 25 && Math.abs(liveDistM - this.lastLiveSixMeterShown) >= 6) {
+          this.lastLiveSixMeterShown = liveDistM;
+          this.ui.showDeliveryPreview(
+            {
+              customStatusText: `🚀 SIX DISTANCE COUNTER: ${liveDistM}m ... (Projected ${Math.min(118, Math.round(predDist * 1.48))}m!)`,
+              lengthCategory: 'full'
+            },
+            'always'
+          );
+        }
+      }
+
+      // Show Interactive Catch Reflex Meter ONLY when the human player is Bowling (`userRole === 'bowl'`)!
+      if (this.match.userRole === 'bowl' && !isSixProj && tFlight > 0.35 && !this.qteResolved) {
         if (!this.qteActive) {
           this.qteActive = true;
           this.qteProgress = 0.15;
@@ -3301,7 +3476,7 @@ export class BoxCricketApp {
       }
     }
 
-    // 1.8 Animate 3D Match Umpire Signals (FOUR, SIX, OUT, WIDE, NO-BALL)
+    // 1.8 Animate 3D Match Umpire Signals (FOUR, SIX, OUT, WIDE, NO-BALL) with snappy arm raise
     if (this.umpireMesh && this.umpireMesh.userData.leftArm && this.umpireMesh.userData.rightArm) {
       const lArm = this.umpireMesh.userData.leftArm;
       const rArm = this.umpireMesh.userData.rightArm;
@@ -3326,9 +3501,9 @@ export class BoxCricketApp {
         targetRZ = Math.sin(performance.now() * 0.012) * 1.15;
         targetRX = -0.85;
       }
-      lArm.rotation.z = THREE.MathUtils.damp(lArm.rotation.z, targetLZ, 10, dt);
-      rArm.rotation.z = THREE.MathUtils.damp(rArm.rotation.z, targetRZ, 10, dt);
-      rArm.rotation.x = THREE.MathUtils.damp(rArm.rotation.x, targetRX, 10, dt);
+      lArm.rotation.z = THREE.MathUtils.damp(lArm.rotation.z, targetLZ, 16, dt);
+      rArm.rotation.z = THREE.MathUtils.damp(rArm.rotation.z, targetRZ, 16, dt);
+      rArm.rotation.x = THREE.MathUtils.damp(rArm.rotation.x, targetRX, 16, dt);
     }
 
     // 2. Striker Position & Real-Time Low-Lag 3D Willow Bat Reproduction
@@ -3351,7 +3526,12 @@ export class BoxCricketApp {
 
     this.bowlerMesh.position.z = this.bowling.runupZ;
     this.bowlerMesh.position.y = this.bowling.jumpY || 0;
-    const targetBowlerX = this.bowling.bowlerSide === 'over' ? 0.36 : -0.36;
+    // Bowler veers off to the side after releasing the ball so they never block the pitch running lane!
+    const followSideOffset =
+      this.bowling.state === 'released'
+        ? (this.bowling.bowlerSide === 'over' ? 0.65 : -0.65) * (this.bowling.followThroughProgress || 0)
+        : 0;
+    const targetBowlerX = (this.bowling.bowlerSide === 'over' ? 0.36 : -0.36) + followSideOffset;
     this.bowlerMesh.position.x = THREE.MathUtils.damp(this.bowlerMesh.position.x, targetBowlerX, 12, dt);
 
     this.keeperMesh.position.copy(this.fielding.keeper.pos);
@@ -3485,6 +3665,15 @@ export class BoxCricketApp {
     this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, _camTargetPos.x, 5.5, dt);
     this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, _camTargetPos.y, 5.5, dt);
     this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, _camTargetPos.z, 5.5, dt);
+
+    // Subtle Camera Impact Punch / Shake on Sweet-Spot Middled Shots
+    if (this.cameraShakeIntensity > 0.002) {
+      this.camera.position.x += (Math.random() - 0.5) * this.cameraShakeIntensity;
+      this.camera.position.y += (Math.random() - 0.5) * this.cameraShakeIntensity * 0.8;
+      this.cameraShakeIntensity = THREE.MathUtils.damp(this.cameraShakeIntensity, 0, 14, dt);
+    } else {
+      this.cameraShakeIntensity = 0;
+    }
 
     _currentLookAt.x = THREE.MathUtils.damp(_currentLookAt.x, _camLookAt.x, 7.5, dt);
     _currentLookAt.y = THREE.MathUtils.damp(_currentLookAt.y, _camLookAt.y, 7.5, dt);

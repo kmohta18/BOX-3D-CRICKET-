@@ -101,9 +101,11 @@ export class UIManager {
     this.captionTimeout = null;
     this.deliveryPreviewTimeout = null;
     this.wasShotExecutedLastCheck = false;
-    this.setupMode = gameConfig.modeId === 't20' ? 't20' : 'run_chase';
+    this.setupMode = ['t20', 'last_over', 'run_chase'].includes(gameConfig.modeId)
+      ? gameConfig.modeId
+      : 'run_chase';
     this.setupStep = 1;
-    this.rolledChaseTarget = rollRunChaseTarget(gameConfig.difficulty);
+    this.rolledChaseTarget = rollRunChaseTarget(gameConfig.difficulty, this.setupMode);
     this.t20TossDone = false;
     this.t20UserWonToss = false;
   }
@@ -371,7 +373,12 @@ export class UIManager {
     }
     const metaEl = document.getElementById('setup-summary-meta');
     if (metaEl) {
-      const modeStr = this.setupMode === 't20' ? `T20 Match (${t20OversVal} Overs)` : '5-Over Run Chase';
+      const modeStr =
+        this.setupMode === 't20'
+          ? `T20 Match (${t20OversVal} Overs)`
+          : this.setupMode === 'last_over'
+            ? '1-Over Finisher Thriller (6 Balls)'
+            : '5-Over Run Chase';
       const stLabel =
         stVal === 'wankhede'
           ? 'Wankhede'
@@ -384,8 +391,10 @@ export class UIManager {
   }
 
   updateSetupModeUI(modeId = 'run_chase') {
-    const isT20 = modeId === 't20';
-    this.setupMode = isT20 ? 't20' : 'run_chase';
+    const validMode = ['t20', 'last_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
+    const isT20 = validMode === 't20';
+    const isLastOver = validMode === 'last_over';
+    this.setupMode = validMode;
     gameConfig.modeId = this.setupMode;
     saveGameConfig();
 
@@ -393,19 +402,27 @@ export class UIManager {
     if (modeSel) modeSel.value = this.setupMode;
     const t20OversVal = Number(document.getElementById('setup-t20-overs')?.value) || 20;
     const oversSel = document.getElementById('setup-overs');
-    if (oversSel) oversSel.value = isT20 ? String(t20OversVal) : '5';
+    if (oversSel) oversSel.value = isT20 ? String(t20OversVal) : isLastOver ? '1' : '5';
 
     const btnChase = document.getElementById('btn-setup-mode-chase');
+    const btnLastOver = document.getElementById('btn-setup-mode-last-over');
     const btnT20 = document.getElementById('btn-setup-mode-t20');
     if (btnChase) {
-      btnChase.className = `p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        !isT20
+      btnChase.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
+        validMode === 'run_chase'
           ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg'
           : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
       }`;
     }
+    if (btnLastOver) {
+      btnLastOver.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
+        isLastOver
+          ? 'bg-rose-500/15 border-rose-400 text-white shadow-lg'
+          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
+      }`;
+    }
     if (btnT20) {
-      btnT20.className = `p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
+      btnT20.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
         isT20
           ? 'bg-sky-400/15 border-sky-400 text-white shadow-lg'
           : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
@@ -422,7 +439,11 @@ export class UIManager {
 
     const startBtn = document.getElementById('btn-start-match');
     if (startBtn) {
-      startBtn.textContent = isT20 ? `Start T20 Match (${t20OversVal} Overs)` : 'Start 5-Over Run Chase';
+      startBtn.textContent = isT20
+        ? `Start T20 Match (${t20OversVal} Overs)`
+        : isLastOver
+          ? '⚡ Start 1-Over Finisher (6 Balls)'
+          : 'Start 5-Over Run Chase';
     }
     this.syncSetupWizardCards();
   }
@@ -432,21 +453,39 @@ export class UIManager {
       document.getElementById('setup-difficulty')?.value || gameConfig.difficulty
     );
     const profile = getDifficultyProfile(diff);
+    const isLastOver = this.setupMode === 'last_over';
+    const minT = isLastOver
+      ? diff === 'easy'
+        ? 12
+        : diff === 'hard'
+          ? 22
+          : 16
+      : profile.chaseTargetMin;
+    const maxT = isLastOver
+      ? diff === 'easy'
+        ? 16
+        : diff === 'hard'
+          ? 28
+          : 22
+      : profile.chaseTargetMax;
+
     if (
       rollNew ||
       !this.rolledChaseTarget ||
-      this.rolledChaseTarget < profile.chaseTargetMin ||
-      this.rolledChaseTarget > profile.chaseTargetMax
+      this.rolledChaseTarget < minT ||
+      this.rolledChaseTarget > maxT
     ) {
-      this.rolledChaseTarget = rollRunChaseTarget(diff);
+      this.rolledChaseTarget = rollRunChaseTarget(diff, this.setupMode);
     }
     const descEl = document.getElementById('setup-chase-desc');
     if (descEl) {
-      descEl.textContent = `Opponent already batted 5 overs. ${profile.nameEn} Target Range: ${profile.chaseTargetMin}–${profile.chaseTargetMax} Runs.`;
+      descEl.textContent = isLastOver
+        ? `Final Over Clutch Scenario! 6 balls & 2 wickets in hand. ${profile.nameEn} Target Range: ${minT}–${maxT} Runs.`
+        : `Opponent already batted 5 overs. ${profile.nameEn} Target Range: ${minT}–${maxT} Runs.`;
     }
     const badgeEl = document.getElementById('setup-chase-target-badge');
     if (badgeEl) {
-      badgeEl.textContent = `Target: ${this.rolledChaseTarget} Runs`;
+      badgeEl.textContent = `Target: ${this.rolledChaseTarget} Runs (${isLastOver ? '6 Balls' : '30 Balls'})`;
     }
   }
 
@@ -850,7 +889,13 @@ export class UIManager {
       });
     });
 
-    // Sticky bottom bar "Back to Menu / Match Setup" buttons
+    // Sticky bottom bar "Instant Rematch" & "Back to Menu / Match Setup" buttons
+    document.getElementById('btn-scorecard-rematch')?.addEventListener('click', () => {
+      sound.playUIClick(1280);
+      if (typeof this.app.triggerInstantRematch === 'function') {
+        this.app.triggerInstantRematch();
+      }
+    });
     document.getElementById('btn-scorecard-back-menu')?.addEventListener('click', () => {
       this.closeModal('modal-scorecard');
       this.setSetupStep(1);
@@ -1145,13 +1190,13 @@ export class UIManager {
       this.openQRModal();
     });
 
-    // 2-Mode Selection (Run Chase 5 Overs & T20 20 Overs)
+    // 3-Mode Selection (Run Chase 5 Overs, 1-Over Finisher Thriller & T20)
     document.querySelectorAll('[data-setup-mode]').forEach((btn) => {
       btn.addEventListener('click', () => {
         sound.playUIClick();
         const modeId = btn.getAttribute('data-setup-mode');
         this.updateSetupModeUI(modeId);
-        if (modeId === 'run_chase') {
+        if (modeId === 'run_chase' || modeId === 'last_over') {
           this.refreshRunChaseTargetPreview(true);
         }
       });
@@ -1159,7 +1204,7 @@ export class UIManager {
 
     document.getElementById('setup-mode')?.addEventListener('change', (e) => {
       this.updateSetupModeUI(e.target.value);
-      if (e.target.value === 'run_chase') {
+      if (e.target.value === 'run_chase' || e.target.value === 'last_over') {
         this.refreshRunChaseTargetPreview(true);
       }
     });
@@ -1657,6 +1702,24 @@ export class UIManager {
       const r = state.runsCompleted ?? this.app.runsCompletedThisBall ?? 0;
       countEl.textContent = `${r} RUN${r === 1 ? '' : 'S'}`;
     }
+
+    const callEl = document.getElementById('hud-run-call');
+    if (callEl) {
+      const risk = state.riskLevel || this.app.runRiskLevel || 'safe';
+      if (risk === 'danger') {
+        callEl.textContent = '🔴 DANGER · HOLD BACK!';
+        callEl.className =
+          'px-2 py-0.5 rounded bg-rose-500/30 border border-rose-400 text-rose-200 font-bold text-[10px] tracking-wide whitespace-nowrap animate-pulse';
+      } else if (risk === 'tight') {
+        callEl.textContent = '🟡 TIGHT SINGLE';
+        callEl.className =
+          'px-2 py-0.5 rounded bg-amber-500/25 border border-amber-400/70 text-amber-200 font-bold text-[10px] tracking-wide whitespace-nowrap';
+      } else {
+        callEl.textContent = '🟢 SAFE RUN';
+        callEl.className =
+          'px-2 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/60 text-emerald-300 font-bold text-[10px] tracking-wide whitespace-nowrap';
+      }
+    }
   }
 
   updateRunningHUD() {
@@ -1672,7 +1735,8 @@ export class UIManager {
       progress: this.app.runnerProgress || 0,
       cadenceHz: b?.cadenceSps || 0,
       returning: this.app.runnerReturning || false,
-      stoppedMidPitch: this.app.runnerStoppedMidPitch || false
+      stoppedMidPitch: this.app.runnerStoppedMidPitch || false,
+      riskLevel: this.app.runRiskLevel || 'safe'
     });
   }
 
@@ -1867,6 +1931,25 @@ export class UIManager {
     }
     this.wasShotExecutedLastCheck = Boolean(batting.shotExecutedThisBall);
 
+    // Update ON FIRE / Power Surge Streak Badge & Career Rank Badge in Broadcast Bar
+    const streakEl = document.getElementById('hud-streak-chip');
+    if (streakEl && batting) {
+      const onFire = typeof batting.isOnFire === 'function' && batting.isOnFire();
+      if (onFire) {
+        streakEl.textContent = `🔥 ON FIRE (${batting.onFireBallsLeft}B)`;
+        streakEl.className =
+          'px-2 py-0.5 rounded bg-gradient-to-r from-amber-500 to-rose-500 border border-amber-200 text-[10px] font-mono font-extrabold text-slate-950 whitespace-nowrap shadow-md animate-pulse';
+      } else {
+        const cnt = batting.streakCount || 0;
+        streakEl.textContent = `🔥 ${cnt}/3`;
+        streakEl.className = `px-2 py-0.5 rounded border text-[10px] font-mono font-bold whitespace-nowrap transition-all ${
+          cnt >= 2
+            ? 'bg-amber-500/20 border-amber-400 text-amber-300'
+            : 'bg-slate-800/90 border-slate-700 text-slate-300'
+        }`;
+      }
+    }
+
     this.updateShotModeHUD();
     this.updateRunningHUD();
     this.renderFieldRadar();
@@ -1876,6 +1959,7 @@ export class UIManager {
   syncPhoneMatchHUD() {
     if (!this.app?.net) return;
     const match = this.app.match;
+    const batting = this.app.batting;
     const batShort = match.battingTeam.short;
     const bowlShort = match.bowlingTeam.short;
     const scoreText = `${batShort} v ${bowlShort} ${match.runs}/${match.wickets} (${match.getOversFormatted()})`;
@@ -1894,7 +1978,24 @@ export class UIManager {
           : pState === 'hit' || pState === 'fielded'
             ? 'BALL IN PLAY · RUN!'
             : 'READY';
-    this.app.net.syncMatchStateToControllers({ scoreText, needText, ballStatus });
+    const onFire = typeof batting?.isOnFire === 'function' && batting.isOnFire();
+    const streakText = onFire
+      ? `🔥 ON FIRE (${batting.onFireBallsLeft}B)`
+      : `🔥 ${batting?.streakCount || 0}/3`;
+    const gateState = !this.app.matchPlayConfirmed
+      ? 'waiting_play'
+      : match.isMatchOver
+        ? 'match_over'
+        : 'playing';
+    this.app.net.syncMatchStateToControllers({
+      scoreText,
+      needText,
+      ballStatus,
+      userRole: match.userRole || 'bat',
+      streakText,
+      isOnFire: onFire,
+      gateState
+    });
   }
 
   /**
@@ -2294,6 +2395,25 @@ export class UIManager {
           </div>
         `;
       }
+    }
+
+    // Populate Match MVP & Longest Six Banner
+    const careerBanner = document.getElementById('scorecard-career-banner');
+    if (careerBanner) {
+      const mvp = typeof match.getMatchMVP === 'function' ? match.getMatchMVP() : null;
+      const mvpText = mvp
+        ? `🏅 Match MVP: <span class="text-white font-bold">${mvp.name}</span> <span class="text-amber-300 font-mono">(${mvp.summary})</span>`
+        : '🏅 Play on to crown Match MVP';
+      const longestSix = match.longestSixMeters || 0;
+
+      careerBanner.innerHTML = `
+        <div class="text-xs text-slate-200">
+          ${mvpText}
+        </div>
+        <div class="font-mono text-xs text-slate-300">
+          🚀 Longest Six: <strong class="text-amber-300">${longestSix > 0 ? `${longestSix}m` : '—'}</strong>
+        </div>
+      `;
     }
 
     // At the exact Innings Break (0 balls bowled in 2nd innings of T20), show the completed 1st Innings card

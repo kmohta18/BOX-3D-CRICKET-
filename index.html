@@ -346,6 +346,12 @@
       <span id="hud-run-steps" class="text-slate-200 font-semibold">0/20 steps</span>
       <span id="hud-run-cadence" class="hidden sm:inline text-amber-300">0.0/s</span>
       <span id="hud-run-count" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">0 RUNS</span>
+      <span
+        id="hud-run-call"
+        class="px-2 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/60 text-emerald-300 font-bold text-[10px] tracking-wide whitespace-nowrap"
+      >
+        🟢 SAFE RUN
+      </span>
       <button
         id="btn-hud-hold-run"
         type="button"
@@ -716,6 +722,17 @@
         <div class="flex items-center gap-1 text-slate-300">
           <span id="hud-nonstriker" class="font-mono text-xs tabular-nums">Gill 0 (0)*</span>
         </div>
+
+        <span class="text-slate-700 hidden sm:inline" aria-hidden="true">|</span>
+
+        <!-- ON FIRE / Power Surge Streak Badge -->
+        <span
+          id="hud-streak-chip"
+          title="Hit 3 Boundaries or Perfect Shots in a row to trigger ON FIRE Mode (+22% Sweet Spot & +12% Power!)"
+          class="px-2 py-0.5 rounded bg-slate-800/90 border border-slate-700 text-[10px] font-mono font-bold text-slate-300 whitespace-nowrap transition-all"
+        >
+          🔥 0/3
+        </span>
       </div>
 
       <!-- Right Group: Bowler with Figures + Last 6 Balls as Small Dots + Small Shot Type Indicator Icon -->
@@ -1027,19 +1044,34 @@
               <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
                 Select Match Format
               </div>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <button
                   id="btn-setup-mode-chase"
                   type="button"
                   data-setup-mode="run_chase"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-amber-400/15 border-amber-400 text-white shadow-lg"
+                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-amber-400/15 border-amber-400 text-white shadow-lg"
                 >
-                  <div class="flex items-center justify-between">
-                    <span class="font-display font-bold text-base sm:text-lg text-amber-300">5-OVER RUN CHASE</span>
-                    <span class="font-mono text-xs text-amber-300">30 BALLS</span>
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="font-display font-bold text-sm sm:text-base text-amber-300">5-OVER RUN CHASE</span>
+                    <span class="font-mono text-[11px] text-amber-300 shrink-0">30 BALLS</span>
                   </div>
-                  <p class="text-xs text-slate-300 mt-1.5 leading-relaxed">
-                    You bat only and chase down a randomized target score set by the opponent in 5 action-packed overs.
+                  <p class="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
+                    Action-packed 5-over chase against a dynamic target score.
+                  </p>
+                </button>
+
+                <button
+                  id="btn-setup-mode-last-over"
+                  type="button"
+                  data-setup-mode="last_over"
+                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
+                >
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="font-display font-bold text-sm sm:text-base text-rose-400">⚡ 1-OVER THRILLER</span>
+                    <span class="font-mono text-[11px] text-rose-300 shrink-0">6 BALLS CLUTCH</span>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                    Final over pressure! 6 balls, 2 wickets in hand, high-tension finish in 2 mins.
                   </p>
                 </button>
 
@@ -1047,14 +1079,14 @@
                   id="btn-setup-mode-t20"
                   type="button"
                   data-setup-mode="t20"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
+                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
                 >
-                  <div class="flex items-center justify-between">
-                    <span class="font-display font-bold text-base sm:text-lg text-sky-300">T20 FULL MATCH</span>
-                    <span class="font-mono text-xs text-sky-300">COIN TOSS + 2 INNINGS</span>
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="font-display font-bold text-sm sm:text-base text-sky-300">T20 FULL MATCH</span>
+                    <span class="font-mono text-[11px] text-sky-300 shrink-0">TOSS + 2 INN</span>
                   </div>
-                  <p class="text-xs text-slate-400 mt-1.5 leading-relaxed">
-                    Official cricket coin toss, Bat &amp; Bowl both innings, and choose 2, 5, 10, or 20 overs per side.
+                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
+                    Coin toss, Bat &amp; Bowl both innings (2, 5, 10, or 20 overs).
                   </p>
                 </button>
               </div>
@@ -1340,9 +1372,11 @@
           <div class="hidden">
             <select id="setup-mode" aria-label="Game Mode">
               <option value="run_chase" selected>Run Chase (5 Overs)</option>
+              <option value="last_over">1-Over Finisher Thriller (6 Balls)</option>
               <option value="t20">T20 Match (20 Overs)</option>
             </select>
             <select id="setup-overs" aria-label="Overs">
+              <option value="1">1 Over</option>
               <option value="5" selected>5 Overs</option>
               <option value="20">20 Overs</option>
             </select>
@@ -1499,6 +1533,12 @@
             class="p-2.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs"
           ></div>
 
+          <!-- Career Rank RP Reward, MVP & Longest Six Banner -->
+          <div
+            id="scorecard-career-banner"
+            class="p-2.5 rounded-xl bg-gradient-to-r from-amber-500/15 via-slate-900 to-emerald-500/15 border border-amber-400/40 flex flex-wrap items-center justify-between gap-2 text-xs"
+          ></div>
+
           <div class="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
             <div class="md:col-span-2 overflow-x-auto space-y-2.5">
               <div>
@@ -1548,18 +1588,27 @@
           </div>
         </div>
 
-        <div class="modal-footer justify-between">
-          <button
-            id="btn-scorecard-back-menu"
-            type="button"
-            class="px-3.5 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg cursor-pointer"
-          >
-            Back to Match Setup
-          </button>
+        <div class="modal-footer justify-between flex-wrap gap-2">
+          <div class="flex items-center gap-2">
+            <button
+              id="btn-scorecard-rematch"
+              type="button"
+              class="px-4 py-2 text-xs sm:text-sm font-display font-bold tracking-wider uppercase bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg shadow-lg cursor-pointer"
+            >
+              🔥 Instant Rematch (Press OK / Enter)
+            </button>
+            <button
+              id="btn-scorecard-back-menu"
+              type="button"
+              class="px-3.5 py-2 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 rounded-lg cursor-pointer"
+            >
+              Change Format / Setup
+            </button>
+          </div>
           <button
             type="button"
             data-close-modal="modal-scorecard"
-            class="px-4 py-1.5 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg cursor-pointer"
+            class="px-4 py-2 text-xs font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-lg cursor-pointer"
           >
             Close (Esc)
           </button>

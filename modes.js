@@ -177,6 +177,15 @@ export const GAME_MODES = {
     getBowlerMax: () => 1,
     getPowerplayOvers: () => 2
   },
+  last_over: {
+    id: 'last_over',
+    nameEn: '1-Over Finisher Thriller',
+    nameHi: '1-ओवर फिनिशर थ्रिलर',
+    defaultOvers: 1,
+    overOptions: [1],
+    getBowlerMax: () => 1,
+    getPowerplayOvers: () => 0
+  },
   t20: {
     id: 't20',
     nameEn: 'T20 Match',
@@ -190,10 +199,10 @@ export const GAME_MODES = {
 
 export class MatchEngine {
   constructor() {
-    this.modeId = gameConfig.modeId === 't20' ? 't20' : 'run_chase';
-    this.totalOvers = this.modeId === 't20' ? 20 : 5;
+    this.modeId = ['t20', 'last_over', 'run_chase'].includes(gameConfig.modeId) ? gameConfig.modeId : 'run_chase';
+    this.totalOvers = this.modeId === 't20' ? 20 : this.modeId === 'last_over' ? 1 : 5;
     this.bowlerMaxOvers = this.modeId === 't20' ? 4 : 1;
-    this.powerplayOvers = this.modeId === 't20' ? 6 : 2;
+    this.powerplayOvers = this.modeId === 't20' ? 6 : this.modeId === 'last_over' ? 0 : 2;
 
     this.matchType = 'ai'; // 'ai' | 'local1v1' | 'online1v1'
     this.difficulty = normalizeDifficultyKey(gameConfig.difficulty || 'medium'); // 'easy' | 'medium' | 'hard'
@@ -210,11 +219,13 @@ export class MatchEngine {
     this.userRole = 'bat'; // 'bat' | 'bowl' in current innings
 
     // Match progress
-    this.innings = this.modeId === 'run_chase' ? 2 : 1;
+    this.innings = this.modeId === 't20' ? 1 : 2;
     this.targetRuns = null;
     this.firstInningsScore = null;
     this.isSuperOver = false;
     this.isMatchOver = false;
+    this.userWonMatch = null;
+    this.longestSixMeters = 0;
     this.winnerTextEn = '';
     this.winnerTextHi = '';
 
@@ -243,10 +254,10 @@ export class MatchEngine {
     userBattedFirst = true,
     customTargetRuns = null
   }) {
-    const normalizedMode = modeId === 't20' ? 't20' : 'run_chase';
+    const normalizedMode = ['t20', 'last_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
     const mode = GAME_MODES[normalizedMode] || GAME_MODES.run_chase;
     this.modeId = mode.id;
-    this.totalOvers = mode.id === 'run_chase' ? 5 : (overs || mode.defaultOvers);
+    this.totalOvers = mode.id === 'run_chase' ? 5 : mode.id === 'last_over' ? 1 : (overs || mode.defaultOvers);
     this.bowlerMaxOvers = mode.getBowlerMax(this.totalOvers);
     this.powerplayOvers = mode.getPowerplayOvers(this.totalOvers);
 
@@ -274,23 +285,26 @@ export class MatchEngine {
 
     this.isSuperOver = false;
     this.isMatchOver = false;
+    this.userWonMatch = null;
+    this.longestSixMeters = 0;
 
-    if (this.modeId === 'run_chase') {
-      // Run Chase Mode: 5 Overs, Opponent already batted first and set a random target inside the difficulty range!
+    if (this.modeId === 'run_chase' || this.modeId === 'last_over') {
       const profile = getDifficultyProfile(this.difficulty);
+      const minAllowed = this.modeId === 'last_over' ? 10 : profile.chaseTargetMin;
+      const maxAllowed = this.modeId === 'last_over' ? 32 : profile.chaseTargetMax;
       let target = Number(customTargetRuns);
-      if (!Number.isFinite(target) || target < profile.chaseTargetMin || target > profile.chaseTargetMax) {
-        target = rollRunChaseTarget(this.difficulty);
+      if (!Number.isFinite(target) || target < minAllowed || target > maxAllowed) {
+        target = rollRunChaseTarget(this.difficulty, this.modeId);
       }
       this.targetRuns = target;
       this.firstInningsTeamNameEn = this.teamB.nameEn;
       this.firstInningsTeamNameHi = this.teamB.nameHi;
       this.firstInningsTeamShort = this.teamB.short;
       this.firstInningsScore = target - 1;
-      this.firstInningsWickets = Math.min(8, Math.max(2, Math.floor((target - 12) / 13)));
-      this.firstInningsOvers = '5.0';
+      this.firstInningsWickets = this.modeId === 'last_over' ? 1 : Math.min(8, Math.max(2, Math.floor((target - 12) / 13)));
+      this.firstInningsOvers = this.modeId === 'last_over' ? '1.0' : '5.0';
       this.innings = 2;
-      this.userRole = 'bat'; // User always bats to chase the target in Run Chase mode
+      this.userRole = 'bat'; // User bats to chase the target
     } else {
       // T20 Mode: Starts in Innings 1 according to the Coin Toss result
       this.targetRuns = null;
@@ -321,7 +335,7 @@ export class MatchEngine {
 
     this.runs = 0;
     this.wickets = 0;
-    this.maxWickets = this.isSuperOver ? 2 : 10;
+    this.maxWickets = this.isSuperOver || this.modeId === 'last_over' ? 2 : 10;
     this.legalBalls = 0;
     this.extras = { wides: 0, noBalls: 0, total: 0 };
     this.freeHit = false;
@@ -547,7 +561,12 @@ export class MatchEngine {
       striker.runs += runsScored;
       bowler.runs += runsScored;
       if (runsScored === 4 && isBoundary) striker.fours++;
-      if (runsScored === 6 && isBoundary) striker.sixes++;
+      if (runsScored === 6 && isBoundary) {
+        striker.sixes++;
+        if (shotDistance > (this.longestSixMeters || 0)) {
+          this.longestSixMeters = Math.round(shotDistance);
+        }
+      }
       this.currentOverBalls.push(String(runsScored));
 
       milestoneReached =
@@ -643,6 +662,16 @@ export class MatchEngine {
     if (!target) return false;
     this.currentBowlerIndex = target.rosterIndex;
     return true;
+  }
+
+  getMatchMVP() {
+    let bestBatter = this.battingCard[0] || { name: 'Rohit Sharma', runs: 0, balls: 0, sixes: 0 };
+    this.battingCard.forEach((b) => {
+      if (b.runs > bestBatter.runs || (b.runs === bestBatter.runs && b.sixes > bestBatter.sixes)) {
+        bestBatter = b;
+      }
+    });
+    return bestBatter;
   }
 
   /**
@@ -743,6 +772,7 @@ export class MatchEngine {
 
       if (this.runs >= target) {
         this.isMatchOver = true;
+        this.userWonMatch = this.battingTeam.short === this.teamA.short;
         const wicketsLeft = Math.max(1, this.maxWickets - this.wickets);
         this.matchSummaryLine = `${secondSummary} vs ${firstSummary}`;
         this.winnerTextEn = `${this.battingTeam.nameEn} won by ${wicketsLeft} wicket${wicketsLeft > 1 ? 's' : ''}! (${secondSummary} vs ${firstSummary})`;
@@ -758,6 +788,7 @@ export class MatchEngine {
           return 'super_over';
         }
         this.isMatchOver = true;
+        this.userWonMatch = this.bowlingTeam.short === this.teamA.short;
         const margin = Math.max(1, this.firstInningsScore - this.runs);
         this.matchSummaryLine = `${firstSummary} vs ${secondSummary}`;
         this.winnerTextEn = `${this.bowlingTeam.nameEn} won by ${margin} run${margin > 1 ? 's' : ''}! (${firstSummary} vs ${secondSummary})`;

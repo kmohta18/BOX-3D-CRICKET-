@@ -98,12 +98,22 @@ export function getDifficultyProfile(diff) {
 
 /**
  * Generates a fresh random target score strictly inside the selected difficulty's range:
- * - Easy: 20 to 30 runs
- * - Medium: 40 to 60 runs
- * - Hard: 61 to 100 runs
+ * - Easy: 20 to 30 runs (5 overs) | 12 to 16 runs (1-Over Thriller)
+ * - Medium: 40 to 60 runs (5 overs) | 16 to 22 runs (1-Over Thriller)
+ * - Hard: 61 to 100 runs (5 overs) | 22 to 28 runs (1-Over Thriller)
  */
-export function rollRunChaseTarget(diff = gameConfig.difficulty) {
-  const profile = getDifficultyProfile(diff);
+export function rollRunChaseTarget(diff = gameConfig.difficulty, modeId = gameConfig.modeId) {
+  const normDiff = normalizeDifficultyKey(diff);
+  if (modeId === 'last_over') {
+    const thrillerRanges = {
+      easy: [12, 16],
+      medium: [16, 22],
+      hard: [22, 28]
+    };
+    const [minT, maxT] = thrillerRanges[normDiff] || thrillerRanges.medium;
+    return Math.floor(Math.random() * (maxT - minT + 1)) + minT;
+  }
+  const profile = getDifficultyProfile(normDiff);
   const min = profile.chaseTargetMin || 40;
   const max = profile.chaseTargetMax || 60;
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -111,8 +121,8 @@ export function rollRunChaseTarget(diff = gameConfig.difficulty) {
 
 export const DEFAULT_GAME_CONFIG = {
   // Mode, Difficulty, Stadium & Time of Day
-  modeId: 'run_chase', // 'run_chase' (5 overs chase) | 't20' (20 overs + toss)
-  difficulty: 'medium', // 'easy' (20-30) | 'medium' (40-60) | 'hard' (61-100)
+  modeId: 'run_chase', // 'run_chase' (5 overs) | 'last_over' (1 over thriller) | 't20' (20 overs + toss)
+  difficulty: 'medium', // 'easy' | 'medium' | 'hard'
   stadium: 'eden_gardens', // 'eden_gardens' | 'wankhede' | 'narendra_modi'
   timeOfDay: 'night', // 'day' | 'night'
   handedness: 'right',
@@ -153,7 +163,7 @@ export function loadGameConfig() {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        if (parsed.modeId && ['run_chase', 't20'].includes(parsed.modeId)) {
+        if (parsed.modeId && ['run_chase', 'last_over', 't20'].includes(parsed.modeId)) {
           gameConfig.modeId = parsed.modeId;
         }
         if (parsed.difficulty) gameConfig.difficulty = normalizeDifficultyKey(parsed.difficulty);

@@ -30,7 +30,7 @@ export const SHOT_TYPES = {
   FINE_GLANCE: { id: 'fineglance', shotKey: 'fine_glance', anim: 'pull', nameEn: 'FINE LEG GLANCE', nameHi: 'फाइन लेग ग्लांस' },
   SCOOP_SHOT: { id: 'scoop', shotKey: 'scoop_shot', anim: 'scoop', nameEn: 'SCOOP SHOT', nameHi: 'स्कूप शॉट' },
   RAMP_SHOT: { id: 'ramp', shotKey: 'ramp_shot', anim: 'ramp', nameEn: 'RAMP SHOT', nameHi: 'रैम्प शॉट' },
-  LOFTED_DRIVE: { id: 'loft', shotKey: 'lofted_six', anim: 'loft', nameEn: 'LOFTED DRIVE', nameHi: 'लॉफ्टेड शॉट' },
+  LOFTED_DRIVE: { id: 'loft', shotKey: 'lofted_six', anim: 'loft', nameEn: 'HELICOPTER LOFT', nameHi: 'हेलिकॉप्टर लॉफ्ट' },
   DEFENCE: { id: 'defence', shotKey: 'defence', anim: 'defence', nameEn: 'SOLID DEFENCE', nameHi: 'डिफेंस' }
 };
 
@@ -48,6 +48,10 @@ export class BattingSystem {
     this.shotMode = 'ground'; // Default GROUND
     this.modeLocked = false;  // Locks at bowler's release moment
     this.handedness = 'right'; // 'right' | 'left' (mirrors off/leg shot classification)
+
+    // Power Surge / ON FIRE Streak State (3 boundaries or perfect hits -> 2 balls of ON FIRE boost!)
+    this.streakCount = 0;
+    this.onFireBallsLeft = 0;
 
     // Stance & Crease position
     this.screenRightSign = -1; // -1 in Broadcast camera (looking +Z, so Screen-Right is -X); +1 in Pro/Overhead camera
@@ -139,6 +143,57 @@ export class BattingSystem {
       shotNameHi: 'स्ट्रेट ड्राइव',
       didHit: false,
       outcome: 'none'
+    };
+  }
+
+  isOnFire() {
+    return this.onFireBallsLeft > 0;
+  }
+
+  resetStreak() {
+    this.streakCount = 0;
+    this.onFireBallsLeft = 0;
+  }
+
+  registerDeliveryStreakOutcome({ runsScored = 0, isBoundary = false, isWicket = false }) {
+    const wasOnFire = this.onFireBallsLeft > 0;
+    if (isWicket || (runsScored === 0 && !isBoundary)) {
+      this.streakCount = 0;
+      this.onFireBallsLeft = 0;
+      return { triggeredOnFire: false, isOnFire: false, streakCount: 0, onFireBallsLeft: 0 };
+    }
+
+    if (wasOnFire) {
+      this.onFireBallsLeft = Math.max(0, this.onFireBallsLeft - 1);
+      if (this.onFireBallsLeft === 0) {
+        this.streakCount = isBoundary ? 1 : 0;
+      }
+      return {
+        triggeredOnFire: false,
+        isOnFire: this.onFireBallsLeft > 0,
+        streakCount: this.streakCount,
+        onFireBallsLeft: this.onFireBallsLeft
+      };
+    }
+
+    const goodBallHit = isBoundary || (this.lastContact.didHit && this.lastContact.timingQuality >= 0.85 && runsScored >= 2);
+    if (goodBallHit) {
+      this.streakCount = Math.min(3, this.streakCount + 1);
+      if (this.streakCount >= 3) {
+        this.onFireBallsLeft = 2; // Next 2 deliveries get ON FIRE Power Surge!
+        return {
+          triggeredOnFire: true,
+          isOnFire: true,
+          streakCount: 3,
+          onFireBallsLeft: this.onFireBallsLeft
+        };
+      }
+    }
+    return {
+      triggeredOnFire: false,
+      isOnFire: false,
+      streakCount: this.streakCount,
+      onFireBallsLeft: 0
     };
   }
 
@@ -428,6 +483,19 @@ export class BattingSystem {
     this.footwork = this.creaseZOffset > 0.16 ? 'front' : this.creaseZOffset < -0.14 ? 'back' : 'neutral';
     this.creaseX = THREE.MathUtils.clamp((-_relEuler.y * 0.38 - _relEuler.z * 0.28) * dirSign, -0.45, 0.45);
 
+    // Subtle pre-delivery bat-tap ("knocking the crease") when batter lightly taps phone downward in stance
+    if (
+      !this.isSwinging &&
+      omegaMag > 38 &&
+      omegaMag <= 98 &&
+      this.filteredOmega.x < -28 &&
+      nowSec - (this.lastCreaseTapTime || 0) > 0.38
+    ) {
+      this.lastCreaseTapTime = nowSec;
+      this.backliftAngle = -0.18;
+      if (hooks.onCreaseTap) hooks.onCreaseTap();
+    }
+
     // ==================== PART B: INSTANT 360-DEGREE SWING DETECTION ====================
     if (omegaMag > 105 && !this.isSwinging && nowSec - this.lastSwingTime > 0.16) {
       this.isSwinging = true;
@@ -604,13 +672,17 @@ export class BattingSystem {
     const isBehindWicketShot = absAngleDeg > 118;
     const isWideSquareShot = absAngleDeg > 82 && absAngleDeg <= 118;
 
-    // 2. Skill-Based Temporal + 3D Spatial Timing Window Calculation
+    // 2. Skill-Based Temporal + 3D Spatial Timing Window Calculation (with ON FIRE Surge boost!)
+    const onFireActive = this.isOnFire();
+    const surgeSweetBoost = onFireActive ? 1.22 : 1.0;
+    const surgePowerBoost = onFireActive ? 1.12 : 1.0;
+
     const baseWin = (diffProfile && diffProfile.timingWindowMs) || TIMING_WINDOWS_MS[difficulty] || TIMING_WINDOWS_MS.pro;
-    const angleDifficultyScale = isBehindWicketShot ? 0.84 : isWideSquareShot ? 0.93 : 1.0;
+    const angleDifficultyScale = (isBehindWicketShot ? 0.84 : isWideSquareShot ? 0.93 : 1.0) * surgeSweetBoost;
     const win = {
       perfect: baseWin.perfect * angleDifficultyScale,
       good: baseWin.good * angleDifficultyScale,
-      mistime: baseWin.mistime
+      mistime: baseWin.mistime * Math.min(1.15, surgeSweetBoost)
     };
 
     const timingGapSec = this.swingPeakTime - (ball.idealContactTime || nowSec);
@@ -625,8 +697,8 @@ export class BattingSystem {
     const isGoodTiming = !isPerfectTiming && absGapMs <= win.good && distZ <= 1.25;
     const isCompleteMiss = !isPerfectTiming && !isGoodTiming && (absGapMs > win.mistime || distZ > 1.55);
 
-    // 3. Contact Point & Sweet Spot vs Bat Edge (scaled by difficulty battingAssist)
-    const assistTolerance = assist === 'full' ? 0.86 : assist === 'light' ? 0.62 : 0.46;
+    // 3. Contact Point & Sweet Spot vs Bat Edge (scaled by difficulty battingAssist + ON FIRE Surge)
+    const assistTolerance = (assist === 'full' ? 0.86 : assist === 'light' ? 0.62 : 0.46) * surgeSweetBoost;
     const batSweetSpotX = this.creaseX + Math.sin(this.swingPlaneYaw) * 0.20;
     const lateralError = Math.abs(ball.pos.x - batSweetSpotX);
 
@@ -667,8 +739,8 @@ export class BattingSystem {
 
     if (isPerfectTiming) {
       timingQuality = lateralError > 0.34 ? 0.90 : 1.0;
-      timingLabelEn = 'PERFECT TIMING';
-      timingLabelHi = 'सटीक टाइमिंग!';
+      timingLabelEn = onFireActive ? '🔥 ON FIRE · PERFECT!' : 'PERFECT TIMING';
+      timingLabelHi = onFireActive ? '🔥 ऑन फायर · परफेक्ट!' : 'सटीक टाइमिंग!';
       contactType = lateralError > 0.34 ? 'Outer Sweet Spot' : 'Sweet Spot';
     } else if (isGoodTiming) {
       timingQuality = lateralError > 0.32 ? 0.72 : 0.82;
@@ -693,7 +765,7 @@ export class BattingSystem {
     this.bodyPivotYaw = THREE.MathUtils.clamp(finalYaw * 0.45, -1.05, 1.05);
 
     let launchAngleDeg = 0;
-    let launchSpeedMs = 11.5 + normBatSpeed * 24.5;
+    let launchSpeedMs = (11.5 + normBatSpeed * 24.5) * surgePowerBoost;
 
     ball.state = 'hit';
     ball.bouncedAfterHit = false;
@@ -709,7 +781,7 @@ export class BattingSystem {
         launchSpeedMs *= 1.08;
       }
 
-      const edgeThreshold = assist === 'full' ? 0.48 : assist === 'light' ? 0.36 : 0.28;
+      const edgeThreshold = (assist === 'full' ? 0.48 : assist === 'light' ? 0.36 : 0.28) * surgeSweetBoost;
       const isGroundEdge =
         (!isPerfectTiming && !isGoodTiming) ||
         (!isPerfectTiming && lateralError > edgeThreshold) ||
@@ -754,7 +826,7 @@ export class BattingSystem {
         lengthPowerMod = isBehindWicketShot ? 0.80 : 0.92;
       }
 
-      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.46 : 0.34);
+      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.46 : 0.34) * surgeSweetBoost;
 
       if (isPerfectTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty) {
         // PERFECT TIMING IN FLY MODE => Clean Booming SIX / Boundary!
@@ -764,15 +836,15 @@ export class BattingSystem {
           24,
           44
         );
-        launchSpeedMs = (15.0 + normBatSpeed * 25.0) * timingQuality * lengthPowerMod;
+        launchSpeedMs = (15.0 + normBatSpeed * 25.0) * timingQuality * lengthPowerMod * surgePowerBoost;
         if (normBatSpeed >= 0.80 && !isYorker) {
-          launchSpeedMs = Math.max(launchSpeedMs, 28.2);
+          launchSpeedMs = Math.max(launchSpeedMs, 28.2 * surgePowerBoost);
           launchAngleDeg = THREE.MathUtils.clamp(launchAngleDeg, 28, 38);
         }
       } else if (isGoodTiming && !flyOuterEdgeRisk && !isYorker && !unorthodoxLengthPenalty) {
         // GOOD TIMING IN FLY MODE => Lofted chip over infield (2s / 4s, or deep catch if hit straight to boundary rider)
         launchAngleDeg = THREE.MathUtils.randFloat(23, 34);
-        launchSpeedMs = (13.2 + normBatSpeed * 20.5) * timingQuality * lengthPowerMod;
+        launchSpeedMs = (13.2 + normBatSpeed * 20.5) * timingQuality * lengthPowerMod * surgePowerBoost;
       } else {
         // MISTIMED / OUTER EDGE / YORKER SPLICED IN FLY MODE => High Skyer / Top-Edge Catch Chance!
         ball.edged = true;

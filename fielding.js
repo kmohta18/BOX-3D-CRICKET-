@@ -79,8 +79,10 @@ export class FieldingSystem {
 
     this.activeChaserIndex = -1;
     this.throwInFlight = false;
+    this.pickupDelayTimer = 0;
+    this.activeThrower = null;
     this.throwTargetEnd = 'striker';
-    this.throwSpeed = 26.0;
+    this.throwSpeed = 20.8;
     this.catchAttemptedThisBall = false;
 
     this.initFielders();
@@ -134,6 +136,8 @@ export class FieldingSystem {
   resetToHomePositions(bowlerType = 'fast') {
     this.activeChaserIndex = -1;
     this.throwInFlight = false;
+    this.pickupDelayTimer = 0;
+    this.activeThrower = null;
     this.catchAttemptedThisBall = false;
     const keeperZ = bowlerType === 'spin' ? PITCH_HALF_LENGTH + 1.35 : PITCH_HALF_LENGTH + 3.2;
     this.keeper.homePos.set(0.15, 0, keeperZ);
@@ -191,26 +195,42 @@ export class FieldingSystem {
       return;
     }
 
-    if (ball.state === 'fielded' && this.throwInFlight) {
+    if (ball.state === 'fielded') {
       const targetZ = this.throwTargetEnd === 'striker' ? PITCH_HALF_LENGTH : -PITCH_HALF_LENGTH;
       if (this.throwTargetEnd === 'striker') {
         this.keeper.pos.x = THREE.MathUtils.lerp(this.keeper.pos.x, 0.14, Math.min(1, dt * 8));
         this.keeper.pos.z = THREE.MathUtils.lerp(this.keeper.pos.z, PITCH_HALF_LENGTH + 0.32, Math.min(1, dt * 8));
       }
-      const dx = 0 - ball.pos.x;
-      const dz = targetZ - ball.pos.z;
-      const dist = Math.hypot(dx, dz);
-      const step = this.throwSpeed * dt;
-      if (dist <= step + 0.35) {
-        ball.pos.set(0, 0.52, targetZ);
-        ball.vel.set(0, 0, 0);
-        this.throwInFlight = false;
-        ball.state = 'dead';
-        if (callbacks.onThrowReachedStumps) callbacks.onThrowReachedStumps(this.throwTargetEnd);
-      } else {
-        ball.pos.x += (dx / dist) * step;
-        ball.pos.z += (dz / dist) * step;
-        ball.pos.y = 0.55 + Math.sin((dist / 30) * Math.PI) * 1.4;
+
+      // Realistic pickup, balance & arm-cocking phase (~0.48s) before ball leaves fielder's hand
+      if (this.pickupDelayTimer > 0) {
+        this.pickupDelayTimer = Math.max(0, this.pickupDelayTimer - dt);
+        if (this.activeThrower) {
+          ball.pos.set(this.activeThrower.pos.x, 0.95, this.activeThrower.pos.z);
+          this.activeThrower.rotY = Math.atan2(-this.activeThrower.pos.x, targetZ - this.activeThrower.pos.z);
+        }
+        if (this.pickupDelayTimer <= 0) {
+          this.throwInFlight = true;
+        }
+        return;
+      }
+
+      if (this.throwInFlight) {
+        const dx = 0 - ball.pos.x;
+        const dz = targetZ - ball.pos.z;
+        const dist = Math.hypot(dx, dz);
+        const step = this.throwSpeed * dt;
+        if (dist <= step + 0.35) {
+          ball.pos.set(0, 0.52, targetZ);
+          ball.vel.set(0, 0, 0);
+          this.throwInFlight = false;
+          ball.state = 'dead';
+          if (callbacks.onThrowReachedStumps) callbacks.onThrowReachedStumps(this.throwTargetEnd);
+        } else {
+          ball.pos.x += (dx / dist) * step;
+          ball.pos.z += (dz / dist) * step;
+          ball.pos.y = 0.55 + Math.sin((dist / 30) * Math.PI) * 1.4;
+        }
       }
       return;
     }
@@ -322,9 +342,12 @@ export class FieldingSystem {
         }
         f.state = 'throwing';
         ball.state = 'fielded';
-        ball.pos.set(f.pos.x, 1.2, f.pos.z);
+        ball.pos.set(f.pos.x, 0.85, f.pos.z);
         ball.vel.set(0, 0, 0);
-        this.throwInFlight = true;
+        this.activeThrower = f;
+        // Authentic pickup + balance + release delay (0.48s) so quick singles are genuinely makable!
+        this.pickupDelayTimer = 0.48;
+        this.throwInFlight = false;
         this.throwTargetEnd = Math.abs(f.pos.z - PITCH_HALF_LENGTH) < Math.abs(f.pos.z + PITCH_HALF_LENGTH)
           ? 'striker'
           : 'nonStriker';

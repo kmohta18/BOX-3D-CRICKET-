@@ -288,6 +288,11 @@ export class NetworkManager {
       return;
     }
 
+    if (msg.type === 'start_or_rematch' && this.callbacks.onStartOrRematch) {
+      this.callbacks.onStartOrRematch(msg, slot);
+      return;
+    }
+
     if (msg.type === 'controller_disconnect') {
       this.triggerDisconnectPause(slot);
       return;
