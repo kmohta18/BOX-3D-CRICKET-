@@ -857,7 +857,18 @@ export class BoxCricketApp {
       new THREE.CircleGeometry(0.18, 24).rotateX(-Math.PI / 2),
       this.aimInnerMat
     );
-    this.aimRing.add(outerRingMesh, innerDiscMesh);
+    this.timingRingMat = new THREE.MeshBasicMaterial({
+      color: 0xffffff,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.85
+    });
+    this.timingOuterRing = new THREE.Mesh(
+      new THREE.RingGeometry(0.41, 0.48, 32).rotateX(-Math.PI / 2),
+      this.timingRingMat
+    );
+    this.timingOuterRing.visible = false;
+    this.aimRing.add(outerRingMesh, innerDiscMesh, this.timingOuterRing);
     this.aimRing.position.set(0.05, 0.035, 4.6);
     this.scene.add(this.aimRing);
 
@@ -1957,6 +1968,7 @@ export class BoxCricketApp {
   setAimRingColor(hexColor = 0xf59e0b) {
     if (this.aimOuterMat) this.aimOuterMat.color.setHex(hexColor);
     if (this.aimInnerMat) this.aimInnerMat.color.setHex(hexColor);
+    if (this.timingRingMat) this.timingRingMat.color.setHex(hexColor);
   }
 
   scheduleAutoBowl(customDelaySec = null) {
@@ -2638,30 +2650,32 @@ export class BoxCricketApp {
           this.selectShotMode(resolvedMode);
         }
         const effectiveMode = resolvedMode || this.batting.shotMode;
+        const isDefend = effectiveMode === 'defend';
         const wheelDeg = typeof this.batting.custom360AimDeg === 'number' ? this.batting.custom360AimDeg : 0;
         const shotAngleDeg = wheelDeg * dirSign;
         const worldAimX = Math.sin(THREE.MathUtils.degToRad(shotAngleDeg));
-        const planePitchDeg = effectiveMode === 'fly' ? 30 : 4;
-        const speedDeg = effectiveMode === 'fly' ? 515 : 465;
-
-        this.batting.triggerManualSwing({
-          speedDeg,
-          dirX: worldAimX,
-          shotAngleDeg,
-          planePitchDeg
-        });
-        const previewShotKey =
-          this.batting.activeShotType?.shotKey || (effectiveMode === 'fly' ? 'lofted_six' : 'straight_drive');
+        const planePitchDeg = effectiveMode === 'fly' ? 30 : isDefend ? 2 : 4;
+        const speedDeg = effectiveMode === 'fly' ? 515 : isDefend ? 150 : 465;
 
         if (this.physics.state === 'runup') {
+          // Pressing swing during bowler run-up fast-forwards run-up ONLY — you must time your swing on the actual ball!
           this.bowling.runupFastForward = true;
-          this.triggerStrikerMocapShot(previewShotKey, {
-            isSweet: true,
-            isOnFire: typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
+          return;
+        }
+
+        if (this.physics.state === 'bowled') {
+          this.batting.triggerManualSwing({
+            speedDeg,
+            dirX: worldAimX,
+            shotAngleDeg,
+            planePitchDeg,
+            isDefensive: isDefend
           });
-        } else if (this.physics.state === 'bowled') {
+          const previewShotKey = isDefend
+            ? 'defence'
+            : this.batting.activeShotType?.shotKey || (effectiveMode === 'fly' ? 'lofted_six' : 'straight_drive');
           this.triggerStrikerMocapShot(previewShotKey, {
-            isSweet: true,
+            isSweet: !isDefend,
             isOnFire: typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
           });
           this.checkAndExecuteBattingContact();
@@ -2745,6 +2759,28 @@ export class BoxCricketApp {
         this.selectShotMode('ground');
       } else if (code === 'KeyF' || code === 'KeyL') {
         this.selectShotMode('fly');
+      } else if (code === 'KeyB') {
+        this.selectShotMode('defend');
+      } else if (
+        code === 'KeyX' ||
+        code === 'KeyM' ||
+        code === 'PageUp' ||
+        code === 'ChannelUp' ||
+        e.key === 'ChannelUp' ||
+        e.key === 'MediaPlayPause'
+      ) {
+        // 1-Button TV Remote / Keyboard Shot Mode Cycle: GROUND → LOFT → DEFEND
+        const order = ['ground', 'fly', 'defend'];
+        const curIdx = order.indexOf(this.batting.shotMode);
+        const nextMode = order[(curIdx + 1) % order.length];
+        this.selectShotMode(nextMode);
+        const modeToast =
+          nextMode === 'fly'
+            ? '🔥 SHOT MODE: LOFT (HIGH RISK / SIXES)'
+            : nextMode === 'defend'
+              ? '🛡️ SHOT MODE: DEFEND (SAFE BLOCK)'
+              : '🏏 SHOT MODE: GROUND (CRISP DRIVES)';
+        this.ui.showStatusToast(modeToast, false);
       } else if (code === 'KeyH') {
         this.ui.toggleDock();
       } else if (code === 'KeyC') {
@@ -3691,10 +3727,26 @@ export class BoxCricketApp {
 
     const diffProfile = getDifficultyProfile(this.match.difficulty);
     const previewMode = delivery.deliveryPreview || diffProfile.deliveryPreview || 'hidden';
+    const bz = Number(delivery.bounceZ ?? 4.6);
+    const lengthColorHex =
+      bz < 3.2
+        ? 0xef4444 // Red = Short / Bouncer
+        : bz >= 7.5
+          ? 0x38bdf8 // Blue = Yorker
+          : bz >= 5.0
+            ? 0x22c55e // Green = Full / Overpitched
+            : 0xeab308; // Yellow = Good Length
+    this._currentLengthColorHex = lengthColorHex;
     this.aimRing.position.set(delivery.targetX, 0.035, delivery.bounceZ);
-    this.setAimRingColor(delivery.lengthColorHex || 0xf59e0b);
-    // Keep pitching spot bullseye visible during ball flight so batter can read the length & play front/back foot!
+    this.setAimRingColor(lengthColorHex);
+    // Keep color-coded pitching spot & shrinking timing ring visible during ball flight so batter can read length!
     this.aimRing.visible = true;
+    this.aimRing.scale.setScalar(1.0);
+    if (this.timingOuterRing) {
+      this.timingOuterRing.visible = this.match.userRole === 'bat';
+      this.timingOuterRing.scale.setScalar(2.15);
+      if (this.timingRingMat) this.timingRingMat.opacity = 0.85;
+    }
     this.showLengthBanner(delivery.lengthLabelEn);
     if (previewMode === 'hidden') {
       this.ui.showDeliveryPreview(
@@ -3714,19 +3766,10 @@ export class BoxCricketApp {
       delivery.speedKmh = THREE.MathUtils.clamp((delivery.speedKmh || 132) + confDelta - fatiguePenalty, 58, 158);
     }
 
+    // Clear any stale pre-release swing so timing is evaluated genuinely against the delivered ball
+    this.batting.manualSwingArmed = false;
     this.physics.launchDelivery(delivery);
-    // If the user already pressed LOFT/STROKE during the bowler's runup, sync the armed swing timestamp
-    // to the newly launched ball's flight window and sync the 3D bat swing clip!
-    if (this.batting.manualSwingArmed && !this.batting.shotExecutedThisBall) {
-      const nowSec = performance.now() * 0.001;
-      this.batting.swingPeakTime = (this.physics.idealContactTime || nowSec + 0.52) - 0.12;
-      const armedShotKey =
-        this.batting.activeShotType?.shotKey || (this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
-      this.triggerStrikerMocapShot(armedShotKey, {
-        isSweet: true,
-        isOnFire: typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
-      });
-    }
+    this._ballReleaseTimeSec = performance.now() * 0.001;
     if (this.physics.isNoBall) {
       sound.playUmpireSignal('no_ball');
       this.triggerUmpireSignal('noball');
@@ -4181,8 +4224,34 @@ export class BoxCricketApp {
     this.ballHeldAtStumps = false;
     this.pendingExtraRun = false;
     this.ui.updateRunningBar({ active: false });
+    if (this.timingOuterRing) this.timingOuterRing.visible = false;
 
     const status = this.match.recordDeliveryOutcome(outcome);
+
+    // Dynamic AI Captain Field Adjustment: if batter hammers 2 consecutive boundaries in a similar zone on Medium/Hard, plug that gap!
+    if (
+      this.match.userRole === 'bat' &&
+      outcome.isBoundary &&
+      !this.match.isMatchOver &&
+      this.match.difficulty !== 'easy' &&
+      Array.isArray(this.match.wagonWheel) &&
+      this.match.wagonWheel.length >= 2 &&
+      typeof this.fielding?.adaptFieldToHotZone === 'function'
+    ) {
+      const recent = this.match.wagonWheel.slice(-2);
+      if (recent.every((s) => (s.runs || 0) >= 4)) {
+        const a0 = recent[0].angleRad || 0;
+        const a1 = recent[1].angleRad || 0;
+        const angleDiff = Math.abs(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)));
+        if (angleDiff < 1.05) {
+          const avgAngle = Math.atan2(Math.sin(a0) + Math.sin(a1), Math.cos(a0) + Math.cos(a1));
+          const moved = this.fielding.adaptFieldToHotZone(avgAngle, this.match.isPowerplay);
+          if (moved) {
+            this.ui.showStatusToast(`🛡️ FIELD CHANGE · Captain plugs ${moved.zoneLabel}!`, false);
+          }
+        }
+      }
+    }
 
     // Batter body language: slumps when out, shakes his head when beaten (the next ball resets him to his stance)
     if (this.strikerPlayer && !this.runnersInMotion) {
@@ -4863,25 +4932,42 @@ export class BoxCricketApp {
       // Continue bowler's natural post-release follow-through stride down the pitch
       this.bowling.updateRunup(dt);
 
-      // Auto-adjust human batsman's left/right crease position smoothly toward incoming ball line
+      // Auto-adjust human batsman's left/right crease position (difficulty-scaled so Medium/Hard preserve real swing/spin line!)
       if (this.match.userRole === 'bat') {
-        this.batting.autoTrackBallPosition(this.physics, dt);
+        this.batting.autoTrackBallPosition(this.physics, dt, this.match.difficulty);
       }
 
-      // Live Visual "SWING NOW!" Green Pitch Ring + Phone Micro-Tick right when ball enters hitting zone!
+      // Live Color-Coded Pitch Marker + Shrinking Timing Ring (zero allocations, 60 FPS on Smart TV!)
       const diffProfile = getDifficultyProfile(this.match.difficulty);
       const assist = diffProfile ? diffProfile.battingAssist : 'light';
-      if (
-        this.match.userRole === 'bat' &&
-        this.physics.pos.z >= CREASE_Z - 2.65 &&
-        this.physics.pos.z <= CREASE_Z + 0.35
-      ) {
-        if (!this._zonePulseSentThisBall && !this.batting.shotExecutedThisBall) {
-          this._zonePulseSentThisBall = true;
-          this.net.vibratePhone('p1', [14], '⚡ BALL IN ZONE · SWING NOW!');
+      if (this.match.userRole === 'bat' && this.timingOuterRing && !this.batting.shotExecutedThisBall) {
+        const nowSec = performance.now() * 0.001;
+        const totalFlight = Math.max(0.28, (this.physics.idealContactTime || nowSec + 0.5) - (this._ballReleaseTimeSec || nowSec - 0.1));
+        const remSec = (this.physics.idealContactTime || nowSec) - nowSec;
+        const flightProgress = THREE.MathUtils.clamp(1.0 - remSec / totalFlight, 0, 1.15);
+        const ringScale = THREE.MathUtils.clamp(2.15 - flightProgress * 1.18, 0.85, 2.15);
+        this.timingOuterRing.visible = true;
+        this.timingOuterRing.scale.setScalar(ringScale);
+
+        const perfectSec = ((diffProfile?.timingWindowMs?.perfect || 72) + 20) * 0.001;
+        const inSweetZone = Math.abs(remSec - 0.08) <= perfectSec;
+        if (inSweetZone) {
+          if (!this._zonePulseSentThisBall) {
+            this._zonePulseSentThisBall = true;
+            this.net.vibratePhone('p1', [14], '⚡ SWEET ZONE · SWING NOW!');
+          }
+          if (this.timingRingMat) {
+            this.timingRingMat.color.setHex(0xffffff);
+            this.timingRingMat.opacity = 0.98;
+          }
+          this.aimRing.scale.setScalar(assist === 'off' ? 1.06 : 1.14);
+        } else {
+          if (this.timingRingMat) {
+            this.timingRingMat.color.setHex(this._currentLengthColorHex || 0xeab308);
+            this.timingRingMat.opacity = 0.82;
+          }
+          this.aimRing.scale.setScalar(1.0);
         }
-        this.setAimRingColor(0x10b981);
-        this.aimRing.scale.setScalar(assist === 'off' ? 1.08 : 1.18);
       }
     }
 

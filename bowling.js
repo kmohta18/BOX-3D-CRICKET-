@@ -781,13 +781,21 @@ export class BowlingSystem {
       }
     }
 
-    // Counter a batter who just hit a boundary: change pace / length rather than serve the same ball again
-    const lastShot = Array.isArray(matchContext.recentShots) ? matchContext.recentShots[matchContext.recentShots.length - 1] : null;
-    if (lastShot && (lastShot.runs || 0) >= 4 && ballInOver > 0 && Math.random() < 0.45) {
+    // Counter a batter who just hit a boundary (or 2 in a row!): switch to deceptive pace/length immediately
+    const recentList = Array.isArray(matchContext.recentShots) ? matchContext.recentShots : [];
+    const lastShot = recentList.length > 0 ? recentList[recentList.length - 1] : null;
+    const prevShot = recentList.length > 1 ? recentList[recentList.length - 2] : null;
+    const twoBoundariesInRow = Boolean(lastShot && prevShot && (lastShot.runs || 0) >= 4 && (prevShot.runs || 0) >= 4);
+    const counterChance = twoBoundariesInRow
+      ? (diffProfile.id === 'easy' ? 0.50 : 0.85)
+      : (diffProfile.id === 'easy' ? 0.30 : diffProfile.id === 'medium' ? 0.58 : 0.72);
+    if (lastShot && (lastShot.runs || 0) >= 4 && ballInOver > 0 && Math.random() < counterChance) {
       const counter = pickFromIds(
         this.bowlerType === 'spin'
-          ? ['quicker_one', 'arm_ball', 'wrong_un', 'top_spinner']
-          : ['slower_ball', 'bouncer', 'yorker', 'off_cutter']
+          ? ['wrong_un', 'quicker_one', 'arm_ball', 'top_spinner', 'carrom_ball']
+          : twoBoundariesInRow
+            ? ['yorker', 'slower_ball', 'wide_yorker', 'slower_bouncer', 'off_cutter']
+            : ['slower_ball', 'bouncer', 'yorker', 'off_cutter', 'leg_cutter']
       );
       if (counter) chosenVar = counter;
     }
@@ -846,9 +854,12 @@ export class BowlingSystem {
       const bothBoundaries = lastTwo.every((s) => (s.runs || 0) >= 4);
       if (bothBoundaries) {
         const avgX = (Math.sin(lastTwo[0].angleRad || 0) + Math.sin(lastTwo[1].angleRad || 0)) * 0.5;
-        // Shift line away from the batter's hot boundary zone
-        if (Math.abs(avgX) > 0.2) {
-          targetX = THREE.MathUtils.clamp(targetX - Math.sign(avgX) * 0.14, -0.38, 0.38);
+        // Shift line decisively away from the batter's hot boundary zone & attack stumps/yorker length
+        if (Math.abs(avgX) > 0.18) {
+          targetX = THREE.MathUtils.clamp(targetX - Math.sign(avgX) * 0.22, -0.36, 0.44);
+        }
+        if (diffProfile.id !== 'easy' && Math.random() < 0.55) {
+          bounceZ = Math.random() < 0.65 ? THREE.MathUtils.randFloat(7.7, 8.4) : THREE.MathUtils.randFloat(1.3, 2.3);
         }
       }
     }

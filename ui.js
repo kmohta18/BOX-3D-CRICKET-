@@ -1258,7 +1258,9 @@ export class UIManager {
     modeBtn?.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       sound.playUIClick();
-      const nextMode = this.app.batting.shotMode === 'ground' ? 'fly' : 'ground';
+      const order = ['ground', 'fly', 'defend'];
+      const curIdx = order.indexOf(this.app.batting.shotMode);
+      const nextMode = order[(curIdx + 1) % order.length];
       this.app.selectShotMode(nextMode);
     });
 
@@ -2342,6 +2344,8 @@ export class UIManager {
   updateShotModeHUD() {
     const batting = this.app.batting;
     const isGround = batting.shotMode === 'ground';
+    const isFly = batting.shotMode === 'fly';
+    const isDefend = batting.shotMode === 'defend';
     const isLocked = batting.modeLocked;
 
     const glyphEl = document.getElementById('hud-shot-mode-glyph');
@@ -2349,13 +2353,15 @@ export class UIManager {
     const lockEl = document.getElementById('hud-shot-mode-lock');
 
     if (glyphEl) {
-      glyphEl.textContent = isGround ? '→' : '↗';
-      glyphEl.className = `text-[11px] leading-none ${isGround ? 'text-emerald-400' : 'text-amber-400'}`;
+      glyphEl.textContent = isDefend ? '🛡' : isGround ? '→' : '↗';
+      glyphEl.className = `text-[11px] leading-none ${
+        isDefend ? 'text-sky-400' : isGround ? 'text-emerald-400' : 'text-amber-400'
+      }`;
     }
     if (iconEl) {
-      iconEl.textContent = isGround ? 'GROUND' : 'LOFT';
+      iconEl.textContent = isDefend ? 'DEFEND' : isGround ? 'GROUND' : 'LOFT';
       iconEl.className = `font-display text-[10px] sm:text-[11px] font-bold ${
-        isGround ? 'text-emerald-400' : 'text-amber-400'
+        isDefend ? 'text-sky-400' : isGround ? 'text-emerald-400' : 'text-amber-400'
       }`;
     }
     if (lockEl) {
@@ -2371,15 +2377,19 @@ export class UIManager {
       } ${isLocked ? 'opacity-60' : ''}`;
 
       btnFly.className = `px-2.5 py-1 text-[11px] font-bold rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-        !isGround ? 'bg-amber-400 text-slate-950' : 'text-slate-300 hover:text-white'
+        isFly ? 'bg-amber-400 text-slate-950' : 'text-slate-300 hover:text-white'
       } ${isLocked ? 'opacity-60' : ''}`;
     }
 
     const vpadModeBtn = document.getElementById('btn-vpad-mode');
     if (vpadModeBtn) {
-      vpadModeBtn.textContent = isGround ? 'GROUND' : 'LOFT';
+      vpadModeBtn.textContent = isDefend ? 'DEFEND' : isGround ? 'GROUND' : 'LOFT';
       vpadModeBtn.className = `px-2.5 py-1 rounded-lg font-display font-extrabold text-[11px] shadow-lg cursor-pointer active:scale-95 transition-transform ${
-        isGround ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'
+        isDefend
+          ? 'bg-sky-400 text-slate-950'
+          : isGround
+            ? 'bg-emerald-500 text-slate-950'
+            : 'bg-amber-400 text-slate-950'
       } ${isLocked ? 'opacity-60' : ''}`;
     }
   }
@@ -2475,9 +2485,14 @@ export class UIManager {
     if (modeEl) {
       const planeStr = b.isRisingSwing ? 'RISING' : 'FLAT';
       const lockStr = b.modeLocked ? ' [LOCKED]' : '';
-      const modeName = b.shotMode === 'fly' ? 'LOFT' : 'GROUND';
+      const modeName = b.shotMode === 'fly' ? 'LOFT' : b.shotMode === 'defend' ? 'DEFEND' : 'GROUND';
       modeEl.textContent = `${modeName} · ${planeStr}${lockStr}`;
-      modeEl.className = b.shotMode === 'fly' ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold';
+      modeEl.className =
+        b.shotMode === 'fly'
+          ? 'text-amber-400 font-bold'
+          : b.shotMode === 'defend'
+            ? 'text-sky-400 font-bold'
+            : 'text-emerald-400 font-bold';
     }
 
     const rawEl = document.getElementById('dbg-raw');

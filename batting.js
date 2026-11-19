@@ -235,10 +235,10 @@ export class BattingSystem {
   }
 
   setShotMode(mode, force = false) {
-    // Allow switching GROUND / LOFT anytime before the ball is actually hit!
+    // Allow switching GROUND / LOFT / DEFEND anytime before the ball is actually hit!
     if (this.shotExecutedThisBall && this.modeLocked && !force) return false;
-    const normalized = mode === 'loft' ? 'fly' : mode;
-    if (normalized === 'ground' || normalized === 'fly') {
+    const normalized = mode === 'loft' ? 'fly' : mode === 'defence' ? 'defend' : mode;
+    if (normalized === 'ground' || normalized === 'fly' || normalized === 'defend') {
       this.shotMode = normalized;
       return true;
     }
@@ -246,7 +246,9 @@ export class BattingSystem {
   }
 
   getShotModeLabel() {
-    return this.shotMode === 'fly' ? 'LOFT' : 'GROUND';
+    if (this.shotMode === 'fly') return 'LOFT';
+    if (this.shotMode === 'defend') return 'DEFEND';
+    return 'GROUND';
   }
 
   lockShotMode() {
@@ -472,18 +474,23 @@ export class BattingSystem {
     this.steadyStanceTimer = 0;
   }
 
-  autoTrackBallPosition(ball, dt = 0.016) {
+  autoTrackBallPosition(ball, dt = 0.016, difficulty = 'medium') {
     if (!this.autoTrackBallEnabled || this.manualCreaseOverrideThisBall) return;
     if (!ball || ball.state !== 'bowled' || this.shotExecutedThisBall) return;
     if (this.keys.left || this.keys.right) return;
 
-    // Keep tracking capped inside [-0.24, +0.24] on wide deliveries so genuine wides aren't chased,
-    // while aligning cleanly with all playable deliveries in [-0.44, +0.44].
+    const diffProfile = getDifficultyProfile(difficulty);
+    const assist = diffProfile ? diffProfile.battingAssist : 'light';
+
+    // Scale auto-tracking by difficulty so swing, seam & spin genuinely challenge line on Medium/Hard!
+    // Easy (full): comfortable tracking; Medium (light): subtle lean; Hard (off): minimal drift — manual footwork shines!
     const isProjectedWide = Math.abs(ball.targetX || 0) > 0.52;
-    const trackLimit = isProjectedWide ? 0.24 : 0.44;
-    const predictedX = ball.pos.x + (ball.pos.z < CREASE_Z - 0.55 ? (ball.vel.x || 0) * 0.06 : 0);
+    const baseTrackLimit = assist === 'full' ? 0.36 : assist === 'light' ? 0.22 : 0.10;
+    const trackLimit = isProjectedWide ? Math.min(0.18, baseTrackLimit) : baseTrackLimit;
+    const dampRate = assist === 'full' ? 9.5 : assist === 'light' ? 5.2 : 2.8;
+    const predictedX = ball.pos.x + (ball.pos.z < CREASE_Z - 0.55 ? (ball.vel.x || 0) * 0.04 : 0);
     const targetX = THREE.MathUtils.clamp(predictedX, -trackLimit, trackLimit);
-    this.manualCreaseOffsetX = THREE.MathUtils.damp(this.manualCreaseOffsetX, targetX, 12.0, dt);
+    this.manualCreaseOffsetX = THREE.MathUtils.damp(this.manualCreaseOffsetX, targetX, dampRate, dt);
     this.creaseX = this.manualCreaseOffsetX;
   }
 
@@ -915,7 +922,8 @@ export class BattingSystem {
     this.swingPeakTime = nowSec;
     this.manualSwingArmed = true;
     this.manualSwingAimLockUntil = nowSec + 0.95;
-    this.peakSwingSpeedDeg = isDefensive ? 150 : speedDeg;
+    const effectiveDefend = Boolean(isDefensive || this.shotMode === 'defend');
+    this.peakSwingSpeedDeg = effectiveDefend ? 150 : speedDeg;
 
     if (typeof shotAngleDeg === 'number') {
       const r = THREE.MathUtils.degToRad(shotAngleDeg);
@@ -931,19 +939,19 @@ export class BattingSystem {
     this.custom360AimDeg = Math.round(this.swingDirectionDeg * dirSign);
 
     if (planePitchDeg !== null) {
-      this.swingPlanePitchDeg = planePitchDeg;
+      this.swingPlanePitchDeg = effectiveDefend ? 2 : planePitchDeg;
     } else {
-      this.swingPlanePitchDeg = this.shotMode === 'fly' ? 28 : 4;
+      this.swingPlanePitchDeg = this.shotMode === 'fly' ? 28 : effectiveDefend ? 2 : 4;
     }
     this.isRisingSwing = this.swingPlanePitchDeg > 11;
-    this.activeShotType = isDefensive
+    this.activeShotType = effectiveDefend
       ? SHOT_TYPES.DEFENCE
       : this.classifyShot(
           this.swingPlaneYaw,
           this.shotMode === 'fly',
           this.peakSwingSpeedDeg
         );
-    this.backliftAngle = -0.68;
+    this.backliftAngle = effectiveDefend ? -0.32 : -0.68;
   }
 
   /**
@@ -982,12 +990,11 @@ export class BattingSystem {
     const timeSinceSwing = nowSec - this.swingPeakTime;
     const swungWithinWindow =
       this.manualSwingArmed ||
-      (this.swingPeakTime > 0 && Math.abs(timeSinceSwing) < 0.95) ||
+      (this.swingPeakTime > 0 && Math.abs(timeSinceSwing) < 0.58) ||
       this.isSwinging;
 
     if (!swungWithinWindow) return null;
-    // Wait until the ball enters the 3D bat-contact zone (batZ - 0.88m) so pre-timed button/phone swings
-    // connect right at the bat face without premature distZ penalties!
+    // Wait until the ball enters the 3D bat-contact zone (batZ - 0.88m) to evaluate exact arrival delta
     if (ball.pos.z < batZ - 0.88) return null;
 
     this.shotExecutedThisBall = true;
@@ -1047,16 +1054,16 @@ export class BattingSystem {
       return this.lastContact;
     }
 
-    // Bat reach assist within legal playable corridor (<= 0.52m) without moving batsman's creaseX position:
-    const reachMaxBallX = assist === 'full' ? 0.52 : assist === 'light' ? 0.48 : 0.42;
-    const reachLerp = assist === 'full' ? 0.82 : assist === 'light' ? 0.70 : 0.55;
+    // Bat reach assist scaled tightly by difficulty so swing/spin outside off genuinely challenges the bat!
+    const reachMaxBallX = assist === 'full' ? 0.50 : assist === 'light' ? 0.44 : 0.38;
+    const reachLerp = assist === 'full' ? 0.68 : assist === 'light' ? 0.42 : 0.22;
     const effectiveReachX =
       Math.abs(ball.pos.x) <= reachMaxBallX
-        ? THREE.MathUtils.lerp(this.creaseX, THREE.MathUtils.clamp(ball.pos.x, -0.46, 0.46), reachLerp)
+        ? THREE.MathUtils.lerp(this.creaseX, THREE.MathUtils.clamp(ball.pos.x, -0.44, 0.44), reachLerp)
         : this.creaseX;
 
-    // Apply Shot Assist (Difficulty-scaled gap snap: 10.5° on Easy, 7.5° on Medium, 4.5° on Hard)
-    const maxGapSnapDeg = assist === 'full' ? 10.5 : assist === 'light' ? 7.5 : 4.5;
+    // Difficulty-scaled Gap Snap: helpful on Easy (7.5°), tiny nudge on Medium (2.0°), OFF on Hard (0°) so Field Radar truly matters!
+    const maxGapSnapDeg = assist === 'full' ? 7.5 : assist === 'light' ? 2.0 : 0.0;
     if (this.shotAssistGapSnap && maxGapSnapDeg > 0 && Array.isArray(hooks.fielders) && this.activeShotType.id !== 'defence') {
       this.swingPlaneYaw = this.computeGapSnappedYaw(this.swingPlaneYaw, hooks.fielders, maxGapSnapDeg);
     }
@@ -1125,35 +1132,76 @@ export class BattingSystem {
     const batPlaneTimeOffset = batZShift / incomingVz;
     const idealTapTime = (ball.idealContactTime || nowSec) + batPlaneTimeOffset - (0.085 - latencyOffsetSec);
     const rawTimingGapSec = this.swingPeakTime - idealTapTime;
-    // If the user pressed LOFT/STROKE early during ball flight or run-up (rawTimingGapSec < 0),
-    // cap the early timing penalty to a playable window so pre-timed button taps still connect cleanly!
-    const maxEarlyPenaltySec = (win.good + 28) * 0.001;
+    // Authentic Early-Swing Risk:
+    // - Easy (full assist): gentle floor inside mistime window so beginners still connect occasionally, NEVER free GOOD!
+    // - Medium & Hard: NO early-mash forgiveness! Swinging too early (or getting fooled by a Slower Ball / Cutter)
+    //   produces a true EARLY MISTIME (leading edge / skyer) or a clean SWING & MISS!
+    const isDefenceShot = this.activeShotType.id === 'defence' || this.shotMode === 'defend';
     const timingGapSec =
-      rawTimingGapSec < -maxEarlyPenaltySec
-        ? - THREE.MathUtils.lerp(win.good * 0.85 * 0.001, maxEarlyPenaltySec, 0.5)
+      assist === 'full'
+        ? Math.max(rawTimingGapSec, -((win.mistime - 12) * 0.001))
         : rawTimingGapSec;
     const clockGapMs = Math.abs(Math.round(timingGapSec * 1000));
     const absGapMs = clockGapMs;
     const timingGapMs = timingGapSec < 0 ? -absGapMs : absGapMs;
 
-    const isPerfectTiming = absGapMs <= win.perfect && distZ <= 1.65;
-    const isGoodTiming = !isPerfectTiming && absGapMs <= win.good && distZ <= 1.88;
-    const isCompleteMiss = !isPerfectTiming && !isGoodTiming && (absGapMs > win.mistime + 90 || distZ > 2.05);
+    // Defence gets a slightly wider safe-block window (+28ms) rewarding tactical survival on tough balls!
+    const defBonusMs = isDefenceShot ? 28 : 0;
+    const missBufferMs = assist === 'full' ? 60 : assist === 'light' ? 32 : 18;
+    const isPerfectTiming = absGapMs <= win.perfect + defBonusMs && distZ <= 1.50;
+    const isGoodTiming = !isPerfectTiming && absGapMs <= win.good + defBonusMs && distZ <= 1.66;
+    const swungWayTooEarly = timingGapMs < -(win.mistime + missBufferMs + defBonusMs);
+    const isCompleteMiss =
+      !isPerfectTiming &&
+      !isGoodTiming &&
+      (swungWayTooEarly || absGapMs > win.mistime + missBufferMs + defBonusMs || distZ > 1.75);
 
-    // 3. Contact Point & Sweet Spot vs Bat Edge
-    const assistTolerance = (assist === 'full' ? 0.94 : assist === 'light' ? 0.80 : 0.64) * surgeSweetBoost;
+    // 3. Contact Point, Late Swing/Spin Movement Challenge & Sweet Spot vs Bat Edge
+    const assistTolerance = (assist === 'full' ? 0.84 : assist === 'light' ? 0.66 : 0.50) * surgeSweetBoost;
     const batSweetSpotX = effectiveReachX;
-    const lateralError = Math.abs(ball.pos.x - batSweetSpotX) * 0.42;
+    const lateralScale = assist === 'full' ? 0.50 : assist === 'light' ? 0.68 : 0.85;
+    // High swing, seam cut, or spin turn increases edge danger when timing isn't perfect!
+    const ballMoveMag = Math.max(
+      Math.abs(ball.swingCurl || 0),
+      Math.abs(ball.spinTurn || 0),
+      Math.abs(ball.seamCut || 0)
+    );
+    const movementDifficultyPenalty =
+      !isPerfectTiming && !isDefenceShot && ballMoveMag > 0.42
+        ? (assist === 'full' ? 0.03 : assist === 'light' ? 0.08 : 0.14) * ballMoveMag
+        : 0;
+    const lateralError = Math.abs(ball.pos.x - batSweetSpotX) * lateralScale + movementDifficultyPenalty;
+
+    // Yorker blind-loft punishment: swinging wildly in FLY mode at a toe-crushing Yorker without good timing = YORKED!
+    const yorkerBlindLoftMiss =
+      isYorker &&
+      this.shotMode === 'fly' &&
+      !isBehindWicketShot &&
+      !isPerfectTiming &&
+      !isGoodTiming &&
+      assist !== 'full';
 
     const unorthodoxLengthPenalty =
       invalidBehindKeeperAttempt ||
       (isBehindWicketShot && isShortBall && !isPerfectTiming && !isGoodTiming && assist !== 'full');
 
-    if (isCompleteMiss || lateralError > assistTolerance) {
+    if (isCompleteMiss || yorkerBlindLoftMiss || lateralError > assistTolerance) {
       this.lastLaunchAngleDeg = 0;
+      const missLabelEn = yorkerBlindLoftMiss
+        ? 'YORKED · MISSED UNDER THE BAT!'
+        : swungWayTooEarly
+          ? 'SWUNG TOO EARLY · BEATEN!'
+          : timingGapMs > win.mistime
+            ? 'TOO LATE · BEATEN FOR PACE!'
+            : 'PLAY & MISS · BEATEN!';
+      const missLabelHi = yorkerBlindLoftMiss
+        ? 'यॉर्कर पर चूक · बल्ले के नीचे से निकली!'
+        : swungWayTooEarly
+          ? 'बहुत जल्दी स्विंग · गेंद से चूके!'
+          : 'बल्ला चूका · बेहतरीन गेंद!';
       this.lastContact = {
-        timingLabelEn: 'PLAY & MISS',
-        timingLabelHi: 'बल्ला चूका!',
+        timingLabelEn: missLabelEn,
+        timingLabelHi: missLabelHi,
         timingOffsetMs: timingGapMs,
         timingQuality: 0,
         batSpeedDeg: Math.round(this.peakSwingSpeedDeg),
@@ -1164,7 +1212,7 @@ export class BattingSystem {
         swingPlaneLabel: this.isRisingSwing
           ? `RISING (+${Math.round(this.swingPlanePitchDeg)}°)`
           : `FLAT (${Math.round(this.swingPlanePitchDeg)}°)`,
-        contactType: 'Missed',
+        contactType: yorkerBlindLoftMiss ? 'Missed Yorker' : swungWayTooEarly ? 'Early Swing Miss' : 'Missed',
         shotKey: this.activeShotType.shotKey,
         shotAnim: this.activeShotType.anim,
         shotNameEn: this.activeShotType.nameEn,
@@ -1246,30 +1294,87 @@ export class BattingSystem {
     // For RHB (handSign = +1): signedOffsetX > 0 is toward the OUTSIDE edge (off side), < 0 is toward INSIDE edge (leg side)
     const signedOffsetX = (ball.pos.x - batSweetSpotX) * handSign;
 
-    if (this.shotMode === 'ground') {
-      // ==================== GROUND MODE (0° - 8° Fast Carpet Rockets) ====================
+    // Deceptive Slower Ball / Off-Cutter early-swing detection (classic caught-and-bowled / cover chip trap!)
+    const isSlowerVariation =
+      ball.variationId === 'slower_ball' ||
+      ball.variationId === 'off_cutter' ||
+      ball.variationId === 'leg_cutter' ||
+      ball.variationId === 'knuckleball' ||
+      ball.variationId === 'slower_bouncer' ||
+      isSpinOrSlow;
+    const earlyLeadingEdgeTrap =
+      !isDefenceShot &&
+      !isPerfectTiming &&
+      !isGoodTiming &&
+      timingGapMs < -(win.good * 0.92) &&
+      (isSlowerVariation || Math.random() < (assist === 'off' ? 0.55 : 0.35));
+
+    if (isDefenceShot) {
+      // ==================== DEFEND MODE (Safe Soft-Hands Block on Tough Balls) ====================
+      launchAngleDeg = 1.6;
+      launchSpeedMs = 4.5 + normBatSpeed * 2.8;
+      contactType = 'Solid Defensive Block';
+      timingLabelEn = isPerfectTiming ? 'SOLID DEFENCE' : 'DEFENSIVE BLOCK';
+      timingLabelHi = 'मज़बूत डिफेंस!';
+      // Even defence can nick a ripping late-mover on Hard if badly mistimed off-line
+      if (!isPerfectTiming && !isGoodTiming && lateralError > (assist === 'off' ? 0.34 : 0.44)) {
+        ball.edged = true;
+        ball.edgeType = 'thin_edge';
+        contactType = 'Soft Edge (Defence)';
+        timingLabelEn = 'OUTSIDE EDGE · DEFENDING!';
+        timingLabelHi = 'डिफेंस में बाहरी किनारा!';
+        launchAngleDeg = THREE.MathUtils.randFloat(6.5, 11.5);
+        launchSpeedMs = Math.max(12.5, incomingBallSpeedMs * 0.55);
+        finalYaw = handSign * THREE.MathUtils.randFloat(2.72, 2.98);
+      }
+    } else if (this.shotMode === 'ground') {
+      // ==================== GROUND MODE (0° - 8° Carpet Drives & Real Edge Risk) ====================
       const flatFactor = THREE.MathUtils.clamp(this.swingPlanePitchDeg / 20, 0, 1);
       launchAngleDeg = THREE.MathUtils.lerp(1.8, 7.0, flatFactor);
       launchSpeedMs *= timingQuality;
 
-      if (isShortBall && absAngleDeg >= 30 && (isPerfectTiming || isGoodTiming)) {
+      if (isYorker) {
+        // Digging out a Yorker on the ground is the smart cricket play (safe, lower exit pace unless perfect)
+        launchSpeedMs *= isPerfectTiming ? 0.96 : 0.78;
+      } else if (isShortBall && absAngleDeg >= 30 && (isPerfectTiming || isGoodTiming)) {
         // Rolled-wrist Pull / Cut / Hook hammers downward into turf and races to the rope!
-        launchSpeedMs *= isPerfectTiming ? 1.16 : 1.09;
+        launchSpeedMs *= isPerfectTiming ? 1.15 : 1.07;
         launchAngleDeg = THREE.MathUtils.clamp(launchAngleDeg + 1.8, 3.0, 8.8);
+      } else if (isShortBall && absAngleDeg < 26 && !isPerfectTiming && assist !== 'full') {
+        // Cramped front-foot push at a rising bouncer loses pace and risks a fend/splice
+        launchSpeedMs *= 0.76;
       } else if ((isGoodLength || isFullBall) && !isBehindWicketShot && (isPerfectTiming || isGoodTiming)) {
-        launchSpeedMs *= isPerfectTiming ? 1.14 : 1.07;
+        launchSpeedMs *= isPerfectTiming ? 1.13 : 1.05;
       }
 
-      const edgeThreshold = (assist === 'full' ? 0.56 : assist === 'light' ? 0.46 : 0.36) * surgeSweetBoost;
+      const edgeThreshold = (assist === 'full' ? 0.48 : assist === 'light' ? 0.34 : 0.24) * surgeSweetBoost;
+      const mistimeEdgeProb = assist === 'full' ? 0.46 : assist === 'light' ? 0.68 : 0.80;
+      const goodOffLineEdge =
+        isGoodTiming &&
+        assist !== 'full' &&
+        lateralError > edgeThreshold + 0.06 &&
+        Math.random() < (assist === 'off' ? 0.48 : 0.28);
+
       const isGroundEdge =
-        (!isPerfectTiming && !isGoodTiming && Math.random() < 0.52) ||
+        earlyLeadingEdgeTrap ||
+        goodOffLineEdge ||
+        (!isPerfectTiming && !isGoodTiming && Math.random() < mistimeEdgeProb) ||
         (!isPerfectTiming && !isGoodTiming && lateralError > edgeThreshold) ||
         unorthodoxLengthPenalty;
 
       if (isGroundEdge) {
         ball.edged = true;
-        const isInsideHalf = signedOffsetX < -0.03 || (timingGapMs < -95 && signedOffsetX < 0.08);
-        if (isInsideHalf && Math.abs(ball.pos.x) < 0.28 && Math.random() < 0.36) {
+        const isInsideHalf = signedOffsetX < -0.03 || (timingGapMs < -90 && signedOffsetX < 0.07);
+        if (earlyLeadingEdgeTrap && !isInsideHalf) {
+          // Swung early on a slower ball / spinner => Leading Edge pop-up toward bowler / covers!
+          ball.edgeType = 'leading_edge';
+          contactType = 'Leading Edge (Early Swing)';
+          timingLabelEn = 'LEADING EDGE · POPPED UP!';
+          timingLabelHi = 'लीडिंग एज · हवा में आसान कैच!';
+          launchAngleDeg = THREE.MathUtils.randFloat(34, 48);
+          launchSpeedMs = THREE.MathUtils.randFloat(12.2, 16.8);
+          finalYaw = handSign * THREE.MathUtils.randFloat(0.18, 0.78);
+        } else if (isInsideHalf && Math.abs(ball.pos.x) < 0.28 && Math.random() < (assist === 'off' ? 0.44 : 0.34)) {
           ball.edgeType = 'played_on';
           contactType = 'Played-On (Inside Edge)';
           timingLabelEn = 'INSIDE EDGE · PLAYED ON!';
@@ -1303,54 +1408,57 @@ export class BattingSystem {
           contactType = 'Thick Outside Edge';
           timingLabelEn = 'THICK OUTSIDE EDGE!';
           timingLabelHi = 'मोटा बाहरी किनारा!';
-          launchAngleDeg = THREE.MathUtils.randFloat(7.0, 15.5);
+          launchAngleDeg = THREE.MathUtils.randFloat(7.5, 16.5);
           launchSpeedMs = Math.max(15.5, incomingBallSpeedMs * THREE.MathUtils.randFloat(0.66, 0.82));
           finalYaw = handSign * THREE.MathUtils.randFloat(2.22, 2.64);
         }
       }
     } else {
-      // ==================== FLY MODE (High Risk / High Reward Lofted Shots) ====================
-      // All delivery lengths are playable with appropriate shot selection & timing:
-      // - Full balls: reward drives and lofted shots (+6% power).
-      // - Good-length balls: allow clean drives and lofts on both neutral (Touch/Phone) and front footwork.
-      // - Short balls: reward pull, hook, cut & upper-cut shots; straight lofts require sweet timing.
-      // - Yorkers: harder to get under for a straight six (0.89x), while 360° Scoop/Ramp uses the pace (1.03x).
+      // ==================== FLY MODE (High Risk / High Reward Lofted Shots + Length IQ) ====================
+      // - Full balls: reward sweet-spot drives & lofted sixes (+6% power).
+      // - Good-length balls: demand crisp timing; mistimes hang in the air!
+      // - Short balls / Bouncers: Pull/Hook/Cut/Upper-Cut thrive (1.10x), while straight front-foot lofts risk a Top-Edge skyer!
+      // - Yorkers: Straight blind loft is jammed (0.68x) unless timed to perfection (Helicopter) or Scooped behind wicket!
       let lengthPowerMod = 1.0;
       let lengthAngleBias = 0;
+      let lengthMismatchEdge = false;
 
       if (isYorker) {
         if (isBehindWicketShot) {
-          lengthPowerMod = 1.03;
+          lengthPowerMod = isPerfectTiming ? 1.04 : 0.84;
           lengthAngleBias = 4.0;
+          if (!isPerfectTiming && assist !== 'full') lengthMismatchEdge = true;
         } else {
-          lengthPowerMod = 0.89;
-          lengthAngleBias = -4.5;
+          // Toe-crushing Yorker: only PERFECT timing digs out a Helicopter loft; Good timing gets jammed for a catchable lob!
+          lengthPowerMod = isPerfectTiming ? 0.90 : 0.66;
+          lengthAngleBias = isPerfectTiming ? -2.0 : 8.5;
+          if (!isPerfectTiming && assist !== 'full') lengthMismatchEdge = true;
         }
       } else if (isFullBall) {
-        lengthPowerMod = isBehindWicketShot ? 1.07 : 1.06;
+        lengthPowerMod = isBehindWicketShot ? 1.06 : 1.06;
         lengthAngleBias = 1.5;
       } else if (isShortBall) {
         const isPullHookOrCut = absAngleDeg >= 30;
         if (isPullHookOrCut) {
           // Short-ball Pull, Hook & Upper-Cut ride the pace & bounce for crisp sixes over square leg / third man!
-          lengthPowerMod = absAngleDeg >= 90 ? 1.12 : 1.08;
+          lengthPowerMod = absAngleDeg >= 90 ? 1.11 : 1.07;
           lengthAngleBias = this.activeShotType.id === 'uppercut' ? 4.5 : 1.5;
         } else {
-          lengthPowerMod = 0.96;
-          lengthAngleBias = 3.2;
+          // Straight front-foot loft against a rising Bouncer => splices off the shoulder of the bat unless perfect!
+          lengthPowerMod = 0.78;
+          lengthAngleBias = 11.0;
+          if (!isPerfectTiming && assist !== 'full') lengthMismatchEdge = true;
         }
       } else if (isGoodLength) {
-        // Solution 1 + 2: Smart Footwork gives full front-foot drive/loft bonus (1.04x) on forward shots
-        // and clean back-foot power (1.02x) on square cuts/pulls — zero random RNG footwork penalty!
-        lengthPowerMod = this.footwork === 'front' ? 1.04 : 1.02;
+        lengthPowerMod = this.footwork === 'front' ? 1.01 : 0.99;
         lengthAngleBias = 1.4;
       }
 
-      // Subtle off-center contact scaling (rewards hitting near the middle of the bat without killing good shots)
-      const sweetCenterMod = THREE.MathUtils.clamp(1.0 - Math.max(0, lateralError - 0.16) * 0.32, 0.84, 1.0);
-      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.48 : assist === 'light' ? 0.38 : 0.30) * surgeSweetBoost;
+      // Off-center contact scaling: punishes wide reaching swings more authentically on Medium/Hard
+      const sweetCenterMod = THREE.MathUtils.clamp(1.0 - Math.max(0, lateralError - 0.12) * 0.44, 0.76, 1.0);
+      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.44 : assist === 'light' ? 0.30 : 0.22) * surgeSweetBoost;
 
-      if (isPerfectTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty) {
+      if (isPerfectTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty && !lengthMismatchEdge) {
         // PERFECT TIMING IN FLY MODE => Clean high trajectory calibrated to clear the 52m boundary (60.8m from striker crease)!
         const riseNorm = THREE.MathUtils.clamp((this.swingPlanePitchDeg - 10) / 35, 0, 1);
         launchAngleDeg = THREE.MathUtils.clamp(
@@ -1364,46 +1472,56 @@ export class BattingSystem {
           lengthPowerMod *
           sweetCenterMod *
           surgePowerBoost;
-      } else if (isGoodTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty) {
-        // GOOD TIMING IN FLY MODE => Powerful lofted drive (carries 55m-68m for SIX/FOUR in open gaps!)
+      } else if (isGoodTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty && !lengthMismatchEdge) {
+        // GOOD TIMING IN FLY MODE => Strong lofted hit, but must find the gap or carry deep (boundary riders can catch!)
         launchAngleDeg = THREE.MathUtils.clamp(
-          THREE.MathUtils.randFloat(26.0, 35.5) + lengthAngleBias * 0.7,
+          THREE.MathUtils.randFloat(26.5, 36.5) + lengthAngleBias * 0.7,
           23,
-          41
+          42
         );
         launchSpeedMs =
-          (15.0 + normBatSpeed * 16.0 + paceBonusMs * 0.50) *
+          (13.8 + normBatSpeed * 14.8 + paceBonusMs * 0.48) *
           timingQuality *
           lengthPowerMod *
           sweetCenterMod *
           surgePowerBoost;
       } else {
-        // MISTIMED (EARLY/LATE) OR WIDE OUTER EDGE SLASH IN FLY MODE => Thick Edge Slash or High Top-Edge Skyer!
+        // MISTIMED / LENGTH-MISMATCH / EARLY SLOWER-BALL / WIDE OUTER EDGE IN FLY MODE => Catchable Skyer, Leading Edge, or Slip Slash!
         ball.edged = true;
-        if (flyOuterEdgeRisk && signedOffsetX >= 0) {
+        if (earlyLeadingEdgeTrap) {
+          ball.edgeType = 'leading_edge';
+          contactType = 'Leading Edge (Early Swing)';
+          timingLabelEn = 'EARLY SWING · LEADING EDGE!';
+          timingLabelHi = 'जल्दी स्विंग · हवा में आसान कैच!';
+          launchAngleDeg = THREE.MathUtils.randFloat(38, 52);
+          launchSpeedMs = THREE.MathUtils.randFloat(12.8, 17.8);
+          finalYaw = handSign * THREE.MathUtils.randFloat(0.15, 0.85);
+        } else if (flyOuterEdgeRisk && signedOffsetX >= 0) {
           ball.edgeType = 'thick_edge';
           contactType = 'Thick Outside Edge (Slash)';
           timingLabelEn = 'OUTSIDE EDGE · SLASHED IN THE AIR!';
           timingLabelHi = 'बाहरी किनारा · स्लिप/गली की तरफ हवा में!';
           launchAngleDeg = THREE.MathUtils.randFloat(16, 28);
-          launchSpeedMs = THREE.MathUtils.randFloat(16.5, 22.5);
+          launchSpeedMs = THREE.MathUtils.randFloat(16.0, 21.5);
           finalYaw = handSign * THREE.MathUtils.randFloat(2.10, 2.65);
+        } else if (isYorker && lengthMismatchEdge) {
+          ball.edgeType = 'top_edge';
+          contactType = 'Jammed Yorker Lob';
+          timingLabelEn = 'JAMMED YORKER · LOOPED UP!';
+          timingLabelHi = 'यॉर्कर पर फंसा शॉट · कैच का खतरा!';
+          launchAngleDeg = THREE.MathUtils.randFloat(32, 46);
+          launchSpeedMs = THREE.MathUtils.randFloat(12.2, 16.5);
+          finalYaw += (Math.random() - 0.5) * 0.25;
         } else {
           ball.edgeType = 'top_edge';
-          contactType = 'Top Edge (Mistimed FLY)';
-          timingLabelEn = 'TOP EDGE · IN THE AIR!';
-          timingLabelHi = 'टॉप एज · हवा में कैच का खतरा!';
-          launchAngleDeg = THREE.MathUtils.randFloat(44, 58);
-          launchSpeedMs = THREE.MathUtils.randFloat(13.8, 19.5);
+          contactType = isShortBall && lengthMismatchEdge ? 'Top Edge (Bouncer)' : 'Top Edge (Mistimed FLY)';
+          timingLabelEn = isShortBall && lengthMismatchEdge ? 'BOUNCER TOP EDGE · SKIED!' : 'TOP EDGE · IN THE AIR!';
+          timingLabelHi = isShortBall && lengthMismatchEdge ? 'बाउंसर पर टॉप एज · हवा में!' : 'टॉप एज · हवा में कैच का खतरा!';
+          launchAngleDeg = THREE.MathUtils.randFloat(46, 60);
+          launchSpeedMs = THREE.MathUtils.randFloat(13.2, 18.8);
           finalYaw += (Math.random() - 0.5) * 0.35;
         }
       }
-    }
-
-    if (this.activeShotType.id === 'defence') {
-      launchAngleDeg = 2.0;
-      launchSpeedMs = 5.5 + normBatSpeed * 3.5;
-      contactType = 'Defensive Block';
     }
 
     // Compute 3D velocity vector across full 360° from launchAngleDeg and finalYaw:

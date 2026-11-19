@@ -120,8 +120,64 @@ export class FieldingSystem {
     this.throwSpeed = 29.5;
     this.catchAttemptedThisBall = false;
     this.diveAttemptedThisBall = false;
+    this.lastAdaptedZone = null;
 
     this.initFielders();
+  }
+
+  /**
+   * Dynamically shifts the nearest non-slip fielder to plug a scoring corridor
+   * when the batter hammers consecutive boundaries into the same zone!
+   */
+  adaptFieldToHotZone(shotAngleRad, isPowerplay = false) {
+    if (this.manualOverride || typeof shotAngleRad !== 'number' || !Number.isFinite(shotAngleRad)) {
+      return null;
+    }
+    const targetDist = isPowerplay ? 23.5 : 43.5;
+    const targetX = THREE.MathUtils.clamp(Math.sin(shotAngleRad) * targetDist, -45.5, 45.5);
+    const targetZ = THREE.MathUtils.clamp(-Math.cos(shotAngleRad) * targetDist, -45.5, 38.0);
+
+    // Check if a fielder already guards within 11m of that exact corridor
+    for (let i = 0; i < this.fielders.length; i++) {
+      const f = this.fielders[i];
+      if (Math.hypot(f.homePos.x - targetX, f.homePos.z - targetZ) < 11.0) {
+        return null;
+      }
+    }
+
+    // Pick a flexible fielder from the opposite side (skip First Slip if present)
+    let moveIdx = -1;
+    let bestOppScore = -Infinity;
+    for (let i = 0; i < this.fielders.length; i++) {
+      const f = this.fielders[i];
+      if (f.role === 'First Slip') continue;
+      const distFromTarget = Math.hypot(f.homePos.x - targetX, f.homePos.z - targetZ);
+      const isDeep = Math.hypot(f.homePos.x, f.homePos.z) > 25.0;
+      // Preserve Powerplay outside-circle limits by swapping a deep fielder for a deep guard when needed
+      if (isPowerplay && targetDist > 25.0 && !isDeep) continue;
+      if (distFromTarget > bestOppScore) {
+        bestOppScore = distFromTarget;
+        moveIdx = i;
+      }
+    }
+
+    if (moveIdx === -1) return null;
+    const mover = this.fielders[moveIdx];
+    mover.homePos.set(targetX, 0, targetZ);
+    mover.rotY = Math.atan2(-targetX, -targetZ);
+    const deg = Math.round(THREE.MathUtils.radToDeg(shotAngleRad));
+    const zoneLabel =
+      Math.abs(deg) <= 25
+        ? 'Straight'
+        : deg > 25 && deg <= 110
+          ? 'Off-Side / Cover'
+          : deg < -25 && deg >= -110
+            ? 'Leg-Side / Mid-Wicket'
+            : deg > 110
+              ? 'Third Man / Behind'
+              : 'Fine Leg / Behind';
+    this.lastAdaptedZone = zoneLabel;
+    return { fielder: mover, zoneLabel };
   }
 
   initFielders() {
@@ -339,37 +395,48 @@ export class FieldingSystem {
   }
 
   /**
-   * Computes realistic catch probability (0.10 to 0.84, NEVER 100%)
-   * Depends on ball height, ball speed, and fielder sprint distance from home position.
+   * Computes realistic catch probability (0.18 to 0.93, NEVER 100%)
+   * Uses balanced weighted penalties so regulation mistimed skyers directly to a fielder are caught ~75-88% of the time,
+   * while fierce bullet hits or long diving sprints remain genuinely dramatic!
    */
   computeCatchProbability(ball, fielder, difficulty = 'pro') {
     const ballSpeedMs = ball.vel.length();
     const heightY = ball.pos.y;
     const distFromHome = Math.hypot(fielder.pos.x - fielder.homePos.x, fielder.pos.z - fielder.homePos.z);
 
-    // 1. Height factor: chest-to-head height (0.70m - 1.75m) is ideal; ankle-low or jumping overhead (>1.80m) is harder
-    let heightFactor = 0.86;
-    if (heightY < 0.45) {
-      heightFactor = THREE.MathUtils.mapLinear(heightY, 0.18, 0.45, 0.28, 0.68);
-    } else if (heightY > 1.75) {
-      heightFactor = THREE.MathUtils.mapLinear(heightY, 1.75, 2.28, 0.70, 0.24);
+    // 1. Height quality: chest-to-head height (0.65m - 1.78m) is comfortable; ankle-low or jumping overhead is harder
+    let heightQuality = 0.96;
+    if (heightY < 0.48) {
+      heightQuality = THREE.MathUtils.mapLinear(heightY, 0.16, 0.48, 0.45, 0.84);
+    } else if (heightY > 1.78) {
+      heightQuality = THREE.MathUtils.mapLinear(heightY, 1.78, 2.32, 0.84, 0.42);
     }
 
-    // 2. Speed factor: high hang-time skyers (<18 m/s) are easier; fierce flat hits (>26 m/s) are harder to hold
-    const speedFactor = THREE.MathUtils.clamp(
-      THREE.MathUtils.mapLinear(ballSpeedMs, 11, 32, 0.92, 0.28),
-      0.22,
-      0.92
+    // 2. Speed quality: high hang-time skyers & top-edges (<20 m/s) are regulation catches; blistering flat hits (>28 m/s) are tougher
+    const speedQuality = THREE.MathUtils.clamp(
+      THREE.MathUtils.mapLinear(ballSpeedMs, 12, 34, 0.96, 0.42),
+      0.34,
+      0.96
     );
 
-    // 3. Distance factor: sprinting a long way lowers balance and catch completion chance
-    const distFactor = THREE.MathUtils.clamp(1.0 - (distFromHome / 20.0) * 0.50, 0.38, 1.0);
+    // 3. Distance / balance quality: stationary or short jog = steady hands; long 15m+ sprint = off-balance catch
+    const distQuality = THREE.MathUtils.clamp(1.0 - (distFromHome / 24.0) * 0.42, 0.52, 1.0);
 
-    // Difficulty scalar from Easy (0.56) -> Medium (0.72) -> Hard (0.84)
+    // Weighted combination instead of collapsing 4 independent factors
+    let rawChance = heightQuality * 0.34 + speedQuality * 0.38 + distQuality * 0.28;
+
+    // Bonus for classic top-edge / leading-edge skyers that hang in the air
+    if (ball.edged && (ball.edgeType === 'top_edge' || ball.edgeType === 'leading_edge')) {
+      rawChance = Math.min(0.96, rawChance + 0.08);
+    }
+
+    // Difficulty skill scalar: Easy (0.64) -> Medium (0.80) -> Hard (0.90)
     const diffProfile = getDifficultyProfile(difficulty);
-    const diffScalar = diffProfile ? diffProfile.fielderCatchSkill : 0.76;
+    const diffScalar = diffProfile ? diffProfile.fielderCatchSkill : 0.80;
+    // Blend raw chance with difficulty skill so Easy stays fun while Medium/Hard catch regulation mistimes reliably
+    const finalProb = rawChance * (0.36 + 0.64 * diffScalar);
 
-    return THREE.MathUtils.clamp(heightFactor * speedFactor * distFactor * diffScalar, 0.10, 0.84);
+    return THREE.MathUtils.clamp(finalProb, 0.18, 0.93);
   }
 
   /**
@@ -600,12 +667,14 @@ export class FieldingSystem {
     }
     this.activeChaserIndex = bestIdx;
 
-    // Realistic catching & ground fielding radii (no superhuman jump or cross-field teleportation)
-    const CATCH_RADIUS = 0.96;
-    const BOUNDARY_ROPE_CATCH_RADIUS = 1.12;
-    const SLIP_EDGE_CATCH_RADIUS = 1.38;
-    const GROUND_PICKUP_RADIUS = 1.15;
-    const DIVE_STOP_RADIUS = 2.25;
+    // Realistic catching & ground fielding radii (slightly sharper on Medium/Hard so aerial mistimes into fielders are punished!)
+    const isHardDiff = diffProfile && diffProfile.id === 'hard';
+    const isMedDiff = diffProfile && diffProfile.id === 'medium';
+    const CATCH_RADIUS = isHardDiff ? 1.18 : isMedDiff ? 1.08 : 0.96;
+    const BOUNDARY_ROPE_CATCH_RADIUS = isHardDiff ? 1.32 : isMedDiff ? 1.22 : 1.10;
+    const SLIP_EDGE_CATCH_RADIUS = isHardDiff ? 1.55 : 1.44;
+    const GROUND_PICKUP_RADIUS = 1.20;
+    const DIVE_STOP_RADIUS = 2.35;
 
     for (let idx = 0; idx < this.fielders.length; idx++) {
       if (ball.state !== 'hit') return;
