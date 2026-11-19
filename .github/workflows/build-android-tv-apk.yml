@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       game_url:
-        description: "Hosted Box Cricket 3D URL (leave blank for default)"
+        description: "Leave as 'local' for built-in offline APK (zero 404), or paste your permanent Cloud Run https:// URL"
         required: false
-        default: "https://ais-pre-zvp4v3wgakmcnnxwlzmq5a-611650499151.asia-east1.run.app"
+        default: "local"
   push:
     paths:
       - "android-tv-apk/**"
@@ -18,6 +18,26 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Set up Node.js (to bundle Three.js inside APK)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Bundle Game Web Assets into Android TV APK
+        run: |
+          npm install three@0.170.0 --no-save --no-audit --no-fund
+          DEST="android-tv-apk/app/src/main/assets"
+          rm -rf "$DEST"
+          mkdir -p "$DEST/node_modules/three/build" "$DEST/node_modules/three/examples"
+          cp index.html styles.css middled_menu.css manifest.webmanifest "$DEST/"
+          cp batting.js bowling.js commentary.js config.js fielding.js modes.js net.js physics.js ui.js "$DEST/"
+          cp -r src assets fonts icons "$DEST/"
+          cp node_modules/three/build/three.module.js "$DEST/node_modules/three/build/"
+          if [ -f node_modules/three/build/three.core.js ]; then
+            cp node_modules/three/build/three.core.js "$DEST/node_modules/three/build/"
+          fi
+          cp -r node_modules/three/examples/jsm "$DEST/node_modules/three/examples/"
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -33,7 +53,7 @@ jobs:
       - name: Build Android TV APK
         working-directory: android-tv-apk
         run: |
-          URL="${{ github.event.inputs.game_url || 'https://ais-pre-zvp4v3wgakmcnnxwlzmq5a-611650499151.asia-east1.run.app' }}"
+          URL="${{ github.event.inputs.game_url || 'local' }}"
           gradle assembleRelease -PappUrl="$URL" --no-daemon
 
       - name: Rename APK Artifact
