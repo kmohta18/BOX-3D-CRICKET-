@@ -10,6 +10,8 @@ import {
 } from './config.js';
 import { sound } from './assets/audio.js';
 import { commentary } from './commentary.js';
+import { initTvDpadNavigation } from './src/tv_dpad.js';
+import { initPwaInstall } from './src/pwa_install.js';
 
 /**
  * TV Broadcast Lower-Third Scoreboard, Corner Menu, Transient Timing Meter,
@@ -101,13 +103,15 @@ export class UIManager {
     this.captionTimeout = null;
     this.deliveryPreviewTimeout = null;
     this.wasShotExecutedLastCheck = false;
-    this.setupMode = ['t20', 'last_over', 'run_chase'].includes(gameConfig.modeId)
+    this.setupMode = ['t20', 'last_over', 'run_chase', 'super_over'].includes(gameConfig.modeId)
       ? gameConfig.modeId
       : 'run_chase';
     this.setupStep = 1;
     this.rolledChaseTarget = rollRunChaseTarget(gameConfig.difficulty, this.setupMode);
     this.t20TossDone = false;
     this.t20UserWonToss = false;
+    this.drsPromptTimeout = null;
+    this.overWagonTimeout = null;
   }
 
   t(key) {
@@ -116,6 +120,7 @@ export class UIManager {
 
   init() {
     this.setUISize(this.uiSize);
+    this.injectProFeaturesUI();
     this.populateTeamSelects();
     this.populateAssetLicenses();
     this.populateBowlingVariationSelect();
@@ -126,9 +131,13 @@ export class UIManager {
       this.showCommentaryCaption(text);
     };
     this.bindEvents();
+    this.bindVirtualJoystickAndPadEvents();
     this.updateLanguageLabels();
     this.updateShotModeHUD();
     this.updateHUD();
+    this.syncVirtualControlsVisibility();
+    initTvDpadNavigation(this.app, this);
+    this.pwaInstall = initPwaInstall(this.app, this);
   }
 
   setUISize(size = 'medium') {
@@ -196,7 +205,7 @@ export class UIManager {
     setVal('setting-replays', gameConfig.replays);
     setVal('setting-ui-size', gameConfig.uiSize);
     setVal('setting-quality', gameConfig.graphicsQuality);
-    setVal('setting-dof', gameConfig.dofEnabled ? 'on' : 'off');
+    setVal('setting-dof', 'off');
     setVal('setting-sensitivity', gameConfig.sensitivity);
     setTxt('lbl-sensitivity-val', `${Number(gameConfig.sensitivity || 1).toFixed(1)}x`);
 
@@ -225,49 +234,6 @@ export class UIManager {
 
   setSetupStep(step = 1) {
     this.setupStep = Math.max(1, Math.min(4, Number(step) || 1));
-
-    for (let i = 1; i <= 4; i++) {
-      const panel = document.getElementById(`setup-step-panel-${i}`);
-      if (panel) panel.classList.toggle('hidden', i !== this.setupStep);
-    }
-
-    document.querySelectorAll('[data-setup-step-tab]').forEach((tab) => {
-      const tabStep = Number(tab.getAttribute('data-setup-step-tab'));
-      const active = tabStep === this.setupStep;
-      tab.className = `px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap ${
-        active
-          ? 'bg-amber-400 text-slate-950 shadow'
-          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-      }`;
-    });
-
-    const subtitles = {
-      1: 'Step 1 of 4 · Choose Game Format & Challenge Level',
-      2: 'Step 2 of 4 · Choose Your Team & Opponent Team',
-      3: 'Step 3 of 4 · Select 3D Indian Stadium, Time & Pitch',
-      4: 'Step 4 of 4 · Match Summary, Coin Toss / Target & Start'
-    };
-    const subEl = document.getElementById('setup-wizard-subtitle');
-    if (subEl) subEl.textContent = subtitles[this.setupStep] || subtitles[1];
-
-    const prevBtn = document.getElementById('btn-setup-prev-step');
-    const nextBtn = document.getElementById('btn-setup-next-step');
-    const startBtn = document.getElementById('btn-start-match');
-    const quickBtn = document.getElementById('btn-setup-quick-start');
-
-    if (prevBtn) prevBtn.classList.toggle('hidden', this.setupStep === 1);
-    if (nextBtn) {
-      nextBtn.classList.toggle('hidden', this.setupStep === 4);
-      const nextLabels = {
-        1: 'Next: Choose Teams →',
-        2: 'Next: Stadium & Pitch →',
-        3: 'Next: Toss & Start →'
-      };
-      nextBtn.textContent = nextLabels[this.setupStep] || 'Next Step →';
-    }
-    if (startBtn) startBtn.classList.toggle('hidden', this.setupStep !== 4);
-    if (quickBtn) quickBtn.classList.toggle('hidden', this.setupStep === 4);
-
     this.syncSetupWizardCards();
   }
 
@@ -276,16 +242,12 @@ export class UIManager {
     document.querySelectorAll('[data-diff-card]').forEach((btn) => {
       const d = btn.getAttribute('data-diff-card');
       const active = d === diff;
-      const borderMap = {
-        easy: 'bg-emerald-500/15 border-emerald-400 text-white shadow-lg',
-        medium: 'bg-amber-400/15 border-amber-400 text-white shadow-lg',
-        hard: 'bg-rose-500/15 border-rose-400 text-white shadow-lg'
+      const activeClassMap = {
+        easy: 'wd-scenario-active-emerald',
+        medium: 'wd-scenario-active-amber',
+        hard: 'wd-scenario-active-rose'
       };
-      btn.className = `p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        active
-          ? borderMap[d] || borderMap.medium
-          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-      }`;
+      btn.className = `wd-scenario-card ${active ? activeClassMap[d] || 'wd-scenario-active-amber' : ''}`;
     });
 
     const t20OversVal = String(document.getElementById('setup-t20-overs')?.value || '20');
@@ -308,6 +270,20 @@ export class UIManager {
     const lblB = document.getElementById('lbl-selected-team-b');
     if (lblB && teamB) lblB.textContent = `${teamB.nameEn} (${teamB.short})`;
 
+    // Sync Wavedash Live VS Header Pill & Step 2 VS Banner
+    const livePill = document.getElementById('wd-live-matchup-pill');
+    if (livePill && teamA && teamB) {
+      livePill.textContent = `${teamA.short} vs ${teamB.short}`;
+    }
+    const vsTeamA = document.getElementById('wd-vs-team-a');
+    if (vsTeamA && teamA) vsTeamA.textContent = `${teamA.nameEn} (${teamA.short})`;
+    const vsTeamB = document.getElementById('wd-vs-team-b');
+    if (vsTeamB && teamB) vsTeamB.textContent = `${teamB.nameEn} (${teamB.short})`;
+    const vsColA = document.getElementById('wd-vs-color-a');
+    if (vsColA && teamA) vsColA.style.background = teamA.primaryColor;
+    const vsColB = document.getElementById('wd-vs-color-b');
+    if (vsColB && teamB) vsColB.style.background = teamB.primaryColor;
+
     document.querySelectorAll('[data-team-a-card]').forEach((btn) => {
       const active = Number(btn.getAttribute('data-team-a-card')) === idxA;
       btn.className = `p-2.5 rounded-xl border-2 text-left transition-all cursor-pointer flex items-center gap-2 ${
@@ -329,11 +305,7 @@ export class UIManager {
     const stVal = document.getElementById('setup-stadium')?.value || 'eden_gardens';
     document.querySelectorAll('[data-stadium-card]').forEach((btn) => {
       const active = btn.getAttribute('data-stadium-card') === stVal;
-      btn.className = `p-4 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        active
-          ? 'bg-emerald-500/15 border-emerald-400 text-white shadow-lg'
-          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-      }`;
+      btn.className = `wd-scenario-card ${active ? 'wd-scenario-active-emerald' : ''}`;
     });
 
     const dnVal = document.getElementById('setup-day-night')?.value || 'night';
@@ -366,6 +338,20 @@ export class UIManager {
       }`;
     });
 
+    // Update Step 1 Target Preview Pill
+    const step1Preview = document.getElementById('wd-step1-target-preview');
+    if (step1Preview) {
+      if (this.setupMode === 't20') {
+        step1Preview.textContent = `T20 Full Match · ${t20OversVal} Overs / Side`;
+      } else if (this.setupMode === 'super_over') {
+        step1Preview.textContent = `⚡ Super Over Shootout · 1 Over / Side (2 Wickets Max)`;
+      } else if (this.setupMode === 'last_over') {
+        step1Preview.textContent = `Last Over Clutch · Target: ${this.rolledChaseTarget || 18} Runs (6 Balls)`;
+      } else {
+        step1Preview.textContent = `5-Over Chase · Target: ${this.rolledChaseTarget || 48} Runs (30 Balls)`;
+      }
+    }
+
     // Update Step 4 Summary Banner
     const matchupEl = document.getElementById('setup-summary-matchup');
     if (matchupEl && teamA && teamB) {
@@ -376,9 +362,11 @@ export class UIManager {
       const modeStr =
         this.setupMode === 't20'
           ? `T20 Match (${t20OversVal} Overs)`
-          : this.setupMode === 'last_over'
-            ? '1-Over Finisher Thriller (6 Balls)'
-            : '5-Over Run Chase';
+          : this.setupMode === 'super_over'
+            ? '⚡ Super Over Shootout (1 Over)'
+            : this.setupMode === 'last_over'
+              ? 'Last Over Thriller (6 Balls)'
+              : '5-Over Run Chase';
       const stLabel =
         stVal === 'wankhede'
           ? 'Wankhede'
@@ -391,8 +379,9 @@ export class UIManager {
   }
 
   updateSetupModeUI(modeId = 'run_chase') {
-    const validMode = ['t20', 'last_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
+    const validMode = ['t20', 'last_over', 'run_chase', 'super_over'].includes(modeId) ? modeId : 'run_chase';
     const isT20 = validMode === 't20';
+    const isSuperOver = validMode === 'super_over';
     const isLastOver = validMode === 'last_over';
     this.setupMode = validMode;
     gameConfig.modeId = this.setupMode;
@@ -402,31 +391,23 @@ export class UIManager {
     if (modeSel) modeSel.value = this.setupMode;
     const t20OversVal = Number(document.getElementById('setup-t20-overs')?.value) || 20;
     const oversSel = document.getElementById('setup-overs');
-    if (oversSel) oversSel.value = isT20 ? String(t20OversVal) : isLastOver ? '1' : '5';
+    if (oversSel) oversSel.value = isT20 ? String(t20OversVal) : isLastOver || isSuperOver ? '1' : '5';
 
     const btnChase = document.getElementById('btn-setup-mode-chase');
     const btnLastOver = document.getElementById('btn-setup-mode-last-over');
     const btnT20 = document.getElementById('btn-setup-mode-t20');
+    const btnSuperOver = document.getElementById('btn-setup-mode-super-over');
     if (btnChase) {
-      btnChase.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        validMode === 'run_chase'
-          ? 'bg-amber-400/15 border-amber-400 text-white shadow-lg'
-          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-      }`;
+      btnChase.className = `wd-scenario-card ${validMode === 'run_chase' ? 'wd-scenario-active-amber' : ''}`;
     }
     if (btnLastOver) {
-      btnLastOver.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        isLastOver
-          ? 'bg-rose-500/15 border-rose-400 text-white shadow-lg'
-          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-      }`;
+      btnLastOver.className = `wd-scenario-card ${isLastOver ? 'wd-scenario-active-rose' : ''}`;
     }
     if (btnT20) {
-      btnT20.className = `p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer ${
-        isT20
-          ? 'bg-sky-400/15 border-sky-400 text-white shadow-lg'
-          : 'bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700'
-      }`;
+      btnT20.className = `wd-scenario-card ${isT20 ? 'wd-scenario-active-sky' : ''}`;
+    }
+    if (btnSuperOver) {
+      btnSuperOver.className = `wd-scenario-card ${isSuperOver ? 'wd-scenario-active-emerald' : ''}`;
     }
 
     const step1OversWrap = document.getElementById('setup-step1-t20-overs-wrap');
@@ -434,16 +415,18 @@ export class UIManager {
 
     const chaseCard = document.getElementById('setup-chase-card');
     const tossCard = document.getElementById('setup-toss-card');
-    if (chaseCard) chaseCard.classList.toggle('hidden', isT20);
+    if (chaseCard) chaseCard.classList.toggle('hidden', isT20 || isSuperOver);
     if (tossCard) tossCard.classList.toggle('hidden', !isT20);
 
     const startBtn = document.getElementById('btn-start-match');
     if (startBtn) {
       startBtn.textContent = isT20
-        ? `Start T20 Match (${t20OversVal} Overs)`
-        : isLastOver
-          ? '⚡ Start 1-Over Finisher (6 Balls)'
-          : 'Start 5-Over Run Chase';
+        ? `🏆 START T20 MATCH (${t20OversVal} OVERS)`
+        : isSuperOver
+          ? '⚡ START SUPER OVER'
+          : isLastOver
+            ? '🔥 START LAST OVER (6 BALLS)'
+            : '🏏 START 5-OVER CHASE';
     }
     this.syncSetupWizardCards();
   }
@@ -486,6 +469,12 @@ export class UIManager {
     const badgeEl = document.getElementById('setup-chase-target-badge');
     if (badgeEl) {
       badgeEl.textContent = `Target: ${this.rolledChaseTarget} Runs (${isLastOver ? '6 Balls' : '30 Balls'})`;
+    }
+    const step1Preview = document.getElementById('wd-step1-target-preview');
+    if (step1Preview && (this.setupMode === 'run_chase' || this.setupMode === 'last_over')) {
+      step1Preview.textContent = isLastOver
+        ? `Last Over Clutch · Target: ${this.rolledChaseTarget} Runs (6 Balls)`
+        : `5-Over Chase · Target: ${this.rolledChaseTarget} Runs (30 Balls)`;
     }
   }
 
@@ -571,6 +560,11 @@ export class UIManager {
       }`;
     }
 
+    // Position delivery preview pill cleanly at top-center below scoreboard so it never overlaps the bottom-left Angle Wheel
+    badge.style.bottom = 'auto';
+    badge.style.left = '50%';
+    badge.style.top = 'calc(var(--hud-bar-h, 48px) + 8px)';
+    badge.style.transform = 'translateX(-50%)';
     badge.classList.remove('hidden');
 
     if (mode === 'briefly') {
@@ -596,6 +590,18 @@ export class UIManager {
     if (dropdown) {
       dropdown.classList.toggle('hidden', !this.cornerMenuOpen);
     }
+    const shotLbl = document.getElementById('lbl-menu-shotmode');
+    if (shotLbl && this.app?.batting) {
+      const isFly = this.app.batting.shotMode === 'fly';
+      shotLbl.textContent = isFly ? '🚀 Shot: LOFTED' : '🎯 Shot: GROUND';
+    }
+    const camLbl = document.getElementById('lbl-menu-camera');
+    if (camLbl && this.app) {
+      const m = this.app.cameraMode || 'broadcast';
+      const label = m === 'pro' ? 'Pro' : m === 'overhead' ? 'Overhead' : 'Broadcast';
+      camLbl.textContent = `📷 Camera: ${label}`;
+    }
+    this.syncVirtualControlsVisibility();
     if (this.cornerMenuOpen) {
       this.showDeliveryPreview(
         {
@@ -604,6 +610,9 @@ export class UIManager {
         },
         'always'
       );
+      setTimeout(() => {
+        window.__tvDpad?.focusScope?.('corner-menu-dropdown', '[data-tv-default]');
+      }, 20);
     } else if (!this.isAnyModalOpen()) {
       this.showDeliveryPreview(null, 'hidden');
     }
@@ -644,7 +653,7 @@ export class UIManager {
     if (!toast || !txt) return;
 
     txt.textContent = message;
-    toast.className = `fixed bottom-14 right-3 z-30 pointer-events-none opacity-100 translate-y-0 transition-all duration-200 flex items-center gap-2 bg-slate-950/95 border ${
+    toast.className = `fixed top-14 right-3 z-40 pointer-events-none opacity-100 translate-y-0 transition-all duration-200 flex items-center gap-2 bg-slate-950/95 border ${
       isPositive ? 'border-emerald-500/80' : 'border-amber-500/80'
     } rounded-lg px-3 py-1.5 shadow-xl text-xs font-medium text-slate-100`;
     if (dot) {
@@ -654,7 +663,7 @@ export class UIManager {
     if (this.statusToastTimeout) clearTimeout(this.statusToastTimeout);
     this.statusToastTimeout = setTimeout(() => {
       toast.classList.remove('opacity-100', 'translate-y-0');
-      toast.classList.add('opacity-0', 'translate-y-1');
+      toast.classList.add('opacity-0', '-translate-y-1');
     }, 2600);
   }
 
@@ -670,29 +679,39 @@ export class UIManager {
    * Updates the connection status icon in the corner menu and auto-closes Pair Phone modal on connect
    */
   onPhoneConnectionChange(connected, latencyMs = 12) {
+    const connBool = Boolean(connected);
+    if (
+      this._lastConnState === connBool &&
+      Math.abs((this._lastConnLatency || 0) - latencyMs) < 6
+    ) {
+      return;
+    }
+    this._lastConnState = connBool;
+    this._lastConnLatency = latencyMs;
+
     const menuDot = document.getElementById('menu-conn-dot');
     const qrMenuDot = document.getElementById('qr-menu-conn-dot');
     const qrMenuLbl = document.getElementById('qr-menu-conn-lbl');
 
     if (menuDot) {
       menuDot.className = `inline-block w-2 h-2 rounded-full transition-colors ${
-        connected ? 'bg-emerald-400 ring-2 ring-emerald-500/40' : 'bg-slate-500 ring-1 ring-slate-700'
+        connBool ? 'bg-emerald-400 ring-2 ring-emerald-500/40' : 'bg-slate-500 ring-1 ring-slate-700'
       }`;
-      menuDot.title = connected ? `Phone Connected (${latencyMs}ms)` : 'Phone Disconnected';
+      menuDot.title = connBool ? `Phone Connected (${latencyMs}ms)` : 'Phone Disconnected';
     }
     if (qrMenuDot) {
       qrMenuDot.className = `inline-block w-2 h-2 rounded-full ${
-        connected ? 'bg-emerald-400' : 'bg-slate-500'
+        connBool ? 'bg-emerald-400' : 'bg-slate-500'
       }`;
     }
     if (qrMenuLbl) {
-      qrMenuLbl.textContent = connected ? 'ONLINE' : 'QR';
-      qrMenuLbl.className = `text-[10px] font-mono ${connected ? 'text-emerald-400 font-bold' : 'text-amber-300'}`;
+      qrMenuLbl.textContent = connBool ? 'ONLINE' : 'QR';
+      qrMenuLbl.className = `text-[10px] font-mono ${connBool ? 'text-emerald-400 font-bold' : 'text-amber-300'}`;
     }
 
     const gateTitle = document.getElementById('qr-play-gate-title');
     if (gateTitle) {
-      if (connected) {
+      if (connBool) {
         gateTitle.textContent = `✅ PHONE CONTROLLER CONNECTED (${latencyMs}ms) · PRESS ▶ PLAY MATCH TO BEGIN!`;
         gateTitle.className = 'font-display font-bold text-xs sm:text-sm text-emerald-400';
       } else {
@@ -701,7 +720,7 @@ export class UIManager {
       }
     }
 
-    if (connected && !this.wasPhoneConnected) {
+    if (connBool && !this.wasPhoneConnected) {
       this.wasPhoneConnected = true;
       // Only auto-close modal-qr if the match play gate was already confirmed earlier;
       // before the first ball, keep the Ready-to-Play popup open so the player can get into stance and press PLAY!
@@ -709,10 +728,644 @@ export class UIManager {
       if (qrModal && !qrModal.classList.contains('hidden') && this.app.matchPlayConfirmed) {
         this.closeModal('modal-qr');
       }
-      this.showStatusToast('Phone connected! Press PLAY when ready.', true);
-    } else if (!connected && this.wasPhoneConnected) {
+      this.showStatusToast('Phone connected! Virtual stick hidden.', true);
+    } else if (!connBool && this.wasPhoneConnected) {
       this.wasPhoneConnected = false;
-      this.showStatusToast('Phone disconnected — open Pair Phone to reconnect', false);
+      this.showStatusToast('Phone disconnected — Virtual stick enabled', false);
+    }
+    this.syncVirtualControlsVisibility();
+  }
+
+  /**
+   * Shows the On-Screen Virtual Joystick & Shot Pad ONLY when no Phone Controller is connected
+   * and hides it immediately as soon as the mobile controller connects!
+   */
+  syncVirtualControlsVisibility() {
+    const vControls = document.getElementById('hud-virtual-controls');
+    if (!vControls) return;
+    const phoneConnected = Boolean(this.app?.net?.controllers?.p1?.connected);
+    const modalOpen = this.isAnyModalOpen() || Boolean(this.cornerMenuOpen);
+    vControls.classList.toggle('hidden', phoneConnected || modalOpen);
+  }
+
+  getSectorNameForAngle(deg) {
+    const a = ((deg + 180) % 360 + 360) % 360 - 180;
+    const b = this.app?.batting;
+    const dirSign = b?.screenRightSign || -1;
+    const handSign = b?.handedness === 'left' ? -1 : 1;
+    // Convert screen wheel angle into batter tactical angle (+ = Off side, - = Leg side)
+    const tactical = a * dirSign * handSign;
+
+    const topLbl = document.getElementById('rc-wheel-lbl-top');
+    const bottomLbl = document.getElementById('rc-wheel-lbl-bottom');
+    const leftLbl = document.getElementById('rc-wheel-lbl-left');
+    const rightLbl = document.getElementById('rc-wheel-lbl-right');
+    const strikerDot = document.getElementById('rc-wheel-striker-dot');
+
+    // dirSign === -1 => Option B (Default TV Broadcast View: Bowler at Bottom, Keeper at Top)
+    // dirSign === +1 => Option A (Batsman View: Bowler at Top, Keeper at Bottom)
+    const isBatsmanView = dirSign > 0;
+    if (topLbl && bottomLbl) {
+      topLbl.textContent = isBatsmanView ? 'STRAIGHT' : 'BEHIND';
+      topLbl.setAttribute('fill', isBatsmanView ? 'rgba(167,243,208,0.9)' : 'rgba(253,230,138,0.8)');
+      bottomLbl.textContent = isBatsmanView ? 'BEHIND' : 'STRAIGHT';
+      bottomLbl.setAttribute('fill', isBatsmanView ? 'rgba(253,230,138,0.8)' : 'rgba(167,243,208,0.9)');
+    }
+    if (strikerDot) {
+      strikerDot.setAttribute('cy', isBatsmanView ? '85' : '65');
+    }
+    if (leftLbl && rightLbl) {
+      const leftIsOff = (-1 * dirSign * handSign) > 0;
+      leftLbl.textContent = leftIsOff ? 'OFF' : 'LEG';
+      rightLbl.textContent = leftIsOff ? 'LEG' : 'OFF';
+    }
+
+    if (tactical >= -18 && tactical <= 18) return 'STRAIGHT';
+    if (tactical > 18 && tactical <= 62) return 'COVER';
+    if (tactical > 62 && tactical <= 112) return 'POINT';
+    if (tactical > 112 && tactical <= 156) return 'THIRD MAN';
+    if (tactical < -18 && tactical >= -62) return 'MID-WICKET';
+    if (tactical < -62 && tactical >= -112) return 'SQUARE LEG';
+    if (tactical < -112 && tactical >= -156) return 'FINE LEG';
+    return 'BEHIND KEEPER';
+  }
+
+  syncAngleWheelUI() {
+    const b = this.app?.batting;
+    if (!b) return;
+    const deg = Math.round(b.custom360AimDeg || 0);
+    const dirSign = b.screenRightSign || -1;
+    const lbl = document.getElementById('virtual-joystick-label');
+    const wedge = document.getElementById('rc-aim-wedge-group');
+    const wheelLine = document.getElementById('rc-wheel-aim-line');
+    const wheelCone = document.getElementById('rc-wheel-aim-cone');
+    const wheelKnob = document.getElementById('rc-wheel-touch-dot');
+    const fieldersGrp = document.getElementById('rc-wheel-fielders-group');
+
+    const sector = this.getSectorNameForAngle(deg);
+
+    if (wedge) {
+      wedge.setAttribute('transform', `rotate(${deg} 70 70)`);
+    }
+    const rad = (deg * Math.PI) / 180;
+    const r = 56;
+    // In Option B (TV Broadcast View, dirSign = -1): 0° (STRAIGHT) points DOWN (ty > 75).
+    // In Option A (Batsman View, dirSign = +1): 0° (STRAIGHT) points UP (ty < 75).
+    const tx = 75 + Math.sin(rad) * r;
+    const ty = 75 - dirSign * Math.cos(rad) * r;
+
+    if (wheelLine) {
+      wheelLine.setAttribute('x2', tx.toFixed(1));
+      wheelLine.setAttribute('y2', ty.toFixed(1));
+    }
+    if (wheelCone) {
+      const coneHalf = (16 * Math.PI) / 180;
+      const x1 = 75 + Math.sin(rad - coneHalf) * 64;
+      const y1 = 75 - dirSign * Math.cos(rad - coneHalf) * 64;
+      const x2 = 75 + Math.sin(rad + coneHalf) * 64;
+      const y2 = 75 - dirSign * Math.cos(rad + coneHalf) * 64;
+      const sweepFlag = dirSign > 0 ? 1 : 0;
+      wheelCone.setAttribute(
+        'd',
+        `M 75 75 L ${x1.toFixed(1)} ${y1.toFixed(1)} A 64 64 0 0 ${sweepFlag} ${x2.toFixed(1)} ${y2.toFixed(1)} Z`
+      );
+    }
+    if (wheelKnob) {
+      wheelKnob.setAttribute('cx', tx.toFixed(1));
+      wheelKnob.setAttribute('cy', ty.toFixed(1));
+    }
+    if (fieldersGrp && this.app?.fielding?.fielders) {
+      const maxFieldR = 60.0;
+      const wheelR = 60.0;
+      let dotsHtml = '';
+      this.app.fielding.fielders.forEach((f) => {
+        const fx = 75 + ((f.pos.x * dirSign) / maxFieldR) * wheelR;
+        const fy = 75 + ((f.pos.z * dirSign) / maxFieldR) * wheelR;
+        dotsHtml += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="2.3" fill="#38bdf8" opacity="0.88"/>`;
+      });
+      if (this.app.fielding.keeper) {
+        const kx = 75 + ((this.app.fielding.keeper.pos.x * dirSign) / maxFieldR) * wheelR;
+        const ky = 75 + ((this.app.fielding.keeper.pos.z * dirSign) / maxFieldR) * wheelR;
+        dotsHtml += `<circle cx="${kx.toFixed(1)}" cy="${ky.toFixed(1)}" r="2.2" fill="#a7f3d0" opacity="0.9"/>`;
+      }
+      fieldersGrp.innerHTML = dotsHtml;
+    }
+    if (lbl && this.app?.match?.userRole !== 'bowl') {
+      const sign = deg > 0 ? '+' : '';
+      const fwTag = (b.footwork || 'front') === 'back' ? 'BACK' : 'FRONT';
+      lbl.textContent = `${sector} · ${sign}${deg}° · ${fwTag}`;
+    }
+    this.renderFieldRadar();
+  }
+
+  applyControllerHandLayout(hand = 'right') {
+    const leftPad = document.getElementById('rc-left-pad');
+    const rightPad = document.getElementById('rc-right-pad');
+    if (this.app?.batting) {
+      this.app.batting.controllerLayoutHand = hand;
+    }
+    if (!leftPad || !rightPad) return;
+    if (hand === 'left') {
+      leftPad.style.left = 'auto';
+      leftPad.style.right = 'max(0.75rem, env(safe-area-inset-right))';
+      rightPad.style.right = 'auto';
+      rightPad.style.left = 'max(0.75rem, env(safe-area-inset-left))';
+    } else {
+      leftPad.style.right = 'auto';
+      leftPad.style.left = 'max(0.75rem, env(safe-area-inset-left))';
+      rightPad.style.left = 'auto';
+      rightPad.style.right = 'max(0.75rem, env(safe-area-inset-right))';
+    }
+  }
+
+  bindVirtualJoystickAndPadEvents() {
+    const lbl = document.getElementById('virtual-joystick-label');
+    const modeBtn = document.getElementById('btn-vpad-mode');
+    const loftBtn = document.getElementById('btn-vpad-loft');
+    const defendBtn = document.getElementById('btn-vpad-defend');
+    const pushBtn = document.getElementById('btn-vpad-push');
+    const swingBtn = document.getElementById('btn-vpad-swing');
+    const runBtn = document.getElementById('btn-vpad-run');
+    const noRunBtn = document.getElementById('btn-vpad-norun');
+    const hdGfxBtn = document.getElementById('btn-toggle-hd-graphics');
+    const radarGapBtn = document.getElementById('btn-toggle-radar-aim');
+
+    hdGfxBtn?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1260);
+      if (this.app && typeof this.app.setWavedashGraphicsMode === 'function') {
+        this.app.setWavedashGraphicsMode(!this.app.wavedashGraphicsMode);
+      }
+    });
+
+    // 1. Replace old ◀ LEFT / RIGHT ▶ buttons inside #rc-left-pad .rc-dpad-grid with the compact 116px semi-transparent 360° Angle Wheel
+    const dpadGrid = document.querySelector('#rc-left-pad .rc-dpad-grid');
+    if (dpadGrid) {
+      dpadGrid.style.display = 'flex';
+      dpadGrid.style.alignItems = 'center';
+      dpadGrid.style.justifyContent = 'center';
+      dpadGrid.style.gridTemplateColumns = 'none';
+      dpadGrid.style.padding = '0px';
+      dpadGrid.style.background = 'transparent';
+      dpadGrid.style.border = 'none';
+      dpadGrid.style.boxShadow = 'none';
+      dpadGrid.style.width = '116px';
+      dpadGrid.style.height = '116px';
+      dpadGrid.innerHTML = `
+        <div id="rc-angle-wheel" class="relative w-[116px] h-[116px] rounded-full select-none touch-none cursor-pointer pointer-events-auto"
+          style="width: 116px; height: 116px; touch-action: none; background: radial-gradient(circle, rgba(6, 78, 59, 0.48) 0%, rgba(2, 44, 34, 0.72) 72%, rgba(9, 15, 29, 0.88) 100%); border: 1.5px solid rgba(52, 211, 153, 0.55); box-shadow: 0 6px 18px rgba(0,0,0,0.45), inset 0 0 14px rgba(16,185,129,0.18);">
+          <svg viewBox="0 0 150 150" class="w-full h-full overflow-visible pointer-events-none">
+            <defs>
+              <radialGradient id="rcWheelConeGrad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stop-color="#34d399" stop-opacity="0.52"/>
+                <stop offset="100%" stop-color="#10b981" stop-opacity="0.04"/>
+              </radialGradient>
+            </defs>
+            <!-- Outer boundary & 30-yard dashed ring -->
+            <circle cx="75" cy="75" r="64" fill="none" stroke="rgba(16,185,129,0.35)" stroke-width="1.2"/>
+            <circle cx="75" cy="75" r="34" fill="none" stroke="rgba(255,255,255,0.22)" stroke-width="1" stroke-dasharray="3 3"/>
+            <!-- Crosshair guide lines -->
+            <line x1="75" y1="11" x2="75" y2="139" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <line x1="11" y1="75" x2="139" y2="75" stroke="rgba(255,255,255,0.12)" stroke-width="1"/>
+            <!-- Edge Perimeter Direction Labels (Default Broadcast Batting Cam: STRAIGHT at Top, BEHIND at Bottom) -->
+            <text id="rc-wheel-lbl-top" x="75" y="10" text-anchor="middle" fill="rgba(167,243,208,0.9)" font-size="6.5" font-weight="900" letter-spacing="0.06em">STRAIGHT</text>
+            <text id="rc-wheel-lbl-bottom" x="75" y="146" text-anchor="middle" fill="rgba(253,230,138,0.8)" font-size="6.5" font-weight="900" letter-spacing="0.06em">BEHIND</text>
+            <text id="rc-wheel-lbl-left" x="7" y="77" text-anchor="start" fill="rgba(186,230,253,0.8)" font-size="6" font-weight="800">LEG</text>
+            <text id="rc-wheel-lbl-right" x="143" y="77" text-anchor="end" fill="rgba(186,230,253,0.8)" font-size="6" font-weight="800">OFF</text>
+            <!-- Live Fielder Dots inside Angle Wheel -->
+            <g id="rc-wheel-fielders-group"></g>
+            <!-- Glowing Aim Cone -->
+            <path id="rc-wheel-aim-cone" d="M 75 75 L 57.6 13.4 A 64 64 0 0 1 92.4 13.4 Z" fill="url(#rcWheelConeGrad)" />
+            <!-- Small Pitch Rectangle in Center -->
+            <rect x="70.5" y="59" width="9" height="32" rx="1.5" fill="rgba(214, 184, 138, 0.85)" stroke="rgba(255,255,255,0.45)" stroke-width="0.8"/>
+            <line x1="71.5" y1="64" x2="78.5" y2="64" stroke="rgba(255,255,255,0.65)" stroke-width="0.8"/>
+            <line x1="71.5" y1="86" x2="78.5" y2="86" stroke="rgba(255,255,255,0.65)" stroke-width="0.8"/>
+            <!-- Striker Crease Position Indicator Dot -->
+            <circle id="rc-wheel-striker-dot" cx="75" cy="85" r="3.2" fill="#f59e0b" stroke="#090f1d" stroke-width="1"/>
+            <!-- Live Aim Line & Glowing Arrowhead Dot -->
+            <line id="rc-wheel-aim-line" x1="75" y1="75" x2="75" y2="19" stroke="#34d399" stroke-width="2.4" stroke-linecap="round"/>
+            <circle id="rc-wheel-touch-dot" cx="75" cy="19" r="5" fill="#10b981" stroke="#ecfdf5" stroke-width="1.5"/>
+          </svg>
+        </div>
+      `;
+    }
+
+    const wheelEl = document.getElementById('rc-angle-wheel');
+    if (wheelEl) {
+      let wheelPointerId = null;
+
+      const updateWheelFromTouch = (clientX, clientY) => {
+        const rect = wheelEl.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const dx = clientX - centerX;
+        const dy = clientY - centerY;
+        const dist = Math.hypot(dx, dy);
+
+        const b = this.app?.batting;
+        const bw = this.app?.bowling;
+        if (!b) return;
+        const dirSign = b.screenRightSign || -1;
+
+        // Bowling role: allow using wheel to place bowling pitch marker OR dial Swing/Spin Curl!
+        if (this.app.match?.userRole === 'bowl' && bw) {
+          const maxR = Math.max(24, rect.width * 0.42);
+          const nx = Math.max(-1, Math.min(1, dx / maxR));
+          const ny = Math.max(-1, Math.min(1, dy / maxR));
+          bw.aimTargetX = Math.max(-0.62, Math.min(0.62, -nx * dirSign * 0.56));
+          bw.aimBounceZ = Math.max(1.2, Math.min(8.4, 4.8 + ny * dirSign * 3.2));
+          if (this.app.aimRing) {
+            this.app.aimRing.visible = true;
+            this.app.aimRing.position.set(bw.aimTargetX, 0.035, bw.aimBounceZ);
+          }
+          const bowlDeg = Math.round(Math.atan2(dx, -dirSign * dy) * (180 / Math.PI));
+          if (typeof b.setWheelAimDeg === 'function') {
+            b.setWheelAimDeg(bowlDeg);
+          } else {
+            b.custom360AimDeg = bowlDeg;
+          }
+          this.syncAngleWheelUI();
+          const curlStr = nx < -0.18 ? 'IN-CURL' : nx > 0.18 ? 'OUT-CURL' : 'STRAIGHT';
+          if (lbl) lbl.textContent = `BOWL ${bw.aimBounceZ.toFixed(1)}m · ${curlStr}`;
+          if (this.app.online1v1Active && this.app.net) {
+            this.app.net.sendOnlineBowlAim({
+              aimTargetX: bw.aimTargetX,
+              aimBounceZ: bw.aimBounceZ,
+              variationId: bw.selectedVariationId,
+              bowlerSide: bw.bowlerSide
+            });
+          }
+          return;
+        }
+
+        // Batting role:
+        // In Option B (Default TV View, dirSign = -1): dragging DOWN (dy > 0) = 0° STRAIGHT, UP (dy < 0) = 180° BEHIND.
+        // In Option A (Batsman View, dirSign = +1): dragging UP (dy < 0) = 0° STRAIGHT, DOWN (dy > 0) = 180° BEHIND.
+        const forwardScreenY = -dirSign * dy;
+        const angleRad = dist < 2 ? 0 : Math.atan2(dx, forwardScreenY);
+        const angleDeg = Math.round(angleRad * (180 / Math.PI));
+        if (typeof b.setWheelAimDeg === 'function') {
+          b.setWheelAimDeg(angleDeg);
+        } else {
+          b.custom360AimDeg = angleDeg;
+          b.swingPlaneYaw = (angleDeg * dirSign) * (Math.PI / 180);
+        }
+        this.syncAngleWheelUI();
+      };
+
+      wheelEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sound.init();
+        wheelPointerId = e.pointerId;
+        try {
+          wheelEl.setPointerCapture(e.pointerId);
+        } catch {}
+        updateWheelFromTouch(e.clientX, e.clientY);
+      });
+
+      wheelEl.addEventListener('pointermove', (e) => {
+        if (wheelPointerId === null || e.pointerId !== wheelPointerId) return;
+        e.preventDefault();
+        e.stopPropagation();
+        updateWheelFromTouch(e.clientX, e.clientY);
+      });
+
+      const endWheelDrag = (e) => {
+        if (wheelPointerId !== null && e.pointerId === wheelPointerId) {
+          wheelPointerId = null;
+          if (this.app?.batting) {
+            // Angle stays locked after finger lifts!
+            this.app.batting.virtualStickActive = false;
+          }
+        }
+      };
+
+      wheelEl.addEventListener('pointerup', endWheelDrag);
+      wheelEl.addEventListener('pointercancel', endWheelDrag);
+    }
+
+    // 2. Inject & Bind Camera Setting ("Batsman View" vs "TV Broadcast Default") + 360° Controls in Settings & Corner Menu
+    const settingsModalBody =
+      document.querySelector('#modal-settings .modal-body') ||
+      document.querySelector('#modal-settings .space-y-2\\.5');
+    if (settingsModalBody && !document.getElementById('setting-camera-view')) {
+      const extraSettingsHTML = document.createElement('div');
+      extraSettingsHTML.className = 'p-2.5 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2';
+      extraSettingsHTML.innerHTML = `
+        <div class="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">Camera &amp; 360° Angle Wheel Settings</div>
+        <div class="flex items-center justify-between gap-2">
+          <div>
+            <div class="text-xs font-bold text-white">Camera Setting</div>
+            <div class="text-[10px] text-slate-400">Broadcast Batting (Close Behind Batter) or Bowler-End TV View</div>
+          </div>
+          <select id="setting-camera-view" class="bg-slate-900 border border-emerald-500/50 rounded-lg px-2.5 py-1 text-xs font-bold text-emerald-300 cursor-pointer">
+            <option value="pro" selected>Broadcast Batting (Default)</option>
+            <option value="broadcast">Bowler-End TV View</option>
+            <option value="overhead">Overhead 2D View</option>
+          </select>
+        </div>
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-white">Auto-Reset Aim Every Ball</div>
+            <div class="text-[10px] text-slate-400">Reset Angle Wheel to Straight (0°) after each ball</div>
+          </div>
+          <button id="setting-aim-autoreset" type="button" class="px-2.5 py-1 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 cursor-pointer">ON</button>
+        </div>
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-white">Shot Assist (360° Gap Snap)</div>
+            <div class="text-[10px] text-slate-400">Snap aim toward nearest fielding gap (scaled by difficulty)</div>
+          </div>
+          <button id="setting-shot-assist" type="button" class="px-2.5 py-1 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 cursor-pointer">ON</button>
+        </div>
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-xs font-bold text-white">Controller Hand Layout</div>
+            <div class="text-[10px] text-slate-400">Swap Angle Wheel &amp; Shot Buttons sides</div>
+          </div>
+          <button id="setting-controller-hand" type="button" class="px-2.5 py-1 rounded text-[10px] font-black uppercase bg-sky-500/20 text-sky-300 border border-sky-400/40 cursor-pointer">RIGHT-HANDED</button>
+        </div>
+      `;
+      settingsModalBody.insertBefore(extraSettingsHTML, settingsModalBody.firstChild);
+    }
+
+    // Also add quick "Camera: Broadcast Batting" switch inside the top-right Corner Menu dropdown
+    const cornerDropdown = document.getElementById('corner-menu-dropdown');
+    if (cornerDropdown && !document.getElementById('btn-menu-camera-view')) {
+      const camMenuBtn = document.createElement('button');
+      camMenuBtn.id = 'btn-menu-camera-view';
+      camMenuBtn.type = 'button';
+      camMenuBtn.className =
+        'w-full text-left px-3 py-1.5 rounded-lg text-emerald-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between font-semibold';
+      camMenuBtn.innerHTML = `
+        <span>Camera Angle</span>
+        <span id="lbl-menu-camera-view" class="text-[10px] text-amber-300 font-mono">Batting Cam</span>
+      `;
+      const settingsBtn = document.getElementById('btn-open-settings');
+      if (settingsBtn && settingsBtn.parentNode === cornerDropdown) {
+        cornerDropdown.insertBefore(camMenuBtn, settingsBtn.nextSibling);
+      } else {
+        cornerDropdown.appendChild(camMenuBtn);
+      }
+    }
+
+    const syncAssistAndSettingsButtons = () => {
+      const b = this.app?.batting;
+      if (!b) return;
+      const autoResetBtn = document.getElementById('setting-aim-autoreset');
+      const assistBtn = document.getElementById('setting-shot-assist');
+      const handBtn = document.getElementById('setting-controller-hand');
+      const camSelect = document.getElementById('setting-camera-view');
+      const menuCamLbl = document.getElementById('lbl-menu-camera-view');
+      const activeCam =
+        this.app?.cameraMode === 'follow'
+          ? this.app?.savedCameraMode || 'pro'
+          : this.app?.cameraMode || 'pro';
+
+      if (camSelect) {
+        camSelect.value = activeCam;
+      }
+      document.querySelectorAll('[data-cam]').forEach((b) => {
+        const isAct = b.getAttribute('data-cam') === activeCam;
+        b.classList.toggle('bg-amber-500', isAct);
+        b.classList.toggle('text-slate-950', isAct);
+        b.classList.toggle('bg-slate-800', !isAct);
+        b.classList.toggle('text-slate-200', !isAct);
+      });
+      if (menuCamLbl) {
+        menuCamLbl.textContent =
+          activeCam === 'pro' ? 'Batting Cam' : activeCam === 'overhead' ? 'Overhead' : 'Bowler End';
+      }
+      if (autoResetBtn) {
+        autoResetBtn.textContent = b.autoResetAimEveryBall ? 'ON' : 'OFF';
+        autoResetBtn.className = b.autoResetAimEveryBall
+          ? 'px-2.5 py-1 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 cursor-pointer'
+          : 'px-2.5 py-1 rounded text-[10px] font-black uppercase bg-slate-800 text-slate-400 border border-slate-700 cursor-pointer';
+      }
+      if (assistBtn) {
+        assistBtn.textContent = b.shotAssistGapSnap ? 'ON' : 'OFF';
+        assistBtn.className = b.shotAssistGapSnap
+          ? 'px-2.5 py-1 rounded text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-400/40 cursor-pointer'
+          : 'px-2.5 py-1 rounded text-[10px] font-black uppercase bg-slate-800 text-slate-400 border border-slate-700 cursor-pointer';
+      }
+      if (radarGapBtn) {
+        radarGapBtn.textContent = b.shotAssistGapSnap ? '360° GAP: ON' : '360° GAP: OFF';
+        radarGapBtn.className = b.shotAssistGapSnap
+          ? 'px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/50 text-[7px] font-black text-emerald-300 uppercase tracking-wider transition pointer-events-auto'
+          : 'px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-600/60 text-[7px] font-black text-slate-300 uppercase tracking-wider transition pointer-events-auto';
+      }
+      if (handBtn) {
+        const isLeft = b.controllerLayoutHand === 'left';
+        handBtn.textContent = isLeft ? 'LEFT-HANDED' : 'RIGHT-HANDED';
+      }
+    };
+
+    document.getElementById('setting-camera-view')?.addEventListener('change', (e) => {
+      sound.playUIClick(1180);
+      const nextCam = e.target.value || 'pro';
+      if (this.app && typeof this.app.setCameraMode === 'function') {
+        this.app.setCameraMode(nextCam);
+        syncAssistAndSettingsButtons();
+        this.syncAngleWheelUI();
+        this.showStatusToast(
+          nextCam === 'pro'
+            ? '📷 Camera: Broadcast Batting View (Behind Batter)'
+            : nextCam === 'overhead'
+              ? '📷 Camera: Overhead View Active'
+              : '📷 Camera: Bowler-End TV View',
+          true
+        );
+      }
+    });
+
+    document.getElementById('btn-menu-camera-view')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1180);
+      const curCam =
+        this.app?.cameraMode === 'follow'
+          ? this.app?.savedCameraMode || 'pro'
+          : this.app?.cameraMode || 'pro';
+      const nextCam = curCam === 'pro' ? 'broadcast' : 'pro';
+      if (this.app && typeof this.app.setCameraMode === 'function') {
+        this.app.setCameraMode(nextCam);
+        syncAssistAndSettingsButtons();
+        this.syncAngleWheelUI();
+        this.toggleCornerMenu(false);
+        this.showStatusToast(
+          nextCam === 'pro' ? '📷 Switched to Broadcast Batting View!' : '📷 Switched to Bowler-End TV View!',
+          true
+        );
+      }
+    });
+
+    document.getElementById('setting-aim-autoreset')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1080);
+      if (this.app?.batting) {
+        this.app.batting.autoResetAimEveryBall = !this.app.batting.autoResetAimEveryBall;
+        syncAssistAndSettingsButtons();
+      }
+    });
+
+    const toggleShotAssist = (e) => {
+      e?.preventDefault();
+      sound.playUIClick(1160);
+      if (this.app?.batting) {
+        this.app.batting.shotAssistGapSnap = !this.app.batting.shotAssistGapSnap;
+        syncAssistAndSettingsButtons();
+        this.showStatusToast(
+          this.app.batting.shotAssistGapSnap
+            ? '🎯 Shot Assist ON: Adaptive Gap Snap'
+            : '🎯 Shot Assist OFF: Pure Manual Angle',
+          true
+        );
+      }
+    };
+
+    document.getElementById('setting-shot-assist')?.addEventListener('click', toggleShotAssist);
+    radarGapBtn?.addEventListener('click', toggleShotAssist);
+
+    document.getElementById('setting-controller-hand')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1220);
+      if (this.app?.batting) {
+        const nextHand = this.app.batting.controllerLayoutHand === 'left' ? 'right' : 'left';
+        this.applyControllerHandLayout(nextHand);
+        syncAssistAndSettingsButtons();
+        this.showStatusToast(
+          nextHand === 'left' ? '🤚 Left-Handed Layout Active' : '🤚 Right-Handed Layout Active',
+          true
+        );
+      }
+    });
+
+    syncAssistAndSettingsButtons();
+    this.syncAngleWheelUI();
+
+    // Quick Run / Cancel Run Buttons on Right Pad
+    runBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1320);
+      this.app.triggerActionFromUI('take_extra_run');
+    });
+    noRunBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      sound.playUIClick(720);
+      this.app.triggerActionFromUI('turn_back');
+    });
+
+    modeBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      sound.playUIClick();
+      const nextMode = this.app.batting.shotMode === 'ground' ? 'fly' : 'ground';
+      this.app.selectShotMode(nextMode);
+    });
+
+    // 3. Pure Tap Shot Type Buttons (DEFEND, PUSH, STROKE, LOFT) with Multi-Touch Support (No swipe/flick logic)
+    const bindPureShotTypeButton = (btn, forcedShotMode, tapActionName) => {
+      if (!btn) return;
+      btn.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        sound.init();
+
+        // In Bowling mode: LOFT button cycles bowling variation; STROKE button bowls delivery
+        if (this.app.match?.userRole === 'bowl') {
+          if (forcedShotMode === 'fly') {
+            sound.playUIClick(1240);
+            const bw = this.app.bowling;
+            const vars = bw.getVariationsForBowler(bw.bowlerType);
+            const idx = vars.findIndex((v) => v.id === bw.selectedVariationId);
+            const nextVar = vars[(idx + 1) % vars.length];
+            if (nextVar) {
+              bw.selectVariation(nextVar.id);
+              this.populateBowlingVariationSelect();
+              this.showStatusToast(`⚾ Variation: ${nextVar.nameEn}`, true);
+            }
+          } else {
+            sound.playUIClick(1080);
+            this.app.triggerActionFromUI('bowl_or_swing');
+          }
+          return;
+        }
+
+        // In Batting mode: Pure tap fires shot along the Angle Wheel's locked angle!
+        sound.playUIClick(forcedShotMode === 'fly' ? 1360 : 1080);
+        this.app.triggerActionFromUI(tapActionName);
+      });
+    };
+
+    // Bind STROKE (Ground 4) and LOFT (Aerial 6)
+    bindPureShotTypeButton(swingBtn, 'ground', 'stroke_shot');
+    bindPureShotTypeButton(loftBtn, 'fly', 'loft_shot');
+
+    // Bind DEFEND (Solid Block in Bat mode / Over-Around Wicket in Bowl mode)
+    defendBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sound.playUIClick(860);
+      if (this.app.match?.userRole === 'bowl') {
+        const nextSide = this.app.bowling.toggleBowlerSide();
+        this.updateBowlerSideButton();
+        this.showStatusToast(`⚾ Bowler Angle: ${nextSide === 'around' ? 'Around Wicket' : 'Over Wicket'}`, false);
+        return;
+      }
+      this.app.triggerActionFromUI('defend_shot');
+    });
+
+    // Bind PUSH (Soft-hands Gap Single in Bat mode / Field Preset in Bowl mode)
+    pushBtn?.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      sound.playUIClick(980);
+      if (this.app.match?.userRole === 'bowl') {
+        const presets = ['attacking', 'normal', 'defensive'];
+        const cur = this.app.fielding.setting || 'normal';
+        const nextPreset = presets[(presets.indexOf(cur) + 1) % presets.length];
+        this.app.fielding.applyFieldSetting(nextPreset, this.app.match.isPowerplayActive());
+        this.app.fielding.resetToHomePositions(this.app.bowling.bowlerType);
+        const fieldSelect = document.getElementById('select-field-preset');
+        if (fieldSelect) fieldSelect.value = nextPreset;
+        this.syncAngleWheelUI();
+        this.showStatusToast(`🛡️ Field Preset: ${nextPreset.toUpperCase()}`, false);
+        return;
+      }
+      this.app.triggerActionFromUI('push_shot');
+    });
+  }
+
+  updateCreaseIndicatorUI() {
+    const ind = document.getElementById('rc-crease-indicator');
+    const b = this.app?.batting;
+    if (!b) return;
+    if (ind) {
+      const dirSign = b.screenRightSign || -1;
+      const screenNorm = Math.max(-1, Math.min(1, (b.creaseX * dirSign) / 0.62));
+      const pct = `${(50 + screenNorm * 38).toFixed(1)}%`;
+      if (ind.style.left !== pct) ind.style.left = pct;
+    }
+    const isSteppingOut = Boolean(b.stepOutCharge || b.creaseZOffset >= 0.24);
+    const vpadStepBtn = document.getElementById('btn-vpad-step-out');
+    if (vpadStepBtn) {
+      vpadStepBtn.textContent = isSteppingOut ? '▲ OUT!' : '▲ CHARGE';
+      vpadStepBtn.className = isSteppingOut
+        ? 'px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-200 font-mono text-[8px] font-black uppercase tracking-wider cursor-pointer pointer-events-auto shadow transition-all animate-pulse'
+        : 'px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-600 text-slate-200 font-mono text-[8px] font-extrabold uppercase tracking-wider cursor-pointer pointer-events-auto transition-all';
+    }
+    const dockStepBtn = document.getElementById('btn-step-out');
+    if (dockStepBtn) {
+      dockStepBtn.textContent = isSteppingOut ? '▲ Out of Crease!' : '▲ Step Out';
+      dockStepBtn.className = isSteppingOut
+        ? 'px-2 py-1 text-[11px] font-extrabold bg-amber-400 text-slate-950 border border-amber-200 rounded-md whitespace-nowrap shrink-0 cursor-pointer select-none shadow'
+        : 'px-2 py-1 text-[11px] font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-md whitespace-nowrap shrink-0 cursor-pointer select-none';
+    }
+    const barStepBtn = document.getElementById('btn-bar-step-out');
+    if (barStepBtn) {
+      barStepBtn.textContent = isSteppingOut ? '▲OUT!' : '▲Out';
+      barStepBtn.className = isSteppingOut
+        ? 'px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 border border-amber-200 font-mono text-[10px] font-extrabold cursor-pointer select-none shadow'
+        : 'px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold cursor-pointer select-none';
     }
   }
 
@@ -827,24 +1480,75 @@ export class UIManager {
       }
     });
 
-    // Requirement A.1: Close modals on Esc key, Tab for Scorecard, D for Debug, M for Match Setup
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'Escape') {
-        if (this.activeModalId || this.isAnyModalOpen()) {
-          e.preventDefault();
-          this.app.batting.isCalibrating = false;
-          this.closeAllModals();
-        } else if (this.cornerMenuOpen) {
-          this.toggleCornerMenu(false);
-        }
-        return;
+    // Corner Pause Menu extra TV-friendly buttons (Resume, Shot Mode, Camera, Home)
+    document.getElementById('btn-menu-resume')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1180);
+      this.toggleCornerMenu(false);
+    });
+
+    document.getElementById('btn-menu-shotmode')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1180);
+      const nextMode = this.app.batting.shotMode === 'ground' ? 'fly' : 'ground';
+      this.app.selectShotMode(nextMode);
+      const shotLbl = document.getElementById('lbl-menu-shotmode');
+      if (shotLbl) {
+        shotLbl.textContent = nextMode === 'fly' ? '🚀 Shot: LOFTED' : '🎯 Shot: GROUND';
       }
+    });
+
+    document.getElementById('btn-menu-camera')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1180);
+      const modes = ['broadcast', 'pro', 'overhead'];
+      const next = modes[(modes.indexOf(this.app.cameraMode) + 1) % modes.length];
+      this.app.setCameraMode(next);
+      const camLbl = document.getElementById('lbl-menu-camera');
+      if (camLbl) {
+        const label = next === 'pro' ? 'Pro' : next === 'overhead' ? 'Overhead' : 'Broadcast';
+        camLbl.textContent = `📷 Camera: ${label}`;
+      }
+    });
+
+    // Home Screen & Full Screen buttons (Top HUD & Corner Menu)
+    document.getElementById('btn-menu-home')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1150);
+      this.goToHomeScreen();
+    });
+
+    document.getElementById('btn-hud-fullscreen')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1240);
+      this.toggleFullScreen();
+    });
+
+    document.getElementById('btn-menu-fullscreen')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1240);
+      this.toggleCornerMenu(false);
+      this.toggleFullScreen();
+    });
+
+    const syncFullscreenLabels = () => {
+      const isFs = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+      const hudLbl = document.getElementById('lbl-hud-fullscreen');
+      const menuLbl = document.getElementById('lbl-menu-fullscreen');
+      if (hudLbl) hudLbl.textContent = isFs ? 'Exit FS' : 'Full Screen';
+      if (menuLbl) menuLbl.textContent = isFs ? '⛶ Exit Full Screen' : '⛶ Full Screen';
+    };
+    document.addEventListener('fullscreenchange', syncFullscreenLabels);
+    document.addEventListener('webkitfullscreenchange', syncFullscreenLabels);
+
+    // Hotkeys: Tab for Scorecard, D for Debug, M for Match Setup (Escape/Back handled cleanly by tv_dpad.js)
+    window.addEventListener('keydown', (e) => {
       if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
       if (e.repeat) return;
       if (e.code === 'KeyD' && !this.app.batting.keys.right) {
         this.toggleDebugPanel();
       } else if (e.code === 'KeyM') {
-        this.setSetupStep(1);
+        this.toggleCornerMenu(false);
         this.openModal('modal-setup');
       } else if (e.code === 'Tab') {
         e.preventDefault();
@@ -860,10 +1564,7 @@ export class UIManager {
 
     // Requirement A.1: Close modal on device Back button (popstate)
     window.addEventListener('popstate', () => {
-      if (this.activeModalId || this.isAnyModalOpen()) {
-        this.app.batting.isCalibrating = false;
-        this.closeAllModals(true);
-      }
+      window.__tvDpad?.handleBackAction?.();
     });
 
     // Requirement A.1: Close modal on click outside the modal card (on backdrop)
@@ -897,13 +1598,10 @@ export class UIManager {
       }
     });
     document.getElementById('btn-scorecard-back-menu')?.addEventListener('click', () => {
-      this.closeModal('modal-scorecard');
-      this.setSetupStep(1);
-      this.openModal('modal-setup');
+      this.goToHomeScreen();
     });
     document.getElementById('btn-settings-back-menu')?.addEventListener('click', () => {
-      this.closeModal('modal-settings');
-      this.toggleCornerMenu(true);
+      this.goToHomeScreen();
     });
 
     // Reconnect Pause Banner buttons
@@ -915,24 +1613,17 @@ export class UIManager {
       document.getElementById('pause-reconnect-banner')?.classList.add('hidden');
     });
 
-    // Hold-to-Run (R) button in Live Running Bar
-    const holdRunBtn = document.getElementById('btn-hud-hold-run');
-    if (holdRunBtn) {
-      const startHold = (e) => {
-        e.preventDefault();
-        if (typeof this.app.setRunButtonHeld === 'function') this.app.setRunButtonHeld(true);
-        if (typeof this.app.setHoldRun === 'function') this.app.setHoldRun(true);
-      };
-      const stopHold = (e) => {
-        e.preventDefault();
-        if (typeof this.app.setRunButtonHeld === 'function') this.app.setRunButtonHeld(false);
-        if (typeof this.app.setHoldRun === 'function') this.app.setHoldRun(false);
-      };
-      holdRunBtn.addEventListener('pointerdown', startHold);
-      holdRunBtn.addEventListener('pointerup', stopHold);
-      holdRunBtn.addEventListener('pointerleave', stopHold);
-      holdRunBtn.addEventListener('pointercancel', stopHold);
-    }
+    // 1-Click Run (R) & No Run (N) buttons in Live Running Bar
+    document.getElementById('btn-hud-run')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1180);
+      this.app.triggerActionFromUI('take_extra_run');
+    });
+    document.getElementById('btn-hud-norun')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(820);
+      this.app.triggerActionFromUI('turn_back');
+    });
 
     document.getElementById('btn-toggle-dock')?.addEventListener('click', () => {
       this.toggleDock();
@@ -975,6 +1666,9 @@ export class UIManager {
     document.getElementById('btn-action-run')?.addEventListener('click', () => {
       this.app.triggerActionFromUI('take_extra_run');
     });
+    document.getElementById('btn-action-norun')?.addEventListener('click', () => {
+      this.app.triggerActionFromUI('turn_back');
+    });
 
     // On-Screen Crease Step Left / Step Right Buttons (Dock & Broadcast Bar)
     const bindCreaseStepBtn = (btnId, dir) => {
@@ -1007,6 +1701,18 @@ export class UIManager {
     bindCreaseStepBtn('btn-step-right', 1);
     bindCreaseStepBtn('btn-bar-step-left', -1);
     bindCreaseStepBtn('btn-bar-step-right', 1);
+
+    // On-Screen Step-Out / Charge Down Pitch Toggle Buttons (Virtual Pad, Dock & Broadcast Bar)
+    const triggerStepOutToggle = (e) => {
+      e?.preventDefault();
+      sound.playUIClick(1240);
+      if (typeof this.app?.toggleBatsmanStepOut === 'function') {
+        this.app.toggleBatsmanStepOut();
+      }
+    };
+    document.getElementById('btn-vpad-step-out')?.addEventListener('pointerdown', triggerStepOutToggle);
+    document.getElementById('btn-step-out')?.addEventListener('click', triggerStepOutToggle);
+    document.getElementById('btn-bar-step-out')?.addEventListener('click', triggerStepOutToggle);
 
     // Quick Simulate Current Over Buttons (Dock & Broadcast Bar)
     const triggerSimOver = () => {
@@ -1101,12 +1807,14 @@ export class UIManager {
     // Corner Menu Modals
     document.getElementById('btn-open-qr')?.addEventListener('click', () => {
       sound.playUIClick();
+      this._inMenuFlow = false;
       this.toggleCornerMenu(false);
       this.openQRModal();
     });
     document.getElementById('btn-close-qr')?.addEventListener('click', () => {
-      if (!this.app.matchPlayConfirmed) {
-        this.app.confirmPlayAndStartMatch();
+      sound.playUIClick();
+      if (!this.app.matchPlayConfirmed || this._inMenuFlow) {
+        this.goToHomeScreen();
       } else {
         this.closeModal('modal-qr');
       }
@@ -1114,12 +1822,12 @@ export class UIManager {
 
     document.getElementById('btn-qr-play-now')?.addEventListener('click', () => {
       sound.playUIClick();
+      this._inMenuFlow = false;
       this.app.confirmPlayAndStartMatch();
     });
 
     document.getElementById('btn-qr-back-setup')?.addEventListener('click', () => {
       sound.playUIClick();
-      this.setSetupStep(1);
       this.openModal('modal-setup');
     });
 
@@ -1135,13 +1843,64 @@ export class UIManager {
 
     document.getElementById('btn-open-modes')?.addEventListener('click', () => {
       sound.playUIClick();
+      this._inMenuFlow = false;
       this.toggleCornerMenu(false);
       this.syncSettingsControlsFromConfig();
       this.refreshRunChaseTargetPreview(true);
-      this.setSetupStep(1);
       this.openModal('modal-setup');
     });
     document.getElementById('btn-close-setup')?.addEventListener('click', () => this.closeModal('modal-setup'));
+
+    document.getElementById('btn-setup-back-modes')?.addEventListener('click', () => {
+      sound.playUIClick(980);
+      if (window.__middledMenu?.showModes) {
+        window.__middledMenu.showModes();
+      } else {
+        this.closeModal('modal-setup');
+      }
+    });
+
+    document.getElementById('btn-setup-open-qr')?.addEventListener('click', () => {
+      sound.playUIClick();
+      this.app.startConfiguredMatchFromUI(false);
+      this.openQRModal();
+    });
+
+    // Fast TV D-Pad Team Steppers (◀ / ▶ & Swap)
+    const stepTeamSelect = (which, delta) => {
+      sound.playUIClick();
+      const sA = document.getElementById('setup-team-a');
+      const sB = document.getElementById('setup-team-b');
+      if (!sA || !sB || FICTIONAL_TEAMS.length < 2) return;
+      const n = FICTIONAL_TEAMS.length;
+      let idxA = Number(sA.value) || 0;
+      let idxB = Number(sB.value) || 1;
+      if (which === 'a') {
+        idxA = (idxA + delta + n) % n;
+        if (idxA === idxB) idxA = (idxA + delta + n) % n;
+        sA.value = String(idxA);
+        sA.dispatchEvent(new Event('change', { bubbles: true }));
+      } else {
+        idxB = (idxB + delta + n) % n;
+        if (idxB === idxA) idxB = (idxB + delta + n) % n;
+        sB.value = String(idxB);
+        sB.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    };
+    document.getElementById('btn-team-a-prev')?.addEventListener('click', () => stepTeamSelect('a', -1));
+    document.getElementById('btn-team-a-next')?.addEventListener('click', () => stepTeamSelect('a', 1));
+    document.getElementById('btn-team-b-prev')?.addEventListener('click', () => stepTeamSelect('b', -1));
+    document.getElementById('btn-team-b-next')?.addEventListener('click', () => stepTeamSelect('b', 1));
+    document.getElementById('btn-swap-teams')?.addEventListener('click', () => {
+      sound.playUIClick(1180);
+      const sA = document.getElementById('setup-team-a');
+      const sB = document.getElementById('setup-team-b');
+      if (!sA || !sB) return;
+      const tmp = sA.value;
+      sA.value = sB.value;
+      sB.value = tmp;
+      sA.dispatchEvent(new Event('change', { bubbles: true }));
+    });
 
     document.getElementById('btn-open-scorecard')?.addEventListener('click', () => {
       sound.playUIClick();
@@ -1153,6 +1912,7 @@ export class UIManager {
 
     document.getElementById('btn-open-settings')?.addEventListener('click', () => {
       sound.playUIClick();
+      this._inMenuFlow = false;
       this.toggleCornerMenu(false);
       this.populateSpeechVoicesSelect();
       this.syncSettingsControlsFromConfig();
@@ -1160,41 +1920,12 @@ export class UIManager {
     });
     document.getElementById('btn-close-settings')?.addEventListener('click', () => this.closeModal('modal-settings'));
 
-    // 4-Step Wizard Navigation Tabs & Prev / Next / Quick Start Buttons
-    document.querySelectorAll('[data-setup-step-tab]').forEach((tab) => {
-      tab.addEventListener('click', () => {
-        sound.playUIClick();
-        const step = Number(tab.getAttribute('data-setup-step-tab')) || 1;
-        this.setSetupStep(step);
-      });
-    });
-
-    document.getElementById('btn-setup-prev-step')?.addEventListener('click', () => {
-      sound.playUIClick();
-      this.setSetupStep(this.setupStep - 1);
-    });
-
-    document.getElementById('btn-setup-next-step')?.addEventListener('click', () => {
-      sound.playUIClick();
-      this.setSetupStep(this.setupStep + 1);
-    });
-
-    document.getElementById('btn-setup-quick-start')?.addEventListener('click', () => {
-      sound.playUIClick();
-      if (this.setupMode === 't20' && !this.t20TossDone) {
-        this.setSetupStep(4);
-        this.app.performCoinToss('HEADS');
-        return;
-      }
-      this.app.startConfiguredMatchFromUI();
-      this.openQRModal();
-    });
-
     // 3-Mode Selection (Run Chase 5 Overs, 1-Over Finisher Thriller & T20)
     document.querySelectorAll('[data-setup-mode]').forEach((btn) => {
       btn.addEventListener('click', () => {
         sound.playUIClick();
         const modeId = btn.getAttribute('data-setup-mode');
+        this._userRerolledTarget = false;
         this.updateSetupModeUI(modeId);
         if (modeId === 'run_chase' || modeId === 'last_over') {
           this.refreshRunChaseTargetPreview(true);
@@ -1203,6 +1934,7 @@ export class UIManager {
     });
 
     document.getElementById('setup-mode')?.addEventListener('change', (e) => {
+      this._userRerolledTarget = false;
       this.updateSetupModeUI(e.target.value);
       if (e.target.value === 'run_chase' || e.target.value === 'last_over') {
         this.refreshRunChaseTargetPreview(true);
@@ -1279,6 +2011,7 @@ export class UIManager {
 
     document.getElementById('btn-reroll-target')?.addEventListener('click', () => {
       sound.playUIClick();
+      this._userRerolledTarget = true;
       this.refreshRunChaseTargetPreview(true);
     });
 
@@ -1356,13 +2089,14 @@ export class UIManager {
 
     document.getElementById('btn-start-match')?.addEventListener('click', () => {
       sound.playUIClick();
-      // If user selected T20 mode and hasn't flipped the coin yet, trigger the Coin Toss first!
+      // If user selected T20 mode and hasn't flipped the coin yet, trigger the 3D Coin Toss first!
       if (this.setupMode === 't20' && !this.t20TossDone) {
         this.app.performCoinToss('HEADS');
         return;
       }
-      this.app.startConfiguredMatchFromUI();
-      this.openQRModal();
+      this.closeAllModals(true);
+      this.app.startConfiguredMatchFromUI(true);
+      this.app.confirmPlayAndStartMatch();
     });
 
     document.getElementById('btn-join-room')?.addEventListener('click', () => {
@@ -1424,6 +2158,7 @@ export class UIManager {
       const norm = normalizeDifficultyKey(rawVal);
       gameConfig.difficulty = norm;
       this.app.match.difficulty = norm;
+      this._userRerolledTarget = false;
       saveGameConfig();
       const s1 = document.getElementById('setting-difficulty');
       const s2 = document.getElementById('setup-difficulty');
@@ -1555,40 +2290,19 @@ export class UIManager {
     });
     document.getElementById('setting-comm-spoken')?.addEventListener('change', (e) => {
       commentary.setSettings({ spoken: Boolean(e.target.checked) });
-      if (e.target.checked) {
-        commentary.trigger('match_start', {
-          teamA: this.app.match.teamA.nameEn,
-          teamB: this.app.match.teamB.nameEn,
-          batsman: this.app.match.getActiveStriker()?.name || 'Striker',
-          bowler: this.app.match.getActiveBowler()?.name || 'Bowler'
-        }, true);
-      } else {
+      if (!e.target.checked) {
         commentary.stopSpeech();
       }
     });
     document.getElementById('setting-comm-lang')?.addEventListener('change', (e) => {
       commentary.setSettings({ language: e.target.value, voiceURI: 'auto' });
       this.populateSpeechVoicesSelect();
-      if (gameConfig.commentary.spoken) {
-        commentary.trigger('six', {
-          batsman: this.app.match.getActiveStriker()?.name || 'Sharma',
-          bowler: this.app.match.getActiveBowler()?.name || 'Rao',
-          shot: 'lofted drive'
-        }, true);
-      }
     });
     document.getElementById('setting-comm-freq')?.addEventListener('change', (e) => {
       commentary.setSettings({ frequency: e.target.value });
     });
     document.getElementById('setting-comm-voice')?.addEventListener('change', (e) => {
       commentary.setSettings({ voiceURI: e.target.value });
-      if (gameConfig.commentary.spoken) {
-        commentary.trigger('four', {
-          batsman: this.app.match.getActiveStriker()?.name || 'Sharma',
-          bowler: this.app.match.getActiveBowler()?.name || 'Rao',
-          shot: 'cover drive'
-        }, true);
-      }
     });
     document.getElementById('btn-test-comm-voice')?.addEventListener('click', () => {
       sound.init();
@@ -1598,7 +2312,8 @@ export class UIManager {
       commentary.trigger('six', {
         batsman: this.app.match.getActiveStriker()?.name || 'Sharma',
         bowler: this.app.match.getActiveBowler()?.name || 'Rao',
-        shot: 'huge six over long-on'
+        shot: 'huge six over long-on',
+        __testVoicePreview: true
       }, true);
     });
   }
@@ -1638,7 +2353,7 @@ export class UIManager {
       glyphEl.className = `text-[11px] leading-none ${isGround ? 'text-emerald-400' : 'text-amber-400'}`;
     }
     if (iconEl) {
-      iconEl.textContent = isGround ? 'GROUND' : 'FLY';
+      iconEl.textContent = isGround ? 'GROUND' : 'LOFT';
       iconEl.className = `font-display text-[10px] sm:text-[11px] font-bold ${
         isGround ? 'text-emerald-400' : 'text-amber-400'
       }`;
@@ -1657,6 +2372,14 @@ export class UIManager {
 
       btnFly.className = `px-2.5 py-1 text-[11px] font-bold rounded transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
         !isGround ? 'bg-amber-400 text-slate-950' : 'text-slate-300 hover:text-white'
+      } ${isLocked ? 'opacity-60' : ''}`;
+    }
+
+    const vpadModeBtn = document.getElementById('btn-vpad-mode');
+    if (vpadModeBtn) {
+      vpadModeBtn.textContent = isGround ? 'GROUND' : 'LOFT';
+      vpadModeBtn.className = `px-2.5 py-1 rounded-lg font-display font-extrabold text-[11px] shadow-lg cursor-pointer active:scale-95 transition-transform ${
+        isGround ? 'bg-emerald-500 text-slate-950' : 'bg-amber-400 text-slate-950'
       } ${isLocked ? 'opacity-60' : ''}`;
     }
   }
@@ -1689,10 +2412,10 @@ export class UIManager {
     }
     if (stepsEl) {
       stepsEl.textContent = state.returning
-        ? 'TURNING BACK'
-        : state.stoppedMidPitch
-          ? `STOPPED (${progressPct}%)`
-          : `${stepsInRun}/20 steps`;
+        ? '🛑 RETURNING'
+        : this.app.runnersInMotion
+          ? `🏃 SPRINT (${progressPct}%)`
+          : 'IN CREASE';
     }
     if (cadEl) {
       const cad = state.cadenceHz ?? b?.cadenceSps ?? 0;
@@ -1707,7 +2430,7 @@ export class UIManager {
     if (callEl) {
       const risk = state.riskLevel || this.app.runRiskLevel || 'safe';
       if (risk === 'danger') {
-        callEl.textContent = '🔴 DANGER · HOLD BACK!';
+        callEl.textContent = '🔴 DANGER · NO RUN!';
         callEl.className =
           'px-2 py-0.5 rounded bg-rose-500/30 border border-rose-400 text-rose-200 font-bold text-[10px] tracking-wide whitespace-nowrap animate-pulse';
       } else if (risk === 'tight') {
@@ -1752,7 +2475,8 @@ export class UIManager {
     if (modeEl) {
       const planeStr = b.isRisingSwing ? 'RISING' : 'FLAT';
       const lockStr = b.modeLocked ? ' [LOCKED]' : '';
-      modeEl.textContent = `${b.shotMode.toUpperCase()} · ${planeStr}${lockStr}`;
+      const modeName = b.shotMode === 'fly' ? 'LOFT' : 'GROUND';
+      modeEl.textContent = `${modeName} · ${planeStr}${lockStr}`;
       modeEl.className = b.shotMode === 'fly' ? 'text-amber-400 font-bold' : 'text-emerald-400 font-bold';
     }
 
@@ -1805,66 +2529,118 @@ export class UIManager {
     const batting = this.app.batting;
     const bowling = this.app.bowling;
 
-    // 1. Team codes with score and wickets, e.g. "MET v DYN 240/3"
+    // 1. Reference-style Team Chips + Score/Wickets
     const batShort = match.battingTeam.short;
     const bowlShort = match.bowlingTeam.short;
+    const batChipEl = document.getElementById('hud-team-chip-bat');
+    const bowlChipEl = document.getElementById('hud-team-chip-bowl');
+    if (batChipEl) {
+      batChipEl.textContent = batShort;
+      if (match.battingTeam.primary) {
+        batChipEl.style.backgroundColor = match.battingTeam.primary;
+        batChipEl.style.color = '#ffffff';
+        batChipEl.style.textShadow = '0 1px 2px rgba(0,0,0,0.85)';
+      }
+    }
+    if (bowlChipEl) {
+      bowlChipEl.textContent = bowlShort;
+    }
     const scoreEl = document.getElementById('hud-score');
     if (scoreEl) {
-      scoreEl.textContent = `${batShort} v ${bowlShort} ${match.runs}/${match.wickets}`;
+      scoreEl.textContent = `${match.runs}/${match.wickets}`;
     }
 
-    // Powerplay / Free Hit compact badge
+    // Powerplay / Free Hit compact badge + Persistent Glowing Free Hit Top Pill (Bug #4 Fix)
     const flagsEl = document.getElementById('hud-match-flags');
+    const freeHitPill = document.getElementById('hud-free-hit-pill');
+    if (freeHitPill) {
+      freeHitPill.classList.toggle('hidden', !match.freeHit);
+    }
     if (flagsEl) {
       if (match.freeHit) {
-        flagsEl.textContent = 'FREE HIT';
+        flagsEl.textContent = '🔥 FREE HIT';
+        flagsEl.className =
+          'px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-slate-950 font-mono text-[8px] font-black uppercase tracking-wider shadow animate-pulse';
         flagsEl.classList.remove('hidden');
       } else if (match.isPowerplayActive()) {
         flagsEl.textContent = 'PP';
+        flagsEl.className =
+          'px-1.5 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-mono text-[8px] font-bold uppercase tracking-wider';
         flagsEl.classList.remove('hidden');
       } else {
         flagsEl.classList.add('hidden');
       }
     }
 
-    // 2. Overs, e.g. "OVERS 38.2"
+    // 2. Overs
     const oversEl = document.getElementById('hud-overs');
     if (oversEl) {
-      oversEl.textContent = match.getOversFormatted();
+      oversEl.textContent = `${match.getOversFormatted()}/${match.totalOvers}`;
     }
 
-    // 3. Target or situation text ("NEED 54 FROM 46 BALLS" in 2nd innings, or run rate in 1st innings)
+    // 3. Target or situation text ("NEED 54 (46b)" in 2nd innings, or run rate in 1st innings)
     const crrEl = document.getElementById('hud-crr');
     if (crrEl) {
       if (match.innings === 2 && match.firstInningsScore !== null) {
         const target = match.firstInningsScore + 1;
         const needRuns = Math.max(0, target - match.runs);
         const remBalls = Math.max(0, match.totalOvers * 6 - match.legalBalls);
-        crrEl.textContent = `NEED ${needRuns} FROM ${remBalls} BALLS`;
+        crrEl.textContent = `NEED ${needRuns} (${remBalls}b)`;
       } else {
-        crrEl.textContent = `${this.t('crr')} ${match.getCurrentRunRate()}`;
+        crrEl.textContent = `RR ${match.getCurrentRunRate()}`;
       }
     }
 
-    // 4. Batsmen: Striker (with small bat icon) and Non-Striker, e.g. "Sharma 112 (120)" & "Verma 24 (24)*"
+    // 4. Batsmen: Striker (with small bat icon) and Non-Striker
     const striker = match.getActiveStriker();
     const nonStriker = match.getActiveNonStriker();
     const strikerEl = document.getElementById('hud-striker');
     const nonStrikerEl = document.getElementById('hud-nonstriker');
     if (strikerEl && striker) {
-      strikerEl.textContent = `${shortSurname(striker.name)} ${striker.runs} (${striker.balls})`;
+      strikerEl.textContent = `${shortSurname(striker.name)} ${striker.runs}(${striker.balls})`;
     }
     if (nonStrikerEl && nonStriker) {
-      nonStrikerEl.textContent = `${shortSurname(nonStriker.name)} ${nonStriker.runs} (${nonStriker.balls})*`;
+      nonStrikerEl.textContent = `${shortSurname(nonStriker.name)} ${nonStriker.runs}(${nonStriker.balls})`;
     }
 
-    // 5. Bowler with figures, e.g. "Rao 2-34 (7.2)", and last 6 balls as small dots
+    // 5. Bowler with figures, rhythm/confidence icon, and last 6 balls as circular badges
     const bowler = match.getActiveBowler();
     const bowlerEl = document.getElementById('hud-bowler');
     if (bowlerEl && bowler) {
       const bOvers = `${Math.floor(bowler.balls / 6)}.${bowler.balls % 6}`;
-      bowlerEl.textContent = `${shortSurname(bowler.name)} ${bowler.wickets}-${bowler.runs} (${bOvers})`;
+      const conf = bowler.confidence ?? 70;
+      const rhythmBadge = conf >= 82 ? '⚡' : conf <= 42 ? '💦' : '';
+      bowlerEl.textContent = `${rhythmBadge}${shortSurname(bowler.name)} ${bowler.wickets}-${bowler.runs} (${bOvers})`;
+      bowlerEl.title = `Bowler Rhythm: ${Math.round(conf)}% · Stamina: ${Math.round(bowler.stamina ?? 100)}%`;
     }
+
+    const isBowlRole = match.userRole === 'bowl';
+    const vpadSwingLbl = document.getElementById('lbl-vpad-swing');
+    const vpadSwingSub = document.getElementById('sub-vpad-swing');
+    const vpadLoftSub = document.getElementById('sub-vpad-loft');
+    const vpadDefLbl = document.getElementById('lbl-vpad-defend');
+    const vpadDefSub = document.getElementById('sub-vpad-defend');
+    const vpadPushLbl = document.getElementById('lbl-vpad-push');
+    const vpadPushSub = document.getElementById('sub-vpad-push');
+
+    if (vpadSwingLbl) vpadSwingLbl.textContent = isBowlRole ? 'BOWL' : 'STROKE';
+    if (vpadSwingSub) vpadSwingSub.textContent = isBowlRole ? 'RELEASE' : 'DRIVE · 4';
+    if (vpadLoftSub) vpadLoftSub.textContent = isBowlRole ? 'VARIATION' : 'SIX · POWER';
+    if (vpadDefLbl) vpadDefLbl.textContent = isBowlRole ? '🔄 SIDE' : '🛡️ DEF';
+    if (vpadDefSub) vpadDefSub.textContent = isBowlRole ? (bowling.bowlerSide === 'around' ? 'AROUND' : 'OVER') : 'BLOCK';
+    if (vpadPushLbl) vpadPushLbl.textContent = isBowlRole ? '🛡️ FIELD' : '⚡ PUSH';
+    if (vpadPushSub) vpadPushSub.textContent = isBowlRole ? (this.app.fielding?.setting || 'BAL').toUpperCase().slice(0, 5) : 'GAP 1s';
+
+    const fieldPresetSel = document.getElementById('select-field-preset');
+    if (fieldPresetSel && this.app.fielding) {
+      if (fieldPresetSel.value !== this.app.fielding.setting) {
+        fieldPresetSel.value = this.app.fielding.setting;
+      }
+      fieldPresetSel.title = 'Select Fielding Preset';
+      fieldPresetSel.classList.remove('opacity-70');
+    }
+
+    this.updateCreaseIndicatorUI();
 
     const dotsContainer = document.getElementById('hud-over-dots');
     if (dotsContainer) {
@@ -1874,18 +2650,24 @@ export class UIManager {
         const val = balls[i];
         const span = document.createElement('span');
         span.className =
-          'inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-mono font-bold tabular-nums ';
+          'inline-flex items-center justify-center w-4 h-4 rounded-full text-[9px] font-mono font-extrabold tabular-nums shadow-sm ';
         if (!val) {
-          span.className += 'bg-slate-800/90 text-slate-500 border border-slate-700/70';
-          span.textContent = '·';
-        } else if (val === 'W') {
-          span.className += 'bg-red-600 text-white';
+          span.className += 'bg-slate-900/90 text-slate-600 border border-slate-700/80';
+          span.textContent = '•';
+        } else if (val === 'W' || String(val).includes('W')) {
+          span.className += 'bg-rose-600 text-white border border-rose-300/80 shadow-[0_0_6px_rgba(225,29,72,0.6)]';
           span.textContent = 'W';
-        } else if (val === '4' || val === '6') {
-          span.className += 'bg-amber-400 text-slate-950';
+        } else if (val === '6' || String(val).includes('6')) {
+          span.className += 'bg-amber-400 text-slate-950 border border-amber-200 shadow-[0_0_6px_rgba(251,191,36,0.6)]';
           span.textContent = val;
+        } else if (val === '4' || String(val).includes('4')) {
+          span.className += 'bg-emerald-400 text-slate-950 border border-emerald-200';
+          span.textContent = val;
+        } else if (val === '0' || val === '·') {
+          span.className += 'bg-slate-800 text-slate-400 border border-slate-600/70';
+          span.textContent = '•';
         } else {
-          span.className += 'bg-slate-700 text-slate-100';
+          span.className += 'bg-sky-500/30 text-sky-200 border border-sky-400/60';
           span.textContent = val;
         }
         dotsContainer.appendChild(span);
@@ -1913,17 +2695,22 @@ export class UIManager {
       pitchWearEl.textContent = `Pitch: ${shortName} · Wear ${wearPct}% · Spin ${rpm} rpm`;
     }
 
-    // Transient Timing Meter (appears for ~1.5s above the bar after each shot, then fades out)
+    // Transient Timing Meter (centered Early <-> Perfect <-> Late needle for ~1.5s after each shot)
+    const offsetMs = Number(batting.lastContact.timingOffsetMs) || 0;
     const timingEl = document.getElementById('hud-timing');
     if (timingEl) {
       const label = this.lang === 'hi' ? batting.lastContact.timingLabelHi : batting.lastContact.timingLabelEn;
-      timingEl.textContent = `${label.split(' ')[0]} (${batting.lastContact.launchAngleDeg}°)`;
+      const msSign = offsetMs > 0 ? '+' : '';
+      const msTag = batting.lastContact.didHit ? `${msSign}${offsetMs}ms` : `${batting.lastContact.launchAngleDeg}°`;
+      timingEl.textContent = `${label.split(' ')[0]} · ${msTag}`;
     }
 
     const timingBar = document.getElementById('hud-timing-bar');
     if (timingBar) {
-      const pct = Math.round(batting.lastContact.timingQuality * 100);
-      timingBar.style.width = `${Math.max(8, pct)}%`;
+      // 0ms = 50% (Sweet Spot Center), -240ms = 8% (Early), +240ms = 92% (Late)
+      const normOffset = Math.max(-1, Math.min(1, offsetMs / 240));
+      const needleLeftPct = Math.round(50 + normOffset * 42);
+      timingBar.style.left = `${needleLeftPct}%`;
     }
 
     if (batting.shotExecutedThisBall && !this.wasShotExecutedLastCheck) {
@@ -1987,15 +2774,77 @@ export class UIManager {
       : match.isMatchOver
         ? 'match_over'
         : 'playing';
-    this.app.net.syncMatchStateToControllers({
+    const drsPromptEl = document.getElementById('hud-drs-prompt');
+    const drsAvailable = Boolean(
+      drsPromptEl &&
+      !drsPromptEl.classList.contains('hidden') &&
+      !this.app.drsActive &&
+      this.app.lastDRSCandidate &&
+      (match.drsReviewsRemaining ?? 0) > 0
+    );
+    const qteActive = Boolean(this.app.qteActive);
+    const squadOpen = !document.getElementById('modal-squad-select')?.classList.contains('hidden');
+    const wagonOpen = !document.getElementById('hud-over-wagon-popup')?.classList.contains('hidden');
+    const scorecardOpen = !document.getElementById('modal-scorecard')?.classList.contains('hidden');
+    const activeModal = squadOpen
+      ? 'squad'
+      : wagonOpen
+        ? 'wagon'
+        : scorecardOpen
+          ? 'scorecard'
+          : null;
+
+    const dirSign = batting?.screenRightSign || -1;
+    const fielders = [];
+    if (this.app.fielding?.fielders) {
+      this.app.fielding.fielders.forEach((f) => {
+        fielders.push([Math.round(f.pos.x * 10) / 10, Math.round(f.pos.z * 10) / 10]);
+      });
+    }
+    if (this.app.fielding?.keeper) {
+      fielders.push([
+        Math.round(this.app.fielding.keeper.pos.x * 10) / 10,
+        Math.round(this.app.fielding.keeper.pos.z * 10) / 10
+      ]);
+    }
+
+    let lastShotFeedback = '';
+    if (batting?.shotExecutedThisBall && batting?.lastContact) {
+      const lc = batting.lastContact;
+      if (lc.didHit) {
+        lastShotFeedback = `🏏 ${lc.timingLabelEn} · ${lc.exitSpeedKmh} km/h · ${lc.shotNameEn}`;
+      } else {
+        lastShotFeedback = `⚠️ ${lc.timingLabelEn} (${lc.timingOffsetMs > 0 ? 'Late' : 'Early'})`;
+      }
+    }
+
+    const payload = {
       scoreText,
       needText,
       ballStatus,
       userRole: match.userRole || 'bat',
       streakText,
       isOnFire: onFire,
-      gateState
-    });
+      gateState,
+      aimDeg: Math.round(batting?.custom360AimDeg || 0),
+      wheelLocked: Boolean(batting?.wheelAimLockedThisBall),
+      shotMode: batting?.shotMode || 'ground',
+      footwork: batting?.footwork || 'front',
+      stepOutCharge: Boolean(batting?.stepOutCharge),
+      isFreeHit: Boolean(match.freeHit),
+      dirSign,
+      handedness: batting?.handedness || 'right',
+      cameraMode: this.app?.cameraMode === 'follow' ? (this.app?.savedCameraMode || 'pro') : (this.app?.cameraMode || 'pro'),
+      drsAvailable,
+      qteActive,
+      activeModal,
+      lastShotFeedback,
+      fielders
+    };
+    const sig = JSON.stringify(payload);
+    if (this._lastPhoneHudSig === sig) return;
+    this._lastPhoneHudSig = sig;
+    this.app.net.syncMatchStateToControllers(payload);
   }
 
   /**
@@ -2037,12 +2886,50 @@ export class UIManager {
     ctx.fillStyle = '#d6b88a';
     ctx.fillRect(cx - 2.5, cy - 8, 5, 16);
 
-    // Helper to convert 3D world (x, z) to 2D Radar coordinates matching active camera orientation
+    // Helper to convert 3D world (x, z) to 2D Radar coordinates matching active camera orientation (Option B TV Cam & Option A Batsman View)
     const toRadarXY = (wx, wz) => {
       const rx = cx + ((wx * dirSign) / maxFieldRadius) * radius;
-      const ry = cy + ((wz * -dirSign) / maxFieldRadius) * radius;
+      const ry = cy + ((wz * dirSign) / maxFieldRadius) * radius;
       return [rx, ry];
     };
+
+    // 3b. Draw Selected 360° Angle Wheel Aim Line & Wedge on Top-Left Radar (Display-Only Mini-Map)
+    if (this.app.match?.userRole !== 'bowl' && this.app.batting) {
+      const b = this.app.batting;
+      const rawYaw = b.swingPlaneYaw || 0;
+      const maxSnapDeg =
+        typeof b.getGapSnapLimitDeg === 'function'
+          ? b.getGapSnapLimitDeg(this.app.match?.difficulty || 'pro')
+          : 3;
+      const effectiveYaw =
+        b.shotAssistGapSnap && typeof b.computeGapSnappedYaw === 'function'
+          ? b.computeGapSnappedYaw(rawYaw, this.app.fielding.fielders, maxSnapDeg)
+          : rawYaw;
+      const screenAngleRad = effectiveYaw * dirSign;
+      const dxScreen = Math.sin(screenAngleRad);
+      const dyScreen = -dirSign * Math.cos(screenAngleRad);
+      const canvasAngle = Math.atan2(dyScreen, dxScreen);
+      const wedgeSpread = (11 * Math.PI) / 180;
+      const pivotY = dirSign > 0 ? cy + 4 : cy - 4;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(cx, pivotY);
+      ctx.arc(cx, pivotY, radius - 2, canvasAngle - wedgeSpread, canvasAngle + wedgeSpread);
+      ctx.closePath();
+      ctx.fillStyle = b.shotMode === 'fly' ? 'rgba(245, 158, 11, 0.24)' : 'rgba(52, 211, 153, 0.24)';
+      ctx.fill();
+
+      const tipX = cx + dxScreen * (radius - 2);
+      const tipY = pivotY + dyScreen * (radius - 2);
+      ctx.beginPath();
+      ctx.moveTo(cx, pivotY);
+      ctx.lineTo(tipX, tipY);
+      ctx.strokeStyle = b.shotMode === 'fly' ? 'rgba(251, 191, 36, 0.92)' : 'rgba(52, 211, 153, 0.92)';
+      ctx.lineWidth = 1.4;
+      ctx.stroke();
+      ctx.restore();
+    }
 
     // 4. Draw 9 Fielders + Wicketkeeper
     ctx.fillStyle = '#38bdf8';
@@ -2061,13 +2948,48 @@ export class UIManager {
       ctx.fill();
     }
 
-    // 5. Draw Striker (Gold dot)
+    // 5. Draw Live Striker (Gold dot) & Non-Striker (Orange/Emerald dot) moving along the pitch
     const strikerX = this.app.batting?.creaseX || 0;
-    const [sx, sy] = toRadarXY(strikerX, 8.8);
+    const strikerZ =
+      typeof this.app.strikerMeshZ === 'number'
+        ? this.app.strikerMeshZ
+        : this.app.strikerMesh?.position?.z ?? 8.8;
+    const nonStrikerX = -0.75;
+    const nonStrikerZ =
+      typeof this.app.nonStrikerMeshZ === 'number'
+        ? this.app.nonStrikerMeshZ
+        : this.app.nonStrikerMesh?.position?.z ?? -8.5;
+
+    const [sx, sy] = toRadarXY(strikerX, strikerZ);
+    const [nsx, nsy] = toRadarXY(nonStrikerX, nonStrikerZ);
+
+    // If batsmen are actively running between wickets, draw a live motion trail line on the pitch
+    if (this.app.runnersInMotion) {
+      ctx.save();
+      ctx.strokeStyle = this.app.runnerReturning ? 'rgba(244, 63, 94, 0.85)' : 'rgba(251, 191, 36, 0.85)';
+      ctx.lineWidth = 1.4;
+      ctx.setLineDash([2, 1.5]);
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(nsx, nsy);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // Non-Striker dot
+    ctx.fillStyle = '#fb923c';
+    ctx.beginPath();
+    ctx.arc(nsx, nsy, this.app.runnersInMotion ? 2.6 : 2.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Striker dot (Gold with crisp dark outline)
     ctx.fillStyle = '#f59e0b';
     ctx.beginPath();
-    ctx.arc(sx, sy, 2.6, 0, Math.PI * 2);
+    ctx.arc(sx, sy, this.app.runnersInMotion ? 3.1 : 2.7, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#090f1d';
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
 
     // 6. Draw Live Ball (White/Red glowing dot)
     if (this.app.physics && this.app.physics.state !== 'idle') {
@@ -2173,10 +3095,29 @@ export class UIManager {
       });
       this.openModal('modal-squad-select');
     }
+
+    if (this.squadAutoSelectTimer) clearTimeout(this.squadAutoSelectTimer);
+    this.squadAutoSelectTimer = setTimeout(() => {
+      const sqModal = document.getElementById('modal-squad-select');
+      if (sqModal && !sqModal.classList.contains('hidden')) {
+        const autoBtn = document.getElementById('btn-squad-auto');
+        if (autoBtn) {
+          autoBtn.click();
+        } else {
+          this.closeModal('modal-squad-select');
+        }
+      }
+    }, 4500);
   }
 
   updateLivePhoneTelemetry(omegaDeg, footwork, p1Connected, latencyMs) {
     this.onPhoneConnectionChange(Boolean(p1Connected), latencyMs);
+
+    const now = performance.now();
+    if (now - (this._lastTelemetryDomMs || 0) < 110) {
+      return;
+    }
+    this._lastTelemetryDomMs = now;
 
     const phoneBadge = document.getElementById('hud-phone-status');
     if (phoneBadge) {
@@ -2201,8 +3142,57 @@ export class UIManager {
     }
 
     this.updateRunningHUD();
-    this.renderFieldRadar();
+    if (this.app?.physics?.state && this.app.physics.state !== 'idle') {
+      this.renderFieldRadar();
+    }
     this.updateDebugPanel();
+  }
+
+  goToHomeScreen() {
+    this._modalCacheTime = 0;
+    this._inMenuFlow = true;
+    this.toggleCornerMenu(false);
+    this.closeAllModals(true);
+    if (window.__middledMenu && typeof window.__middledMenu.show === 'function') {
+      window.__middledMenu.show();
+    } else {
+      const mdHome = document.getElementById('md-home');
+      if (mdHome) {
+        mdHome.classList.remove('md-hidden');
+        this.syncVirtualControlsVisibility?.();
+        window.__tvDpad?.focusScope?.('md-home', '[data-tv-default]');
+      } else {
+        this.openModal('modal-setup');
+      }
+    }
+  }
+
+  async toggleFullScreen() {
+    try {
+      const doc = document;
+      const el = doc.documentElement;
+      const isFs = Boolean(doc.fullscreenElement || doc.webkitFullscreenElement);
+      if (!isFs) {
+        if (el.requestFullscreen) {
+          await el.requestFullscreen();
+        } else if (el.webkitRequestFullscreen) {
+          el.webkitRequestFullscreen();
+        }
+        if (window.screen?.orientation?.lock) {
+          window.screen.orientation.lock('landscape').catch(() => {});
+        }
+        this.showStatusToast('⛶ Full Screen Active', true);
+      } else {
+        if (doc.exitFullscreen) {
+          await doc.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          doc.webkitExitFullscreen();
+        }
+        this.showStatusToast('⛶ Exited Full Screen', true);
+      }
+    } catch (_) {
+      this.showStatusToast('⛶ Full Screen not supported in this frame', true);
+    }
   }
 
   showEventBanner(title, subtitle = '', colorClass = 'text-amber-400') {
@@ -2212,8 +3202,8 @@ export class UIManager {
     if (!banner || !titleEl) return;
 
     const shortLabel = normalizeShortEventLabel(title);
-    titleEl.textContent = shortLabel;
-    titleEl.className = `font-display text-2xl md:text-3xl font-extrabold tracking-wider ${colorClass}`;
+    titleEl.textContent = shortLabel === 'SIX' ? 'SIX!' : shortLabel === 'FOUR' ? 'FOUR!' : shortLabel;
+    titleEl.className = `font-display text-3xl md:text-5xl font-black tracking-widest drop-shadow-[0_4px_18px_rgba(0,0,0,0.85)] ${colorClass}`;
     if (subEl) {
       if (subtitle) {
         subEl.textContent = subtitle;
@@ -2222,14 +3212,14 @@ export class UIManager {
         subEl.classList.add('hidden');
       }
     }
-    banner.classList.remove('opacity-0', 'pointer-events-none', 'scale-95');
-    banner.classList.add('opacity-100', 'scale-100');
+    banner.classList.remove('opacity-0', 'pointer-events-none', 'scale-90', 'scale-95');
+    banner.classList.add('opacity-100', 'scale-105');
 
     if (this.bannerTimeout) clearTimeout(this.bannerTimeout);
     this.bannerTimeout = setTimeout(() => {
-      banner.classList.add('opacity-0', 'pointer-events-none', 'scale-95');
-      banner.classList.remove('opacity-100', 'scale-100');
-    }, 1800);
+      banner.classList.add('opacity-0', 'pointer-events-none', 'scale-90');
+      banner.classList.remove('opacity-100', 'scale-105');
+    }, 1900);
   }
 
   setCommentary(textEn, textHi = '') {
@@ -2239,15 +3229,56 @@ export class UIManager {
   }
 
   isAnyModalOpen() {
-    const ids = ['modal-qr', 'modal-calibrate', 'modal-setup', 'modal-squad-select', 'modal-scorecard', 'modal-settings'];
-    return ids.some((id) => {
+    const now = performance.now();
+    if (this._modalCacheTime && now - this._modalCacheTime < 75) {
+      return this._modalCacheVal;
+    }
+    this._modalCacheTime = now;
+    const mdHome = document.getElementById('md-home');
+    if (mdHome && !mdHome.classList.contains('md-hidden')) {
+      this._modalCacheVal = true;
+      return true;
+    }
+    const mdModes = document.getElementById('md-modes');
+    if (mdModes && !mdModes.classList.contains('md-hidden')) {
+      this._modalCacheVal = true;
+      return true;
+    }
+    const ids = [
+      'modal-qr',
+      'modal-calibrate',
+      'modal-setup',
+      'modal-squad-select',
+      'modal-scorecard',
+      'modal-settings',
+      'modal-online-1v1',
+      'modal-tv-apk',
+      'hud-over-wagon-popup',
+      'hud-drs-hawkeye-modal'
+    ];
+    const open = ids.some((id) => {
       const el = document.getElementById(id);
       return el && !el.classList.contains('hidden');
     });
+    this._modalCacheVal = open;
+    return open;
   }
 
   openModal(id) {
-    const ids = ['modal-qr', 'modal-calibrate', 'modal-setup', 'modal-squad-select', 'modal-scorecard', 'modal-settings'];
+    this._modalCacheTime = 0;
+    this.hideOverWagonWheelPopup?.();
+    document.getElementById('md-home')?.classList.add('md-hidden');
+    document.getElementById('md-modes')?.classList.add('md-hidden');
+    const ids = [
+      'modal-qr',
+      'modal-calibrate',
+      'modal-setup',
+      'modal-squad-select',
+      'modal-scorecard',
+      'modal-settings',
+      'modal-online-1v1',
+      'modal-tv-apk'
+    ];
     ids.forEach((otherId) => {
       if (otherId !== id) {
         document.getElementById(otherId)?.classList.add('hidden');
@@ -2264,9 +3295,15 @@ export class UIManager {
         }
       } catch {}
     }
+    this.syncVirtualControlsVisibility();
+    this.syncPhoneMatchHUD();
+    setTimeout(() => {
+      window.__tvDpad?.focusScope?.(id, '[data-tv-default]');
+    }, 20);
   }
 
-  closeModal(id) {
+  closeModal(id, silent = false) {
+    this._modalCacheTime = 0;
     const el = document.getElementById(id);
     if (el) {
       el.classList.add('hidden');
@@ -2274,33 +3311,45 @@ export class UIManager {
     if (this.activeModalId === id) {
       this.activeModalId = null;
     }
-    // If the user dismissed Match Setup before confirming the Play Gate, show the Ready-to-Play + QR Gate!
-    if (id === 'modal-setup' && !this.app.matchPlayConfirmed) {
-      this.openQRModal();
+    if (silent) {
+      this.syncVirtualControlsVisibility();
+      this.syncPhoneMatchHUD();
+      return;
+    }
+    // If dismissed while navigating menu flow or before a match has started, step back cleanly
+    if ((!this.app.matchPlayConfirmed || this._inMenuFlow) && !this.isAnyModalOpen()) {
+      if (id === 'modal-setup' && window.__middledMenu?.showModes) {
+        window.__middledMenu.showModes();
+      } else {
+        this.goToHomeScreen();
+      }
       return;
     }
     if (!this.isAnyModalOpen()) {
       sound.setMenuMusicActive(false);
+      if (this.app.matchPlayConfirmed && this.app.physics?.state === 'idle' && !this.app.autoBowlScheduled && !this.app.match?.isMatchOver) {
+        this.app.scheduleAutoBowl(1.1);
+      }
     }
+    this.syncVirtualControlsVisibility();
+    this.syncPhoneMatchHUD();
   }
 
-  closeAllModals() {
-    const wasSetupOpen = !document.getElementById('modal-setup')?.classList.contains('hidden');
-    const wasQrOpen = !document.getElementById('modal-qr')?.classList.contains('hidden');
-    const ids = ['modal-qr', 'modal-calibrate', 'modal-setup', 'modal-squad-select', 'modal-scorecard', 'modal-settings'];
+  closeAllModals(silent = false) {
+    this._modalCacheTime = 0;
+    document.getElementById('md-home')?.classList.add('md-hidden');
+    document.getElementById('md-modes')?.classList.add('md-hidden');
+    const ids = ['modal-qr', 'modal-calibrate', 'modal-setup', 'modal-squad-select', 'modal-scorecard', 'modal-settings', 'modal-online-1v1', 'modal-tv-apk'];
     ids.forEach((id) => {
       document.getElementById(id)?.classList.add('hidden');
     });
     this.activeModalId = null;
-    if (wasSetupOpen && !this.app.matchPlayConfirmed) {
-      this.openQRModal();
-      return;
-    }
-    if (wasQrOpen && !this.app.matchPlayConfirmed) {
-      this.app.confirmPlayAndStartMatch();
+    if (!silent && (!this.app.matchPlayConfirmed || this._inMenuFlow)) {
+      this.goToHomeScreen();
       return;
     }
     sound.setMenuMusicActive(false);
+    this.syncVirtualControlsVisibility();
   }
 
   openQRModal() {
@@ -2531,4 +3580,653 @@ export class UIManager {
       ctx.fill();
     });
   }
+
+  /**
+   * Injects Pro Broadcast Features UI:
+   * - Online 1v1 PvP Live Multiplayer Lobby Modal & Top-Bar Quick Button
+   * - Super Over Shootout Option in Match Setup
+   * - DRS Review Button & 3-Step Animated Hawk-Eye Ball Tracking Overlay
+   * - Over-End 360° Wagon Wheel & Pitch Map Summary Popup + Top-Left Radar Toggle
+   * - Interactive Bowling Release Timing Meter Bar
+   */
+  injectProFeaturesUI() {
+    // 1. Add Super Over option to #setup-mode select and Step 1 scenario grid
+    const modeSel = document.getElementById('setup-mode');
+    if (modeSel && !modeSel.querySelector('option[value="super_over"]')) {
+      const opt = document.createElement('option');
+      opt.value = 'super_over';
+      opt.textContent = '⚡ Super Over Shootout (1 Over)';
+      modeSel.appendChild(opt);
+    }
+
+    const t20Btn = document.getElementById('btn-setup-mode-t20');
+    if (t20Btn && t20Btn.parentElement && !document.getElementById('btn-setup-mode-super-over')) {
+      const superBtn = document.createElement('button');
+      superBtn.id = 'btn-setup-mode-super-over';
+      superBtn.type = 'button';
+      superBtn.setAttribute('data-setup-mode', 'super_over');
+      superBtn.className = 'wd-scenario-card';
+      superBtn.innerHTML = `
+        <div class="flex items-center justify-between mb-1">
+          <span class="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-[9px] font-black text-emerald-300 uppercase">TIE-BREAKER</span>
+          <span class="font-mono text-[10px] text-emerald-300 font-bold">6 BALLS · 2 WKTS</span>
+        </div>
+        <div class="font-display font-black text-sm text-white">⚡ SUPER OVER SHOOTOUT</div>
+        <div class="text-[11px] text-slate-400 mt-0.5">Sudden-death 1-Over shootout! Bat 1st &amp; defend or chase under floodlights.</div>
+      `;
+      t20Btn.parentElement.appendChild(superBtn);
+    }
+
+    // 2. Add Top-Bar "🌐 1v1" Multiplayer Button & Corner Menu Entry
+    const cornerBtn = document.getElementById('btn-corner-menu');
+    if (cornerBtn && cornerBtn.parentElement && !document.getElementById('btn-topbar-online-1v1')) {
+      const pvpBtn = document.createElement('button');
+      pvpBtn.id = 'btn-topbar-online-1v1';
+      pvpBtn.type = 'button';
+      pvpBtn.className =
+        'px-2 py-1 rounded-lg bg-gradient-to-r from-sky-500/25 to-emerald-500/25 hover:from-sky-500/40 hover:to-emerald-500/40 border border-sky-400/60 text-[10px] font-display font-extrabold text-sky-200 flex items-center gap-1 shadow cursor-pointer shrink-0';
+      pvpBtn.innerHTML = `<span id="online-1v1-top-dot" class="w-1.5 h-1.5 rounded-full bg-sky-400"></span><span>🌐 1v1 PvP</span>`;
+      pvpBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        sound.playUIClick(1240);
+        this.syncOnline1v1ModalUI();
+        this.openModal('modal-online-1v1');
+      });
+      cornerBtn.parentElement.insertBefore(pvpBtn, cornerBtn);
+    }
+
+    // 3. Add "🎯 WAGON" button next to Top-Left Radar to view 360° Wagon Wheel anytime
+    const radarGapBtn = document.getElementById('btn-toggle-radar-aim');
+    if (radarGapBtn && radarGapBtn.parentElement && !document.getElementById('btn-radar-wagon-wheel')) {
+      const wagonBtn = document.createElement('button');
+      wagonBtn.id = 'btn-radar-wagon-wheel';
+      wagonBtn.type = 'button';
+      wagonBtn.className =
+        'px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/50 text-[7px] font-black text-amber-300 uppercase tracking-wider transition pointer-events-auto cursor-pointer ml-1';
+      wagonBtn.textContent = '🎯 WAGON';
+      wagonBtn.addEventListener('click', (e) => {
+        e.preventDefault();
+        sound.playUIClick(1180);
+        const match = this.app?.match;
+        const summary = match?.lastCompletedOverSummary || {
+          overNumber: Math.max(1, Math.ceil((match?.legalBalls || 1) / 6)),
+          runsInOver: match?.runs || 0,
+          wicketsInOver: match?.wickets || 0,
+          balls: match?.currentOverBalls || [],
+          wagonShots: match?.wagonWheel || [],
+          scoreStr: `${match?.runs || 0}/${match?.wickets || 0}`,
+          battingTeamShort: match?.battingTeam?.short || 'BAT',
+          bowlerName: match?.getActiveBowler()?.name || 'Bowler'
+        };
+        this.showOverWagonWheelPopup(summary, false);
+      });
+      radarGapBtn.parentElement.appendChild(wagonBtn);
+    }
+
+    // 4. Inject Interactive Overlays & Online 1v1 Modal into document.body
+    if (!document.getElementById('pro-features-overlays')) {
+      const wrap = document.createElement('div');
+      wrap.id = 'pro-features-overlays';
+      wrap.innerHTML = `
+        <!-- Interactive Bowling Release Timing Meter (Shown during Bowler Run-up in Bowl Mode) -->
+        <div id="hud-bowling-release-meter" class="hidden fixed left-1/2 -translate-x-1/2 bottom-36 z-30 pointer-events-none flex flex-col items-center gap-1 bg-slate-950/90 border border-sky-400/60 rounded-xl px-3.5 py-2 shadow-2xl">
+          <div class="text-[9px] font-display font-extrabold uppercase tracking-wider text-sky-300">⚡ TAP BOWL IN GREEN ZONE FOR PERFECT RELEASE</div>
+          <div class="relative w-44 h-3 rounded-full bg-slate-800 border border-slate-700 overflow-hidden">
+            <div class="absolute top-0 bottom-0 left-[74%] width-[18%] w-[18%] bg-emerald-400/80"></div>
+            <div class="absolute top-0 bottom-0 left-[64%] w-[10%] bg-amber-400/60"></div>
+            <div class="absolute top-0 bottom-0 left-[92%] w-[8%] bg-rose-500/70"></div>
+            <div id="hud-bowling-release-cursor" class="absolute top-0 bottom-0 w-1.5 bg-white shadow-[0_0_8px_#fff]" style="left: 0%"></div>
+          </div>
+        </div>
+
+        <!-- DRS Third Umpire Review Prompt Button -->
+        <div id="hud-drs-prompt" class="hidden fixed left-1/2 -translate-x-1/2 top-20 z-40 flex items-center gap-2.5 bg-slate-950/95 border-2 border-amber-400 rounded-2xl px-4 py-2 shadow-2xl">
+          <div class="text-xs font-display font-extrabold text-white">
+            <span class="text-amber-300">CLOSE DECISION!</span> Challenge Umpire Call?
+            <span id="hud-drs-Timer-lbl" class="ml-1 font-mono text-[10px] text-slate-300">(2 Left)</span>
+          </div>
+          <button id="btn-trigger-drs" type="button" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-400 to-emerald-400 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer active:scale-95 transition">
+            📺 DRS REVIEW (T)
+          </button>
+        </div>
+
+        <!-- 3-Step DRS Hawk-Eye Ball-Tracking Broadcast Overlay -->
+        <div id="hud-drs-hawkeye-modal" class="hidden fixed inset-0 z-50 bg-slate-950/92 flex items-center justify-center p-4">
+          <div class="w-full max-w-md bg-slate-900 border-2 border-sky-400/70 rounded-2xl p-4 shadow-2xl space-y-3 text-center">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <span class="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-400/50 text-[10px] font-mono font-bold text-sky-300">THIRD UMPIRE · HAWK-EYE DRS</span>
+              <span id="drs-hawkeye-dismissal-type" class="font-display font-bold text-xs text-amber-300">LBW REVIEW</span>
+            </div>
+            <canvas id="drs-hawkeye-canvas" width="340" height="150" class="w-full h-36 rounded-xl bg-slate-950 border border-slate-800 mx-auto"></canvas>
+            <div class="grid grid-cols-3 gap-2 text-left">
+              <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                <div class="text-[9px] text-slate-400 uppercase font-mono">1. PITCHING</div>
+                <div id="drs-step-pitching" class="font-display font-extrabold text-xs text-slate-500 mt-0.5">CHECKING...</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                <div class="text-[9px] text-slate-400 uppercase font-mono">2. IMPACT</div>
+                <div id="drs-step-impact" class="font-display font-extrabold text-xs text-slate-500 mt-0.5">WAITING...</div>
+              </div>
+              <div class="p-2 rounded-lg bg-slate-950 border border-slate-800">
+                <div class="text-[9px] text-slate-400 uppercase font-mono">3. WICKETS</div>
+                <div id="drs-step-wickets" class="font-display font-extrabold text-xs text-slate-500 mt-0.5">WAITING...</div>
+              </div>
+            </div>
+            <div id="drs-final-decision-banner" class="py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 font-display font-black text-base text-amber-300 tracking-wider">
+              📡 TRACKING BALL TRAJECTORY...
+            </div>
+          </div>
+        </div>
+
+        <!-- Over-End 360° Wagon Wheel & Pitch Map Summary Popup -->
+        <div id="hud-over-wagon-popup" class="hidden fixed inset-0 z-40 bg-slate-950/88 flex items-center justify-center p-4">
+          <div class="w-full max-w-md bg-slate-900/95 border border-emerald-500/50 rounded-2xl p-4 shadow-2xl space-y-3">
+            <div class="flex items-center justify-between border-b border-slate-800 pb-2">
+              <div>
+                <div id="over-wagon-title" class="font-display font-black text-sm text-white">END OF OVER 1 · 360° WAGON WHEEL</div>
+                <div id="over-wagon-sub" class="text-[11px] text-emerald-300 font-mono">12 Runs · 0 Wickets</div>
+              </div>
+              <button id="btn-close-over-wagon" type="button" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-200 cursor-pointer">✕ Close</button>
+            </div>
+            <div class="flex flex-col sm:flex-row items-center gap-3">
+              <canvas id="over-wagon-canvas" width="180" height="180" class="w-40 h-40 rounded-full bg-slate-950 border border-emerald-500/40 shrink-0"></canvas>
+              <div class="flex-1 space-y-2 w-full">
+                <div class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Over Deliveries</div>
+                <div id="over-wagon-balls" class="flex flex-wrap gap-1.5"></div>
+                <div class="pt-1 space-y-1 text-[11px] text-slate-300">
+                  <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block"></span><span>SIXES (Aerial 6)</span></div>
+                  <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-sky-400 inline-block"></span><span>FOURS (Boundary 4)</span></div>
+                  <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-slate-200 inline-block"></span><span>1s / 2s / 3s</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Real-Time Online 1v1 PvP Multiplayer Modal -->
+        <div id="modal-online-1v1" class="modal-backdrop hidden fixed inset-0 z-50 bg-slate-950/92 flex items-center justify-center p-3 sm:p-4">
+          <div class="w-full max-w-lg bg-slate-900 border border-sky-500/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-4 py-3 bg-slate-950 border-b border-slate-800 flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="px-2 py-0.5 rounded bg-sky-500/20 border border-sky-400/50 text-[10px] font-mono font-bold text-sky-300">LIVE WEBSOCKET PvP</span>
+                <h2 class="font-display font-black text-sm sm:text-base text-white">🌐 Real-Time Online 1v1 Multiplayer</h2>
+              </div>
+              <button type="button" data-close-modal="modal-online-1v1" class="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-bold text-slate-300 cursor-pointer">✕</button>
+            </div>
+            <div class="p-4 overflow-y-auto space-y-3 text-xs text-slate-300">
+              <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between gap-2">
+                <div>
+                  <div class="text-[10px] text-slate-400 uppercase font-mono">Your 1v1 Room Code</div>
+                  <div id="online-1v1-room-code" class="font-mono font-black text-2xl text-amber-300 tracking-widest">----</div>
+                </div>
+                <div class="flex flex-col items-end gap-1.5">
+                  <span id="online-1v1-peer-badge" class="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-[10px] font-mono font-bold text-amber-300">⏳ Waiting for Friend...</span>
+                  <button id="btn-copy-online-invite" type="button" class="px-3 py-1 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-display font-extrabold text-[11px] cursor-pointer">📋 Copy 1v1 Invite Link</button>
+                </div>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
+                <div class="font-display font-bold text-white text-xs">Join Friend's 1v1 Room Code</div>
+                <div class="flex items-center gap-2">
+                  <input id="input-online-1v1-code" type="text" maxlength="4" placeholder="ABCD" class="w-28 bg-slate-900 border border-slate-700 rounded-lg px-3 py-1.5 font-mono font-bold text-sm text-white uppercase tracking-widest"/>
+                  <button id="btn-join-online-1v1" type="button" class="px-3.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-xs cursor-pointer">Join Room</button>
+                </div>
+              </div>
+
+              <div class="p-3 rounded-xl bg-slate-950/90 border border-slate-800 space-y-2">
+                <div class="font-display font-bold text-white text-xs">Select Your Role &amp; Start Live 1v1 Match</div>
+                <div class="text-[11px] text-slate-400">One player Bats with the 360° Angle Wheel while the other player Bowls live (places Pitch Bullseye, picks Variation &amp; Release Timing)!</div>
+                <div class="grid grid-cols-2 gap-2 pt-1">
+                  <button id="btn-start-online-bat" type="button" data-tv-default="true" class="py-2.5 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-400 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer">
+                    🏏 BAT FIRST (1v1)
+                  </button>
+                  <button id="btn-start-online-bowl" type="button" class="py-2.5 px-3 rounded-xl bg-gradient-to-r from-sky-400 to-indigo-400 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer">
+                    ⚾ BOWL FIRST (1v1)
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(wrap);
+    }
+
+    // Bind Pro Feature Overlay Events
+    document.getElementById('btn-trigger-drs')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      sound.playUIClick(1320);
+      if (typeof this.app?.triggerDRSReview === 'function') {
+        this.app.triggerDRSReview();
+      }
+    });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'KeyT' && !['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target?.tagName)) {
+        const promptEl = document.getElementById('hud-drs-prompt');
+        if (promptEl && !promptEl.classList.contains('hidden')) {
+          e.preventDefault();
+          this.app?.triggerDRSReview?.();
+        }
+      }
+    });
+
+    document.getElementById('btn-close-over-wagon')?.addEventListener('click', () => {
+      this.hideOverWagonWheelPopup();
+    });
+
+    document.getElementById('btn-copy-online-invite')?.addEventListener('click', async () => {
+      const url = this.app?.net?.getOnlineInviteUrl
+        ? this.app.net.getOnlineInviteUrl()
+        : `${window.location.origin}/?room=${this.app?.net?.roomCode || ''}&online=1`;
+      const btn = document.getElementById('btn-copy-online-invite');
+      try {
+        await navigator.clipboard.writeText(url);
+        if (btn) {
+          btn.textContent = '✅ Link Copied!';
+          setTimeout(() => {
+            btn.textContent = '📋 Copy 1v1 Invite Link';
+          }, 1800);
+        }
+      } catch {
+        this.showStatusToast(`Invite URL: ${url}`, true);
+      }
+    });
+
+    document.getElementById('btn-join-online-1v1')?.addEventListener('click', () => {
+      const inp = document.getElementById('input-online-1v1-code');
+      const code = inp?.value?.trim()?.toUpperCase() || '';
+      if (code.length === 4 && this.app) {
+        sound.playUIClick(1240);
+        this.app.joinCustomRoom(code);
+        this.app.online1v1Active = true;
+        this.syncOnline1v1ModalUI();
+        this.showStatusToast(`🌐 Joined 1v1 Room ${code}!`, true);
+      }
+    });
+
+    document.getElementById('btn-start-online-bat')?.addEventListener('click', () => {
+      sound.playUIClick(1340);
+      this.closeModal('modal-online-1v1');
+      this.app?.startOnline1v1Match?.(this.app?.net?.roomCode, true, 'bat');
+    });
+
+    document.getElementById('btn-start-online-bowl')?.addEventListener('click', () => {
+      sound.playUIClick(1340);
+      this.closeModal('modal-online-1v1');
+      this.app?.startOnline1v1Match?.(this.app?.net?.roomCode, true, 'bowl');
+    });
+  }
+
+  updateBowlingReleaseMeter(progress = 0, visible = false) {
+    const meter = document.getElementById('hud-bowling-release-meter');
+    const cursor = document.getElementById('hud-bowling-release-cursor');
+    if (!meter || !cursor) return;
+    if (!visible) {
+      meter.classList.add('hidden');
+      return;
+    }
+    meter.classList.remove('hidden');
+    const pct = Math.max(0, Math.min(100, progress * 100));
+    cursor.style.left = `${pct.toFixed(1)}%`;
+  }
+
+  syncOnline1v1ModalUI() {
+    const roomEl = document.getElementById('online-1v1-room-code');
+    const badgeEl = document.getElementById('online-1v1-peer-badge');
+    const topDot = document.getElementById('online-1v1-top-dot');
+    const code = this.app?.net?.roomCode || '----';
+    const connected = Boolean(this.app?.onlinePeerConnected || this.app?.net?.onlinePeerConnected);
+
+    if (roomEl) roomEl.textContent = code;
+    if (badgeEl) {
+      if (connected) {
+        badgeEl.textContent = '🟢 Opponent Connected · Ready for 1v1!';
+        badgeEl.className =
+          'px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/60 text-[10px] font-mono font-bold text-emerald-300';
+      } else {
+        badgeEl.textContent = `⏳ Room ${code} · Waiting for Opponent...`;
+        badgeEl.className =
+          'px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-400/50 text-[10px] font-mono font-bold text-amber-300';
+      }
+    }
+    if (topDot) {
+      topDot.className = connected
+        ? 'w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping'
+        : 'w-1.5 h-1.5 rounded-full bg-sky-400';
+    }
+  }
+
+  showDRSReviewPrompt(snap, reviewsLeft = 1) {
+    const promptEl = document.getElementById('hud-drs-prompt');
+    const lblEl = document.getElementById('hud-drs-Timer-lbl');
+    if (!promptEl) return;
+    const rem = snap?.reviewsLeft ?? reviewsLeft ?? 1;
+    if (lblEl) {
+      lblEl.textContent = `(${rem} Review${rem === 1 ? '' : 's'} Left)`;
+    }
+    promptEl.classList.remove('hidden');
+    this.syncPhoneMatchHUD();
+    if (this.drsPromptTimeout) clearTimeout(this.drsPromptTimeout);
+    this.drsPromptTimeout = setTimeout(() => {
+      this.hideDRSReviewPrompt();
+    }, 6000);
+  }
+
+  hideDRSReviewPrompt() {
+    const promptEl = document.getElementById('hud-drs-prompt');
+    if (promptEl) promptEl.classList.add('hidden');
+    if (this.drsPromptTimeout) {
+      clearTimeout(this.drsPromptTimeout);
+      this.drsPromptTimeout = null;
+    }
+    this.syncPhoneMatchHUD();
+  }
+
+  playDRSHawkEyeSequence(snap, onComplete) {
+    this.hideDRSReviewPrompt();
+    const modal = document.getElementById('hud-drs-hawkeye-modal');
+    const typeEl = document.getElementById('drs-hawkeye-dismissal-type');
+    const pitchEl = document.getElementById('drs-step-pitching');
+    const impactEl = document.getElementById('drs-step-impact');
+    const wicketsEl = document.getElementById('drs-step-wickets');
+    const finalEl = document.getElementById('drs-final-decision-banner');
+    const canvas = document.getElementById('drs-hawkeye-canvas');
+
+    if (!modal || !canvas) {
+      if (onComplete) {
+        onComplete({
+          isOverturned: false,
+          umpireCall: false,
+          reasonText: 'WICKETS HITTING'
+        });
+      }
+      return;
+    }
+
+    modal.classList.remove('hidden');
+    const dType = String(snap?.wicketTypeEn || snap?.dismissalType || 'LBW').toUpperCase();
+    if (typeEl) typeEl.textContent = `${dType} · HAWK-EYE REVIEW`;
+    if (pitchEl) {
+      pitchEl.textContent = 'CHECKING...';
+      pitchEl.className = 'font-display font-extrabold text-xs text-slate-400 mt-0.5';
+    }
+    if (impactEl) {
+      impactEl.textContent = 'WAITING...';
+      impactEl.className = 'font-display font-extrabold text-xs text-slate-400 mt-0.5';
+    }
+    if (wicketsEl) {
+      wicketsEl.textContent = 'WAITING...';
+      wicketsEl.className = 'font-display font-extrabold text-xs text-slate-400 mt-0.5';
+    }
+    if (finalEl) {
+      finalEl.textContent = '📡 HAWK-EYE BALL TRACKING IN PROGRESS...';
+      finalEl.className =
+        'py-2 px-3 rounded-xl bg-slate-950 border border-slate-800 font-display font-black text-sm text-sky-300 tracking-wider';
+    }
+
+    // Determine realistic Hawk-Eye / Crease-Cam verdict deterministically from physics evaluation in snap
+    const isRunOutOrStumped = dType.includes('RUN OUT') || dType.includes('STUMPED');
+    const isOverturned = typeof snap?.isOverturned === 'boolean' ? snap.isOverturned : false;
+    const isUmpireCall = Boolean(snap?.umpireCall);
+    const pitchingText = isRunOutOrStumped
+      ? 'BAILS: ZING LED FLASH'
+      : Math.abs(snap?.pitchX ?? 0) > 0.19
+        ? 'PITCHING: OUTSIDE'
+        : 'PITCHING: IN LINE';
+    const impactText = isRunOutOrStumped
+      ? isOverturned
+        ? 'CREASE: BAT GROUNDED'
+        : `CREASE: SHORT (${Math.round((snap?.runnerProgress ?? 0.55) * 100)}%)`
+      : dType.includes('CAUGHT')
+        ? isOverturned
+          ? 'ULTRAEDGE: FLAT LINE'
+          : 'ULTRAEDGE: SPIKE!'
+        : Math.abs(snap?.impactX ?? 0) > 0.16
+          ? 'IMPACT: OUTSIDE'
+          : 'IMPACT: IN LINE';
+    const wicketsText = isRunOutOrStumped
+      ? isOverturned
+        ? 'BAT IN GROUND!'
+        : 'SHORT OF CREASE · OUT!'
+      : isOverturned
+        ? 'WICKETS: MISSING!'
+        : isUmpireCall
+          ? "WICKETS: UMPIRE'S CALL"
+          : 'WICKETS: HITTING!';
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    let progress = 0;
+
+    const drawHawkEyeFrame = (p) => {
+      ctx.clearRect(0, 0, w, h);
+      // Pitch strip perspective
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = 'rgba(214, 184, 138, 0.22)';
+      ctx.beginPath();
+      ctx.moveTo(40, h - 18);
+      ctx.lineTo(w - 40, h - 18);
+      ctx.lineTo(w - 75, 24);
+      ctx.lineTo(75, 24);
+      ctx.closePath();
+      ctx.fill();
+
+      // In-line zone strip
+      ctx.fillStyle = 'rgba(16, 185, 129, 0.16)';
+      ctx.fillRect(w / 2 - 22, 24, 44, h - 42);
+
+      // Stumps at far end
+      ctx.strokeStyle = '#fbbf24';
+      ctx.lineWidth = 2.5;
+      [-10, 0, 10].forEach((ox) => {
+        ctx.beginPath();
+        ctx.moveTo(w / 2 + ox, 54);
+        ctx.lineTo(w / 2 + ox, 24);
+        ctx.stroke();
+      });
+
+      // Real physics-driven ball trajectory from snap.pitchX, snap.bounceZ, snap.impactX, snap.impactY
+      const pitchXVal = typeof snap?.pitchX === 'number' ? snap.pitchX : 0;
+      const bounceZVal = typeof snap?.bounceZ === 'number' ? snap.bounceZ : 4.8;
+      const impactXVal = typeof snap?.impactX === 'number' ? snap.impactX : 0;
+      const impactYVal = typeof snap?.impactY === 'number' ? snap.impactY : isOverturned ? 0.82 : 0.42;
+
+      const startX = 44 + Math.max(-18, Math.min(18, pitchXVal * 40));
+      const startY = h - 26;
+      const bounceNormZ = Math.max(0.28, Math.min(0.82, (bounceZVal + 2.0) / 11.5));
+      const bounceX = startX + (w - 96) * bounceNormZ;
+      const bounceY = h - 20;
+      const endX = w - 48 + Math.max(-24, Math.min(24, impactXVal * 65));
+      const endY = isOverturned
+        ? 14
+        : Math.max(22, Math.min(52, 54 - (impactYVal / 0.71) * 30));
+
+      ctx.strokeStyle = isOverturned ? '#38bdf8' : '#f43f5e';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(startX, startY);
+      const curX = startX + (endX - startX) * p;
+      const curY =
+        p < bounceNormZ
+          ? startY + (bounceY - startY) * (p / bounceNormZ)
+          : bounceY + (endY - bounceY) * ((p - bounceNormZ) / Math.max(0.15, 1 - bounceNormZ));
+      ctx.lineTo(Math.min(curX, bounceX), p < bounceNormZ ? curY : bounceY);
+      if (p > bounceNormZ) {
+        ctx.lineTo(curX, curY);
+      }
+      ctx.stroke();
+
+      // Highlight pitch bounce spot
+      if (p >= bounceNormZ) {
+        ctx.fillStyle = '#10b981';
+        ctx.beginPath();
+        ctx.arc(bounceX, bounceY, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = '#ffffff';
+      ctx.beginPath();
+      ctx.arc(curX, curY, 5, 0, Math.PI * 2);
+      ctx.fill();
+    };
+
+    const animTimer = setInterval(() => {
+      progress = Math.min(1, progress + 0.05);
+      drawHawkEyeFrame(progress);
+    }, 65);
+
+    setTimeout(() => {
+      if (pitchEl) {
+        pitchEl.textContent = pitchingText;
+        pitchEl.className = 'font-display font-extrabold text-xs text-emerald-400 mt-0.5';
+      }
+      sound.playUIClick(980);
+    }, 750);
+
+    setTimeout(() => {
+      if (impactEl) {
+        impactEl.textContent = impactText;
+        impactEl.className = `font-display font-extrabold text-xs ${
+          isOverturned ? 'text-emerald-400' : 'text-rose-400'
+        } mt-0.5`;
+      }
+      sound.playUIClick(1120);
+    }, 1550);
+
+    setTimeout(() => {
+      clearInterval(animTimer);
+      drawHawkEyeFrame(1);
+      if (wicketsEl) {
+        wicketsEl.textContent = wicketsText;
+        wicketsEl.className = `font-display font-extrabold text-xs ${
+          isOverturned ? 'text-emerald-400' : 'text-rose-400'
+        } mt-0.5`;
+      }
+      if (finalEl) {
+        if (isOverturned) {
+          finalEl.textContent = '🟢 DECISION OVERTURNED · NOT OUT!';
+          finalEl.className =
+            'py-2 px-3 rounded-xl bg-emerald-500/20 border border-emerald-400 font-display font-black text-base text-emerald-300 tracking-wider';
+        } else {
+          finalEl.textContent = '🔴 UMPIRE CALL STANDS · OUT!';
+          finalEl.className =
+            'py-2 px-3 rounded-xl bg-rose-500/20 border border-rose-400 font-display font-black text-base text-rose-300 tracking-wider';
+        }
+      }
+    }, 2350);
+
+    setTimeout(() => {
+      modal.classList.add('hidden');
+      if (onComplete) {
+        onComplete({
+          isOverturned,
+          umpireCall: isUmpireCall,
+          reasonText: `${pitchingText} · ${impactText} · ${wicketsText}`
+        });
+      }
+    }, 3700);
+  }
+
+  showOverWagonWheelPopup(summary, autoHide = true) {
+    const popup = document.getElementById('hud-over-wagon-popup');
+    const titleEl = document.getElementById('over-wagon-title');
+    const subEl = document.getElementById('over-wagon-sub');
+    const ballsEl = document.getElementById('over-wagon-balls');
+    const canvas = document.getElementById('over-wagon-canvas');
+    if (!popup || !canvas || !summary) return;
+
+    if (titleEl) {
+      titleEl.textContent = `END OF OVER ${summary.overNumber || 1} · 360° WAGON WHEEL`;
+    }
+    if (subEl) {
+      subEl.textContent = `${summary.battingTeamShort || ''} ${summary.scoreStr || ''} · ${summary.runsInOver || 0} Runs, ${summary.wicketsInOver || 0} Wkt (${summary.bowlerName || 'Bowler'})`;
+    }
+    if (ballsEl) {
+      ballsEl.innerHTML = '';
+      (summary.balls || []).forEach((b) => {
+        const badge = document.createElement('span');
+        badge.className = `px-2 py-0.5 rounded-full text-[10px] font-mono font-bold ${
+          b === '6' || b === '4'
+            ? 'bg-amber-400 text-slate-950'
+            : b === 'W'
+              ? 'bg-rose-600 text-white'
+              : 'bg-slate-800 text-slate-200 border border-slate-700'
+        }`;
+        badge.textContent = b;
+        ballsEl.appendChild(badge);
+      });
+    }
+
+    const ctx = canvas.getContext('2d');
+    const w = canvas.width;
+    const h = canvas.height;
+    const cx = w / 2;
+    const cy = h / 2;
+    const r = Math.min(cx, cy) - 10;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.fillStyle = '#064e3b';
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = '#10b981';
+    ctx.stroke();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.setLineDash([3, 3]);
+    ctx.beginPath();
+    ctx.arc(cx, cy, r * 0.48, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = '#d6b88a';
+    ctx.fillRect(cx - 3, cy - 10, 6, 20);
+
+    const shots =
+      Array.isArray(summary.wagonShots) && summary.wagonShots.length > 0
+        ? summary.wagonShots
+        : this.app?.match?.wagonWheel || [];
+
+    shots.forEach((shot) => {
+      const normDist = Math.min(1.0, (shot.distance || 28) / 52.0);
+      const ex = cx + Math.sin(shot.angleRad || 0) * (normDist * r);
+      const ey = cy - Math.cos(shot.angleRad || 0) * (normDist * r);
+
+      ctx.strokeStyle = shot.runs === 6 ? '#f59e0b' : shot.runs === 4 ? '#38bdf8' : '#e2e8f0';
+      ctx.lineWidth = shot.runs >= 4 ? 2.4 : 1.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + 4);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.beginPath();
+      ctx.arc(ex, ey, 3, 0, Math.PI * 2);
+      ctx.fill();
+    });
+
+    popup.classList.remove('hidden');
+    this.syncPhoneMatchHUD();
+    if (this.overWagonTimeout) clearTimeout(this.overWagonTimeout);
+    if (autoHide) {
+      this.overWagonTimeout = setTimeout(() => {
+        this.hideOverWagonWheelPopup();
+      }, 3600);
+    }
+  }
+
+  hideOverWagonWheelPopup() {
+    const popup = document.getElementById('hud-over-wagon-popup');
+    if (popup) popup.classList.add('hidden');
+    if (this.overWagonTimeout) {
+      clearTimeout(this.overWagonTimeout);
+      this.overWagonTimeout = null;
+    }
+    this.syncPhoneMatchHUD();
+  }
 }
+

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.BoxCricketTV" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#090F1D</item>
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:colorPrimaryDark">#090F1D</item>
+        <item name="android:navigationBarColor">#090F1D</item>
+        <item name="android:statusBarColor">#090F1D</item>
+    </style>
+</resources>

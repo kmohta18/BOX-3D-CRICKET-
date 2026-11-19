@@ -1,0 +1,4 @@
+# Wavedash static web-game configuration
+# For Developer Portal ZIP upload, index.html must remain at the ZIP root.
+upload_dir = "."
+entrypoint = "index.html"

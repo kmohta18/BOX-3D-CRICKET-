@@ -9,11 +9,21 @@
     <meta property="og:description" content="High-speed 3D arcade cricket game in Three.js with real-time smartphone gyroscope and accelerometer motion controls, custom ball physics, and multi-stadium gameplay." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="theme-color" content="#090f1d" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="BoxCricket" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" crossorigin="anonymous" />
     <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./middled_menu.css" />
 
     <!-- Plain ES Module Import Map (Served directly from local server, no build step required) -->
     <script type="importmap">
@@ -34,6 +44,11 @@
         font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
         user-select: none;
         -webkit-user-select: none;
+        touch-action: none;
+      }
+      canvas {
+        touch-action: none;
+        -webkit-touch-callout: none;
       }
       .font-display {
         font-family: 'Chakra Petch', sans-serif;
@@ -52,52 +67,51 @@
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
-      /* Responsive TV Broadcast Lower-Third Sizing (Small / Medium default / Large + TV / Tablet / Phone) */
+      /* Responsive TV Broadcast Lower-Third Sizing (Compact Reference-Style) */
       body[data-ui-size='small'] {
-        --hud-bar-h: 44px;
-        --hud-font-scale: 0.9;
+        --hud-bar-h: 36px;
+        --hud-font-scale: 0.88;
       }
       body[data-ui-size='medium'] {
-        --hud-bar-h: 50px;
-        --hud-font-scale: 1;
+        --hud-bar-h: 40px;
+        --hud-font-scale: 0.95;
       }
       body[data-ui-size='large'] {
-        --hud-bar-h: 56px;
-        --hud-font-scale: 1.12;
+        --hud-bar-h: 46px;
+        --hud-font-scale: 1.05;
       }
       @media (min-width: 1600px) {
         body[data-ui-size='small'] {
-          --hud-bar-h: 48px;
-          --hud-font-scale: 1.02;
+          --hud-bar-h: 40px;
+          --hud-font-scale: 0.96;
         }
         body[data-ui-size='medium'] {
-          --hud-bar-h: 56px;
-          --hud-font-scale: 1.14;
+          --hud-bar-h: 44px;
+          --hud-font-scale: 1.04;
         }
         body[data-ui-size='large'] {
-          --hud-bar-h: 64px;
-          --hud-font-scale: 1.26;
+          --hud-bar-h: 50px;
+          --hud-font-scale: 1.14;
         }
       }
       @media (max-width: 768px) {
         body[data-ui-size='small'],
         body[data-ui-size='medium'],
         body[data-ui-size='large'] {
-          --hud-bar-h: 40px;
-          --hud-font-scale: 0.84;
+          --hud-bar-h: 34px;
+          --hud-font-scale: 0.80;
         }
       }
       #hud-broadcast-bar {
-        height: var(--hud-bar-h, 50px);
-        font-size: calc(12px * var(--hud-font-scale, 1));
+        height: var(--hud-bar-h, 40px);
+        font-size: calc(11px * var(--hud-font-scale, 1));
       }
       /* Viewport-Safe Modal System (Never overflows 100dvh - 24px or 100vw - 24px; Sticky Header & Sticky Footer) */
       .modal-backdrop {
         position: fixed;
         inset: 0;
         z-index: 40;
-        background-color: rgba(2, 6, 23, 0.82);
-        backdrop-filter: blur(4px);
+        background-color: rgba(2, 6, 23, 0.90);
         display: flex;
         align-items: center;
         justify-content: center;
@@ -174,6 +188,286 @@
           padding: 5px 12px;
         }
       }
+      /* 3D Coin Toss Animation Styles */
+      .coin-3d-stage {
+        perspective: 650px;
+      }
+      .coin-3d-inner {
+        position: relative;
+        width: 64px;
+        height: 64px;
+        transform-style: preserve-3d;
+        transition: transform 1.25s cubic-bezier(0.18, 0.88, 0.32, 1.08);
+      }
+      .coin-face {
+        position: absolute;
+        inset: 0;
+        border-radius: 9999px;
+        backface-visibility: hidden;
+        -webkit-backface-visibility: hidden;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-family: 'Chakra Petch', sans-serif;
+        font-weight: 800;
+        box-shadow: inset 0 0 0 3px rgba(255, 255, 255, 0.35), 0 8px 20px rgba(0, 0, 0, 0.55);
+      }
+      .coin-face-heads {
+        background: radial-gradient(circle at 32% 28%, #fef08a, #f59e0b 58%, #b45309 100%);
+        color: #0f172a;
+        border: 2px solid #fde047;
+      }
+      .coin-face-tails {
+        background: radial-gradient(circle at 32% 28%, #e0f2fe, #38bdf8 58%, #0369a1 100%);
+        color: #0f172a;
+        border: 2px solid #bae6fd;
+        transform: rotateX(180deg);
+      }
+      /* On-Screen Gamepad Virtual Controls — Compact & Sleek Reference-Style */
+      #hud-virtual-controls {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: auto;
+        bottom: calc(var(--hud-bar-h, 40px) + 8px);
+        z-index: 25;
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        padding: 0 clamp(8px, 1.5vw, 16px);
+        pointer-events: none;
+      }
+      #hud-virtual-controls.hidden {
+        display: none !important;
+      }
+      #rc-left-pad {
+        pointer-events: none;
+      }
+      #rc-right-pad,
+      .rc-right-grid {
+        pointer-events: auto;
+      }
+      .rc-dpad-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 6px;
+        background: rgba(2, 6, 23, 0.78);
+        border: 1px solid rgba(71, 85, 105, 0.65);
+        border-radius: 13px;
+        padding: 4px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.52);
+        backdrop-filter: blur(8px);
+      }
+      .rc-arrow-btn {
+        width: clamp(50px, 6.8vw, 66px);
+        height: clamp(40px, 5.4dvh, 50px);
+        border-radius: 10px;
+        background: linear-gradient(180deg, rgba(51, 65, 85, 0.92) 0%, rgba(15, 23, 42, 0.95) 100%);
+        border: 1.5px solid rgba(148, 163, 184, 0.6);
+        color: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        touch-action: none;
+        transition: transform 0.08s ease, background 0.1s ease;
+      }
+      .rc-arrow-btn:active {
+        transform: scale(0.93);
+        background: linear-gradient(180deg, #fbbf24 0%, #f59e0b 100%);
+        color: #020617;
+        border-color: #fde68a;
+      }
+      .rc-right-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 5px;
+        background: rgba(2, 6, 23, 0.78);
+        border: 1px solid rgba(71, 85, 105, 0.65);
+        border-radius: 14px;
+        padding: 5px;
+        box-shadow: 0 8px 20px rgba(0, 0, 0, 0.52);
+        backdrop-filter: blur(8px);
+      }
+      .rc-action-btn {
+        width: clamp(62px, 8.2vw, 78px);
+        height: clamp(36px, 4.8dvh, 44px);
+        border-radius: 10px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        touch-action: none;
+        transition: transform 0.08s ease, filter 0.1s ease;
+      }
+      .rc-action-btn-top {
+        width: clamp(62px, 8.2vw, 78px);
+        height: clamp(28px, 3.9dvh, 34px);
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 3px;
+        cursor: pointer;
+        touch-action: none;
+        transition: transform 0.08s ease, filter 0.1s ease;
+      }
+      .rc-action-btn:active,
+      .rc-action-btn-top:active {
+        transform: scale(0.93);
+        filter: brightness(1.15);
+      }
+
+      /* ============================================================================
+         WAVEDASH "LAST OVER" BROADCAST PRE-MATCH & SCENARIO SELECTION MENU UI
+         ============================================================================ */
+      #modal-setup.wd-setup-backdrop {
+        background: radial-gradient(circle at 50% 38%, rgba(2, 6, 23, 0.25) 0%, rgba(2, 6, 23, 0.78) 68%, rgba(2, 6, 23, 0.94) 100%);
+        backdrop-filter: blur(5px);
+      }
+      .wd-setup-shell {
+        width: min(980px, 96vw);
+        max-height: 92dvh;
+        display: flex;
+        flex-direction: column;
+        border-radius: 20px;
+        background: linear-gradient(165deg, rgba(15, 23, 42, 0.86) 0%, rgba(2, 6, 23, 0.92) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.22);
+        box-shadow: 0 28px 70px rgba(0, 0, 0, 0.82), 0 0 0 1px rgba(255, 255, 255, 0.05) inset;
+        overflow: hidden;
+      }
+      .wd-top-ribbon {
+        background: linear-gradient(90deg, rgba(15, 23, 42, 0.96) 0%, rgba(30, 41, 59, 0.88) 50%, rgba(15, 23, 42, 0.96) 100%);
+        border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+        padding: 12px 18px;
+      }
+      .wd-live-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 9px;
+        border-radius: 6px;
+        background: rgba(244, 63, 94, 0.18);
+        border: 1px solid rgba(244, 63, 94, 0.55);
+        color: #fda4af;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .wd-live-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 999px;
+        background: #f43f5e;
+        box-shadow: 0 0 8px #f43f5e;
+      }
+      .wd-step-bar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        background: rgba(2, 6, 23, 0.78);
+        padding: 4px;
+        border-radius: 12px;
+        border: 1px solid rgba(148, 163, 184, 0.18);
+      }
+      .wd-step-tab {
+        padding: 7px 13px;
+        border-radius: 9px;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        transition: all 0.18s ease;
+        cursor: pointer;
+        white-space: nowrap;
+        color: #94a3b8;
+      }
+      .wd-step-tab:hover {
+        color: #f8fafc;
+        background: rgba(30, 41, 59, 0.65);
+      }
+      .wd-step-tab-active {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 100%);
+        color: #020617 !important;
+        box-shadow: 0 4px 14px rgba(245, 158, 11, 0.4);
+      }
+      .wd-scenario-card {
+        position: relative;
+        overflow: hidden;
+        border-radius: 16px;
+        padding: 16px;
+        text-align: left;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        cursor: pointer;
+        background: linear-gradient(160deg, rgba(15, 23, 42, 0.88) 0%, rgba(2, 6, 23, 0.94) 100%);
+        border: 2px solid rgba(51, 65, 85, 0.75);
+      }
+      .wd-scenario-card:hover {
+        transform: translateY(-2px);
+        border-color: rgba(148, 163, 184, 0.55);
+      }
+      .wd-scenario-active-amber {
+        background: linear-gradient(155deg, rgba(245, 158, 11, 0.22) 0%, rgba(15, 23, 42, 0.94) 75%);
+        border-color: #fbbf24 !important;
+        box-shadow: 0 12px 30px rgba(245, 158, 11, 0.22), 0 0 0 1px rgba(251, 191, 36, 0.35) inset;
+      }
+      .wd-scenario-active-rose {
+        background: linear-gradient(155deg, rgba(244, 63, 94, 0.25) 0%, rgba(15, 23, 42, 0.94) 75%);
+        border-color: #fb7185 !important;
+        box-shadow: 0 12px 30px rgba(244, 63, 94, 0.26), 0 0 0 1px rgba(251, 113, 133, 0.35) inset;
+      }
+      .wd-scenario-active-sky {
+        background: linear-gradient(155deg, rgba(56, 189, 248, 0.22) 0%, rgba(15, 23, 42, 0.94) 75%);
+        border-color: #38bdf8 !important;
+        box-shadow: 0 12px 30px rgba(56, 189, 248, 0.24), 0 0 0 1px rgba(56, 189, 248, 0.35) inset;
+      }
+      .wd-scenario-active-emerald {
+        background: linear-gradient(155deg, rgba(16, 185, 129, 0.22) 0%, rgba(15, 23, 42, 0.94) 75%);
+        border-color: #34d399 !important;
+        box-shadow: 0 12px 30px rgba(16, 185, 129, 0.24), 0 0 0 1px rgba(52, 211, 153, 0.35) inset;
+      }
+      .wd-tag-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 6px;
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+      .wd-vs-banner {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.16) 0%, rgba(15, 23, 42, 0.92) 50%, rgba(56, 189, 248, 0.16) 100%);
+        border: 1px solid rgba(148, 163, 184, 0.24);
+        border-radius: 14px;
+        padding: 10px 16px;
+      }
+      .wd-launch-btn {
+        background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 55%, #ea580c 100%);
+        color: #020617;
+        font-weight: 900;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        box-shadow: 0 8px 24px rgba(245, 158, 11, 0.42);
+        transition: transform 0.14s ease, filter 0.14s ease;
+      }
+      .wd-launch-btn:hover {
+        filter: brightness(1.08);
+        transform: translateY(-1px);
+      }
+      .wd-quick-btn {
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.22) 0%, rgba(5, 150, 105, 0.34) 100%);
+        border: 1px solid rgba(52, 211, 153, 0.55);
+        color: #6ee7b7;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
     </style>
   </head>
 
@@ -181,26 +475,45 @@
     <!-- Dedicated Isolated WebGL Canvas Container (Top & Central Pitch/Batsman/Bowler/Ball 100% Clear) -->
     <div id="canvas-mount" class="fixed inset-0 w-full h-full z-0"></div>
 
-    <!-- LIVE 2D FIELD RADAR (MINI-MAP) IN TOP-LEFT CORNER -->
+    <!-- LIVE 2D FIELD RADAR (MINI-MAP) IN TOP-LEFT CORNER (COMPACT) -->
     <div
       id="hud-field-radar-wrap"
-      class="fixed top-2.5 left-3 z-20 flex flex-col items-center bg-slate-950/80 backdrop-blur-sm border border-slate-700/80 rounded-xl p-1.5 shadow-xl pointer-events-auto"
+      class="fixed top-2 left-2.5 z-20 flex flex-col items-center bg-slate-950/75 backdrop-blur-md border border-slate-700/75 rounded-xl p-1 shadow-lg pointer-events-auto"
       title="Live 2D Fielder & Ball Radar"
     >
-      <canvas id="hud-field-radar" width="96" height="96" class="w-20 h-20 sm:w-24 sm:h-24 rounded-full"></canvas>
-      <div class="flex items-center justify-between w-full px-1 mt-0.5 text-[9px] font-mono text-slate-300">
+      <canvas id="hud-field-radar" width="96" height="96" class="w-16 h-16 sm:w-20 sm:h-20 rounded-full"></canvas>
+      <div class="flex items-center justify-between w-full px-1 mt-0.5 text-[8px] font-mono text-slate-300">
         <span id="hud-radar-preset" class="text-emerald-400 font-bold">FIELD</span>
-        <span class="text-amber-300">360° GAP</span>
+        <span class="text-amber-300">360°</span>
       </div>
     </div>
 
-    <!-- SMALL CORNER MENU BUTTON (Top-Right Corner Only; Top of screen is otherwise 100% empty) -->
-    <div class="fixed top-2.5 right-3 z-30">
+    <!-- SMALL CORNER MENU BUTTON + FULLSCREEN + 1-CLICK HD GRAPHICS TOGGLE (Top-Right Corner Only) -->
+    <div class="fixed top-2 right-2.5 z-30 flex items-center gap-1.5">
+      <button
+        id="btn-hud-fullscreen"
+        type="button"
+        title="Full Screen (Best for Mobile & Tablet)"
+        class="px-2 py-1 text-[11px] font-bold bg-slate-950/85 hover:bg-slate-900 text-emerald-300 border border-emerald-500/60 rounded-md backdrop-blur-sm flex items-center gap-1 cursor-pointer shadow-lg transition-colors"
+      >
+        <span id="lbl-hud-fullscreen-icon">⛶</span>
+        <span id="lbl-hud-fullscreen" class="hidden sm:inline">Full Screen</span>
+      </button>
+
+      <button
+        id="btn-toggle-hd-graphics"
+        type="button"
+        title="Switch between Wavedash Last Over Pro HD Graphics and Classic Graphics"
+        class="hidden sm:flex px-2 py-1 text-[10px] font-semibold bg-slate-950/85 hover:bg-slate-900 text-amber-300 border border-amber-400/80 rounded-md backdrop-blur-sm items-center gap-1 cursor-pointer shadow-lg transition-colors"
+      >
+        <span>✨ HD</span>
+      </button>
+
       <button
         id="btn-corner-menu"
         type="button"
         aria-label="Open Game Menu"
-        class="px-2.5 py-1 text-[11px] font-semibold bg-slate-950/80 hover:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-md backdrop-blur-sm flex items-center gap-1.5 cursor-pointer shadow-lg transition-colors"
+        class="px-2.5 py-1 text-[11px] font-semibold bg-slate-950/85 hover:bg-slate-900 text-slate-200 border border-slate-700/80 rounded-md backdrop-blur-sm flex items-center gap-1.5 cursor-pointer shadow-lg transition-colors"
       >
         <svg class="w-3.5 h-3.5 text-amber-400" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
           <path fill-rule="evenodd" d="M3 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm0 5a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1z" clip-rule="evenodd" />
@@ -213,41 +526,72 @@
         ></span>
       </button>
 
-      <!-- Corner Dropdown Menu (Hidden by default; opens on click) -->
+      <!-- Corner Pause Dropdown Menu (Hidden by default; opens on click / Escape during match) -->
       <div
         id="corner-menu-dropdown"
-        class="hidden absolute right-0 mt-1.5 w-48 bg-slate-950/95 backdrop-blur-md border border-slate-700/90 rounded-xl p-1.5 shadow-2xl space-y-0.5 text-xs"
+        class="hidden absolute right-0 top-8 mt-1 w-56 bg-slate-950/95 border border-slate-700/90 rounded-xl p-1.5 shadow-2xl space-y-0.5 text-xs"
       >
         <button
-          id="btn-open-modes"
+          id="btn-menu-resume"
+          type="button"
+          data-tv-default="true"
+          class="w-full text-left px-3 py-1.5 rounded-lg font-bold text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-400/40 transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span>▶ Resume Match</span>
+          <span class="text-[10px] text-emerald-300 font-mono">OK</span>
+        </button>
+        <button
+          id="btn-menu-home"
+          type="button"
+          class="w-full text-left px-3 py-1.5 rounded-lg font-bold text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-400/30 transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span>🏠 Home Screen</span>
+          <span class="text-[10px] text-amber-300 font-mono">HOME</span>
+        </button>
+        <div class="border-t border-slate-800 my-1"></div>
+        <button
+          id="btn-menu-shotmode"
+          type="button"
+          class="w-full text-left px-3 py-1.5 rounded-lg font-semibold text-sky-300 hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span id="lbl-menu-shotmode">🎯 Shot: GROUND</span>
+          <span class="text-[10px] text-sky-400 font-mono">G / F</span>
+        </button>
+        <button
+          id="btn-menu-camera"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
         >
-          <span>Match Setup</span>
+          <span id="lbl-menu-camera">📷 Camera: Broadcast</span>
+          <span class="text-[10px] text-slate-400 font-mono">C</span>
+        </button>
+        <button
+          id="btn-open-modes"
+          type="button"
+          class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span>🏏 Match Setup</span>
           <span class="text-[10px] text-slate-500 font-mono">M</span>
         </button>
         <button
-          id="btn-open-calibrate"
-          class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
-        >
-          <span>Calibrate (3s)</span>
-          <span class="text-[10px] text-slate-500 font-mono">3s</span>
-        </button>
-        <button
           id="btn-open-scorecard"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
         >
-          <span>Scorecard &amp; Wheel</span>
+          <span>📊 Scorecard &amp; Wheel</span>
           <span class="text-[10px] text-slate-500 font-mono">TAB</span>
         </button>
         <button
           id="btn-open-settings"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
         >
-          <span>Settings</span>
+          <span>⚙️ Settings</span>
           <span class="text-[10px] text-slate-500 font-mono">⚙</span>
         </button>
         <button
           id="btn-open-qr"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg font-semibold text-amber-400 hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-between"
         >
           <span class="flex items-center gap-1.5">
@@ -256,9 +600,26 @@
           </span>
           <span id="qr-menu-conn-lbl" class="text-[10px] text-amber-300 font-mono">QR</span>
         </button>
+        <button
+          id="btn-open-calibrate"
+          type="button"
+          class="w-full text-left px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span>Calibrate (3s)</span>
+          <span class="text-[10px] text-slate-500 font-mono">3s</span>
+        </button>
+        <button
+          id="btn-menu-fullscreen"
+          type="button"
+          class="w-full text-left px-3 py-1.5 rounded-lg font-semibold text-emerald-300 hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-between"
+        >
+          <span id="lbl-menu-fullscreen">⛶ Full Screen</span>
+          <span class="text-[10px] text-emerald-400 font-mono">F11</span>
+        </button>
         <div class="border-t border-slate-800 my-1"></div>
         <button
           id="btn-toggle-dock"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
         >
           <span>Controls Dock</span>
@@ -266,6 +627,7 @@
         </button>
         <button
           id="btn-menu-debug"
+          type="button"
           class="w-full text-left px-3 py-1.5 rounded-lg text-slate-300 hover:bg-slate-800 hover:text-white transition-colors cursor-pointer flex items-center justify-between"
         >
           <span>Debug Panel</span>
@@ -277,22 +639,22 @@
     <!-- PHONE CONNECTION TOAST (Appears briefly above bottom bar on connect/disconnect) -->
     <div
       id="hud-status-toast"
-      class="fixed bottom-14 right-3 z-30 pointer-events-none opacity-0 translate-y-1 transition-all duration-200 flex items-center gap-2 bg-slate-950/95 border border-emerald-500/70 rounded-lg px-3 py-1.5 shadow-xl text-xs font-medium text-slate-100"
+      class="fixed top-14 right-3 z-40 pointer-events-none opacity-0 -translate-y-1 transition-all duration-200 flex items-center gap-2 bg-slate-950/95 border border-emerald-500/70 rounded-lg px-3 py-1.5 shadow-xl text-xs font-medium text-slate-100"
     >
       <span id="hud-toast-dot" class="w-2 h-2 rounded-full bg-emerald-400"></span>
       <span id="hud-toast-text">Phone connected</span>
     </div>
 
-    <!-- SHORT EVENT LABEL ("FOUR", "SIX", "WICKET", "FREE HIT") — Briefly appears above the bar and fades out -->
+    <!-- BROADCAST EVENT BANNER ("FOUR", "SIX", "WICKET", "FREE HIT") -->
     <div
       id="hud-event-banner"
-      class="fixed bottom-24 left-1/2 -translate-x-1/2 z-20 text-center pointer-events-none opacity-0 scale-95 transition-all duration-200"
+      class="fixed top-14 left-1/2 -translate-x-1/2 z-30 text-center pointer-events-none opacity-0 scale-90 transition-all duration-200"
     >
-      <div class="px-4 py-1 rounded-md bg-slate-950/85 border border-amber-400/60 backdrop-blur-sm shadow-xl">
-        <div id="hud-event-title" class="font-display text-2xl md:text-3xl font-extrabold text-amber-400 tracking-wider">
-          SIX
+      <div class="px-5 py-1.5 rounded-xl bg-slate-950/90 border-2 border-amber-400/80 backdrop-blur-md shadow-[0_12px_36px_rgba(0,0,0,0.75)]">
+        <div id="hud-event-title" class="font-display text-3xl md:text-4xl font-black text-amber-400 tracking-widest drop-shadow-[0_2px_12px_rgba(251,191,36,0.55)]">
+          SIX!
         </div>
-        <div id="hud-event-sub" class="hidden text-[10px] text-slate-300 font-medium"></div>
+        <div id="hud-event-sub" class="hidden text-[11px] text-slate-200 font-mono font-bold tracking-wider uppercase mt-0.5"></div>
       </div>
     </div>
 
@@ -318,29 +680,50 @@
       <span id="hud-delivery-preview-text" class="text-sky-300 font-bold">Outswinger · 132 km/h</span>
     </div>
 
-    <!-- TRANSIENT TIMING METER (Appears for ~1.5s right above the bottom broadcast bar after each shot, then fades out) -->
+    <!-- PERSISTENT GLOWING FREE HIT BANNER (Visible throughout the entire Free Hit delivery) -->
+    <div
+      id="hud-free-hit-pill"
+      class="hidden fixed top-12 left-1/2 -translate-x-1/2 z-30 pointer-events-none px-3.5 py-1 rounded-full bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 border-2 border-amber-200 shadow-[0_0_20px_rgba(245,158,11,0.75)] flex items-center gap-1.5 animate-pulse"
+    >
+      <span class="text-xs leading-none">🔥</span>
+      <span class="font-display font-black text-[11px] sm:text-xs text-slate-950 tracking-wider uppercase">
+        FREE HIT DELIVERY · CANNOT BE BOWLED / CAUGHT / LBW / STUMPED!
+      </span>
+    </div>
+
+    <!-- REFERENCE-STYLE BAT-SHAPED TIMING METER (Appears right above bottom bar on each shot) -->
     <div
       id="hud-timing-toast"
-      class="fixed bottom-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none opacity-0 transition-opacity duration-300 flex items-center gap-2.5 bg-slate-950/90 backdrop-blur-sm border border-slate-700/80 rounded-full px-3.5 py-1 shadow-lg"
+      class="fixed bottom-12 left-1/2 -translate-x-1/2 z-20 pointer-events-none opacity-0 transition-opacity duration-200 flex items-center gap-2 bg-slate-950/92 backdrop-blur-md border border-slate-700/80 rounded-full px-3 py-1 shadow-xl"
     >
-      <span id="lbl-timing-title" class="text-[10px] font-mono text-slate-400">TIMING</span>
-      <div class="w-28 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-        <div
-          id="hud-timing-bar"
-          class="h-full bg-gradient-to-r from-emerald-400 to-amber-400 transition-all duration-150"
-          style="width: 50%"
-        ></div>
+      <span id="lbl-timing-title" class="text-[9px] font-mono font-bold text-slate-400 tracking-wider">EARLY</span>
+      <!-- Cricket Bat Silhouette with Sweet-Spot Center Window -->
+      <div class="relative w-36 h-4 flex items-center">
+        <!-- Bat Handle (Left 20%) -->
+        <div class="w-[20%] h-1.5 bg-gradient-to-r from-slate-300 to-slate-400 rounded-l-full border border-slate-600"></div>
+        <!-- Bat Blade with Sweet Spot Centered (Right 80%) -->
+        <div class="w-[80%] h-3.5 rounded-r-md border border-white/60 overflow-hidden relative shadow-inner" style="background: linear-gradient(90deg, #ef4444 0%, #f59e0b 24%, #22c55e 41%, #10b981 59%, #f59e0b 76%, #ef4444 100%);">
+          <!-- Sweet Spot Center Target Window -->
+          <div class="absolute inset-y-0 left-[41%] w-[18%] border-x border-dashed border-white/90 bg-white/20"></div>
+          <!-- Centered Dynamic Timing Needle (50% = 0ms Perfect) -->
+          <div
+            id="hud-timing-bar"
+            class="absolute inset-y-0 w-1.5 -translate-x-1/2 bg-white shadow-[0_0_10px_#ffffff] transition-all duration-100 rounded-full"
+            style="left: 50%"
+          ></div>
+        </div>
       </div>
-      <span id="hud-timing" class="text-[10px] font-mono text-amber-300 font-bold whitespace-nowrap">PERFECT (4.0°)</span>
+      <span class="text-[9px] font-mono font-bold text-slate-400 tracking-wider">LATE</span>
+      <span id="hud-timing" class="text-[10px] font-mono text-amber-300 font-extrabold whitespace-nowrap pl-1 border-l border-slate-700">PERFECT (0ms)</span>
     </div>
 
     <!-- LIVE RUNNING STEP-CADENCE BAR (Appears above the bottom bar while ball is in play in the outfield) -->
     <div
       id="hud-running-bar"
-      class="hidden fixed bottom-14 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 bg-slate-950/92 backdrop-blur-md border border-sky-500/60 rounded-lg px-3 py-1 shadow-xl text-[11px] font-mono tabular-nums"
+      class="hidden fixed bottom-12 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2 bg-slate-950/92 backdrop-blur-md border border-sky-500/60 rounded-lg px-2.5 py-1 shadow-xl text-[10px] font-mono tabular-nums"
     >
       <span class="text-sky-400 font-bold uppercase">RUN</span>
-      <div class="w-24 sm:w-32 h-2 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
+      <div class="w-20 sm:w-28 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700">
         <div id="hud-run-fill" class="h-full bg-emerald-400 transition-all duration-75" style="width: 0%"></div>
       </div>
       <span id="hud-run-steps" class="text-slate-200 font-semibold">0/20 steps</span>
@@ -348,23 +731,30 @@
       <span id="hud-run-count" class="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-bold">0 RUNS</span>
       <span
         id="hud-run-call"
-        class="px-2 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/60 text-emerald-300 font-bold text-[10px] tracking-wide whitespace-nowrap"
+        class="px-1.5 py-0.5 rounded bg-emerald-500/25 border border-emerald-400/60 text-emerald-300 font-bold text-[9px] tracking-wide whitespace-nowrap"
       >
         🟢 SAFE RUN
       </span>
       <button
-        id="btn-hud-hold-run"
+        id="btn-hud-run"
         type="button"
-        class="px-2 py-0.5 rounded bg-sky-500 hover:bg-sky-400 active:bg-amber-400 text-slate-950 font-sans font-bold text-[10px] cursor-pointer select-none"
+        class="px-2 py-0.5 rounded bg-emerald-500 hover:bg-emerald-400 active:bg-amber-400 text-slate-950 font-sans font-extrabold text-[10px] cursor-pointer select-none shadow"
       >
-        Hold Run (R)
+        🏃 Run (R)
+      </button>
+      <button
+        id="btn-hud-norun"
+        type="button"
+        class="px-2 py-0.5 rounded bg-rose-500 hover:bg-rose-400 active:bg-rose-300 text-white font-sans font-extrabold text-[10px] cursor-pointer select-none shadow"
+      >
+        🛑 No Run (N)
       </button>
     </div>
 
     <!-- INTERACTIVE CATCH / DIRECT-HIT REFLEX METER (QTE) -->
     <div
       id="hud-qte-bar"
-      class="hidden fixed bottom-24 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-slate-950/95 backdrop-blur-md border-2 border-amber-400 rounded-xl px-3.5 py-2 shadow-2xl text-xs font-mono"
+      class="hidden fixed bottom-22 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2.5 bg-slate-950/95 backdrop-blur-md border-2 border-amber-400 rounded-xl px-3.5 py-1.5 shadow-2xl text-xs font-mono"
     >
       <span id="hud-qte-label" class="font-display font-bold text-amber-400 uppercase tracking-wide whitespace-nowrap">
         CATCH REFLEX!
@@ -382,22 +772,151 @@
       </button>
     </div>
 
-    <!-- Slow-Motion Action Replay Broadcast Badge + Skip Replay Button (Sits just above bottom bar only during replay) -->
+    <!-- Slow-Motion Action Replay Broadcast Badge + Skip Replay Button -->
     <div
       id="hud-replay-badge"
-      class="hidden fixed bottom-14 left-3 z-20 px-3 py-1 bg-red-600/90 border border-red-400/70 text-white font-display font-bold text-xs rounded-md flex items-center gap-2.5 shadow-lg pointer-events-auto whitespace-nowrap"
+      class="hidden fixed top-14 right-3 z-30 px-3.5 py-1.5 bg-gradient-to-r from-red-600/95 to-rose-700/95 border border-red-300/70 text-white font-display font-extrabold text-xs rounded-full flex items-center gap-2.5 shadow-[0_0_24px_rgba(220,38,38,0.65)] pointer-events-auto whitespace-nowrap"
     >
-      <span class="inline-block w-2 h-2 rounded-full bg-white animate-pulse"></span>
-      <span>SLOW-MO REPLAY · 0.28x</span>
-      <span id="hud-replay-reason" class="px-1.5 py-0.5 rounded bg-slate-950/90 text-amber-300 font-mono text-[10px]">
+      <span class="inline-block w-2.5 h-2.5 rounded-full bg-white animate-ping"></span>
+      <span class="tracking-wider">ULTRA-MO REPLAY</span>
+      <span id="hud-replay-reason" class="px-2 py-0.5 rounded-full bg-slate-950/90 text-amber-300 font-mono text-[10px]">
         WICKET
       </span>
       <button
         id="btn-skip-replay"
-        class="px-2 py-0.5 rounded bg-white text-slate-950 hover:bg-amber-300 font-mono text-[10px] font-bold transition-colors cursor-pointer shrink-0"
+        class="px-2.5 py-0.5 rounded-full bg-white text-slate-950 hover:bg-amber-300 font-mono text-[10px] font-bold transition-colors cursor-pointer shrink-0"
       >
-        Skip (S / Tap) ⏭
+        Skip (S) ⏭
       </button>
+    </div>
+
+    <!-- GAMEPAD CONTROLLER STYLE ON-SCREEN VIRTUAL CONTROLS (Visible ONLY while Phone Controller is NOT connected) -->
+    <div
+      id="hud-virtual-controls"
+      class="select-none"
+    >
+      <!-- BOTTOM-LEFT: Controller Left / Right Arrow Keys (◀ LEFT & RIGHT ▶) -->
+      <div id="rc-left-pad" class="flex flex-col items-start gap-1.5">
+        <!-- Crease & Direction Status Bar -->
+        <div class="flex items-center justify-between gap-2 w-full px-2.5 py-1 rounded-xl bg-slate-950/90 border border-slate-700/80 shadow-lg backdrop-blur-md">
+          <div class="flex items-center gap-1.5">
+            <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span
+              id="virtual-joystick-label"
+              class="text-[9px] sm:text-[10px] font-mono font-extrabold text-amber-300 tracking-wide whitespace-nowrap"
+            >
+              CENTER · STRAIGHT
+            </span>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <div class="w-10 h-1.5 bg-slate-800 rounded-full overflow-hidden border border-slate-700 relative shrink-0">
+              <div
+                id="rc-crease-indicator"
+                class="w-3 h-full bg-amber-400 rounded-full absolute top-0 left-1/2 -translate-x-1/2 transition-all duration-75"
+              ></div>
+            </div>
+            <button
+              id="btn-vpad-step-out"
+              type="button"
+              title="Step Out of Crease / Charge Bowler (+6% Power, Stumping Risk if Missed)"
+              class="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-600 text-slate-200 font-mono text-[8px] font-extrabold uppercase tracking-wider cursor-pointer pointer-events-auto transition-all"
+            >
+              ▲ CHARGE
+            </button>
+          </div>
+        </div>
+
+        <!-- Gamepad Left & Right Arrow Buttons -->
+        <div class="rc-dpad-grid">
+          <button
+            id="btn-vpad-crease-left"
+            type="button"
+            class="rc-arrow-btn font-display font-extrabold shadow-lg leading-none"
+            title="Move Left / Aim Left (Arrow Left)"
+          >
+            <span class="text-lg sm:text-xl leading-none">◀</span>
+            <span class="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider mt-1 opacity-90">LEFT</span>
+          </button>
+
+          <button
+            id="btn-vpad-crease-right"
+            type="button"
+            class="rc-arrow-btn font-display font-extrabold shadow-lg leading-none"
+            title="Move Right / Aim Right (Arrow Right)"
+          >
+            <span class="text-lg sm:text-xl leading-none">▶</span>
+            <span class="text-[9px] sm:text-[10px] font-mono font-bold tracking-wider mt-1 opacity-90">RIGHT</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- BOTTOM-RIGHT: 6-Button Controller Grid (2 Top: RUN / NO RUN, 2 Middle: DEFEND / LOFT, 2 Bottom: PUSH / STROKE) -->
+      <div id="rc-right-pad" class="flex flex-col items-end">
+        <div class="rc-right-grid">
+          <!-- ROW 1 (TOP 2): RUN & NO RUN -->
+          <button
+            id="btn-vpad-run"
+            type="button"
+            class="rc-action-btn-top bg-emerald-500 hover:bg-emerald-400 border-2 border-emerald-200 text-slate-950 font-display font-extrabold shadow-md"
+            title="Call for a Run (Sprint between wickets)"
+          >
+            <span class="text-xs sm:text-sm leading-none">🏃</span>
+            <span class="text-[10px] sm:text-xs font-black tracking-wide">RUN</span>
+          </button>
+
+          <button
+            id="btn-vpad-norun"
+            type="button"
+            class="rc-action-btn-top bg-rose-600 hover:bg-rose-500 border-2 border-rose-300 text-white font-display font-extrabold shadow-md"
+            title="Cancel Run & Return Safely to Crease"
+          >
+            <span class="text-xs sm:text-sm leading-none">🛑</span>
+            <span class="text-[10px] sm:text-xs font-black tracking-wide">NO RUN</span>
+          </button>
+
+          <!-- ROW 2 (MIDDLE 2): DEFEND & LOFT -->
+          <button
+            id="btn-vpad-defend"
+            type="button"
+            class="rc-action-btn bg-sky-600 hover:bg-sky-500 border-2 border-sky-200 text-white font-display font-extrabold shadow-md leading-none"
+            title="Play Solid Defensive Block"
+          >
+            <span id="lbl-vpad-defend" class="text-[11px] sm:text-xs tracking-wide font-black">🛡️ DEFEND</span>
+            <span id="sub-vpad-defend" class="text-[8px] font-mono text-sky-100 mt-0.5">SOLID BLOCK</span>
+          </button>
+
+          <button
+            id="btn-vpad-loft"
+            type="button"
+            class="rc-action-btn bg-amber-500 hover:bg-amber-400 border-2 border-amber-200 text-slate-950 font-display font-extrabold shadow-md leading-none"
+            title="Play Lofted Aerial Power Shot (6 Runs)"
+          >
+            <span class="text-[11px] sm:text-xs tracking-wider font-black text-slate-950">🚀 LOFT</span>
+            <span id="sub-vpad-loft" class="text-[8px] font-mono font-bold text-slate-900 mt-0.5">SIX · POWER</span>
+          </button>
+
+          <!-- ROW 3 (BOTTOM 2): PUSH & STROKE -->
+          <button
+            id="btn-vpad-push"
+            type="button"
+            class="rc-action-btn bg-indigo-600 hover:bg-indigo-500 border-2 border-indigo-300 text-white font-display font-extrabold shadow-md leading-none"
+            title="Push into the Gap with Soft Hands for a Single"
+          >
+            <span id="lbl-vpad-push" class="text-[11px] sm:text-xs tracking-wide font-black">⚡ PUSH</span>
+            <span id="sub-vpad-push" class="text-[8px] font-mono text-indigo-100 mt-0.5">GAP · 1 RUN</span>
+          </button>
+
+          <button
+            id="btn-vpad-swing"
+            type="button"
+            class="rc-action-btn bg-emerald-500 hover:bg-emerald-400 border-2 border-emerald-200 text-slate-950 font-display font-extrabold shadow-md leading-none"
+            title="Play Timed Ground Stroke (4 Runs)"
+          >
+            <span id="lbl-vpad-swing" class="text-[11px] sm:text-xs font-black tracking-wide text-slate-950">🏏 STROKE</span>
+            <span id="sub-vpad-swing" class="text-[8px] font-mono font-bold text-slate-900 mt-0.5">DRIVE · 4</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- ON-SCREEN SENSOR & SHOT DEBUG PANEL (Hidden by default; toggled with D key; sits above bottom-right bar) -->
@@ -449,7 +968,7 @@
       class="hidden fixed bottom-14 left-1/2 -translate-x-1/2 z-20 w-[min(920px,96vw)] bg-slate-950/92 backdrop-blur-md border border-slate-700/90 rounded-xl px-3 py-2 shadow-2xl"
     >
       <div id="hud-commentary" class="text-[11px] text-amber-300 font-medium mb-1.5 truncate text-center">
-        Select GROUND (0–8°) or FLY (20–50°) before bowler release, then press SPACE or swing your paired phone!
+        Select GROUND (0–8°) or LOFT (20–50°) before bowler release, then press SPACE or swing your paired phone!
       </div>
 
       <div class="flex flex-wrap items-center justify-between gap-1.5">
@@ -465,7 +984,7 @@
               id="btn-hud-fly"
               class="px-2.5 py-1 text-[11px] font-bold rounded text-slate-300 hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
             >
-              FLY (F)
+              LOFT (F)
             </button>
           </div>
 
@@ -485,6 +1004,14 @@
           >
             Right ▶
           </button>
+          <button
+            id="btn-step-out"
+            type="button"
+            title="Step Out of Popping Crease (+6% Power · Stumping Risk if Missed)"
+            class="px-2 py-1 text-[11px] font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 rounded-md whitespace-nowrap shrink-0 cursor-pointer select-none"
+          >
+            ▲ Step Out
+          </button>
 
           <button
             id="btn-action-bowl"
@@ -500,9 +1027,15 @@
           </button>
           <button
             id="btn-action-run"
-            class="px-2.5 py-1 text-[11px] font-semibold bg-sky-500 hover:bg-sky-400 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            class="px-2.5 py-1 text-[11px] font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
-            2nd Run (R)
+            🏃 Run (R)
+          </button>
+          <button
+            id="btn-action-norun"
+            class="px-2.5 py-1 text-[11px] font-bold bg-rose-500 hover:bg-rose-400 text-white rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            🛑 No Run (N)
           </button>
           <button
             id="btn-sim-over"
@@ -561,6 +1094,8 @@
             <option value="attacking">Field: Attacking</option>
             <option value="normal" selected>Field: Normal</option>
             <option value="defensive">Field: Defensive</option>
+            <option value="death_overs">Field: Death Overs</option>
+            <option value="spin_trap">Field: Spin Trap</option>
           </select>
         </div>
 
@@ -595,13 +1130,13 @@
 
           <button
             data-cam="broadcast"
-            class="px-2 py-1 text-[11px] font-medium bg-amber-500 text-slate-950 rounded-md whitespace-nowrap shrink-0 cursor-pointer"
+            class="px-2 py-1 text-[11px] font-medium bg-slate-800 text-slate-200 rounded-md whitespace-nowrap shrink-0 cursor-pointer"
           >
             TV Cam
           </button>
           <button
             data-cam="pro"
-            class="px-2 py-1 text-[11px] font-medium bg-slate-800 text-slate-200 rounded-md whitespace-nowrap shrink-0 cursor-pointer"
+            class="px-2 py-1 text-[11px] font-medium bg-amber-500 text-slate-950 rounded-md whitespace-nowrap shrink-0 cursor-pointer"
           >
             Bat Cam
           </button>
@@ -643,6 +1178,208 @@
       </div>
     </div>
 
+    <!-- SCREEN 1: MAIN MENU (Left TV Navigation Rail over Live 3D Stadium) -->
+    <div id="md-home" class="md-hidden" role="dialog" aria-label="Box Cricket 3D main menu">
+      <header class="md-topbar">
+        <div class="md-logo">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <rect x="28" y="6" width="9" height="40" rx="3" fill="#e9c27a" transform="rotate(32 32 32)"/>
+            <rect x="26" y="40" width="13" height="18" rx="4" fill="#c0392b" transform="rotate(32 32 32)"/>
+            <circle cx="46" cy="44" r="9" fill="#e11d48"/><path d="M40 40c4 2 8 2 12 0M40 48c4-2 8-2 12 0" stroke="#fff" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <h1 class="md-title">Box Cricket <em>3D</em></h1>
+            <p class="md-tag">Time it. Loft it. Win the chase.</p>
+          </div>
+        </div>
+        <div class="md-pill-row">
+          <button type="button" class="md-pill" data-md="stadium" id="md-venue-pill">
+            <span>🏟️</span><span id="md-venue-name">Eden Gardens</span>
+          </button>
+          <button type="button" class="md-pill" data-md="daynight" id="md-daynight">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M20 14.5A8.5 8.5 0 019.5 4 8.5 8.5 0 1020 14.5z"/></svg><span id="md-daynight-label">Night</span>
+          </button>
+          <button type="button" class="md-pill" data-md="fullscreen" id="md-fullscreen">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg><span>Fullscreen</span>
+          </button>
+          <button type="button" class="md-pill" id="btn-md-install-app" title="Install App or Build Android TV APK">
+            <span>📺</span><span id="lbl-md-install-app">TV APK</span>
+          </button>
+        </div>
+      </header>
+
+      <div class="md-home-main">
+        <nav class="md-home-rail" aria-label="Main Menu Options">
+          <button type="button" class="md-nav-btn md-nav-btn-primary" data-md="play" data-tv-default="true">
+            <div class="md-nav-left">
+              <span class="md-nav-icon">▶</span>
+              <div>
+                <div class="md-nav-label">PLAY</div>
+                <div class="md-nav-sub">Select Game Mode, Teams &amp; Stadium</div>
+              </div>
+            </div>
+            <span class="md-nav-badge">OK</span>
+          </button>
+
+          <button type="button" class="md-nav-btn md-nav-btn-quick" data-md="quick">
+            <div class="md-nav-left">
+              <span class="md-nav-icon">⚡</span>
+              <div>
+                <div class="md-nav-label">QUICK MATCH</div>
+                <div class="md-nav-sub">Jump straight into a 5-Over Chase</div>
+              </div>
+            </div>
+            <span class="md-nav-badge">5 OV</span>
+          </button>
+
+          <button type="button" class="md-nav-btn" data-md="qr" id="md-phone-pill">
+            <div class="md-nav-left">
+              <span class="md-nav-icon">📱</span>
+              <div>
+                <div class="md-nav-label" id="md-phone-pill-lbl">PAIR PHONE (QR)</div>
+                <div class="md-nav-sub" id="md-qr-card-sub">Use your phone as a 3D Gyro Bat</div>
+              </div>
+            </div>
+            <span class="md-nav-badge">QR</span>
+          </button>
+
+          <button type="button" class="md-nav-btn" data-md="online">
+            <div class="md-nav-left">
+              <span class="md-nav-icon">🌐</span>
+              <div>
+                <div class="md-nav-label">ONLINE 1v1 PvP</div>
+                <div class="md-nav-sub">Bat vs Bowl live against a friend</div>
+              </div>
+            </div>
+            <span class="md-nav-badge">LIVE</span>
+          </button>
+
+          <button type="button" class="md-nav-btn" data-md="settings">
+            <div class="md-nav-left">
+              <span class="md-nav-icon">⚙️</span>
+              <div>
+                <div class="md-nav-label">SETTINGS</div>
+                <div class="md-nav-sub">Difficulty, Audio, Commentary &amp; Graphics</div>
+              </div>
+            </div>
+            <span class="md-nav-badge">TV</span>
+          </button>
+        </nav>
+
+        <div class="md-arena-badge">
+          <div class="md-arena-badge-kicker">● LIVE 3D STADIUM</div>
+          <div class="md-arena-badge-title" id="md-arena-preview-title">Eden Gardens</div>
+          <div class="md-arena-badge-sub" id="md-arena-preview-sub">Night Floodlights · IND vs AUS Ready</div>
+        </div>
+      </div>
+
+      <footer class="md-foot">
+        <div class="md-keys">
+          <span>TV Remote</span>
+          <kbd>▲▼◀▶</kbd> Move
+          <kbd>OK / Enter</kbd> Select
+          <kbd>Back</kbd> Previous
+          <span class="hidden sm:inline">· Bat: <kbd>Arrows</kbd> Aim <kbd>OK / Space</kbd> Swing</span>
+        </div>
+        <div class="md-note" id="md-live-conn-note">📱 Pair Phone (QR) for 3D Gyro Bat · 🌐 Online 1v1 PvP Ready</div>
+      </footer>
+    </div>
+
+    <!-- SCREEN 2: GAME MODE SELECTION (#md-modes) -->
+    <div id="md-modes" class="md-hidden" role="dialog" aria-modal="true" aria-label="Select Game Mode">
+      <div class="md-modes-shell">
+        <header class="md-modes-head">
+          <div class="md-modes-title-wrap">
+            <button
+              id="btn-modes-back"
+              type="button"
+              class="px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 text-xs font-bold cursor-pointer"
+            >
+              ← Back
+            </button>
+            <div>
+              <h2 class="md-modes-title">SELECT <span>GAME MODE</span></h2>
+              <div class="md-modes-sub">Choose your format · Next screen lets you customize Teams, Overs, Stadium &amp; Difficulty</div>
+            </div>
+          </div>
+          <span id="md-modes-context-pill" class="px-3 py-1 rounded-lg bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-amber-300">
+            Eden Gardens · Night
+          </span>
+        </header>
+
+        <div class="md-modes-grid">
+          <button type="button" class="md-mode-card md-mode-card-amber" data-mode-pick="run_chase" data-tv-default="true">
+            <div>
+              <div class="md-mode-top">
+                <span class="md-mode-tag">🎯 Scenario 01 · Chase</span>
+                <span class="md-mode-meta">5 Overs · 30 Balls</span>
+              </div>
+              <div class="md-mode-name">5-Over Run Chase</div>
+              <p class="md-mode-desc">Floodlights blazing! Pace your powerplay &amp; death overs to chase down a dynamic target.</p>
+            </div>
+            <div class="md-mode-cta">
+              <span>Configure Teams &amp; Stadium</span>
+              <span>Select →</span>
+            </div>
+          </button>
+
+          <button type="button" class="md-mode-card md-mode-card-rose" data-mode-pick="last_over">
+            <div>
+              <div class="md-mode-top">
+                <span class="md-mode-tag">🔥 Featured · Clutch</span>
+                <span class="md-mode-meta">1 Over · 6 Balls · 2 Wkts</span>
+              </div>
+              <div class="md-mode-name">Last Over Thriller</div>
+              <p class="md-mode-desc">19th over done! Just 6 deliveries left under extreme pressure. Hit boundaries to steal victory.</p>
+            </div>
+            <div class="md-mode-cta">
+              <span>Configure Teams &amp; Stadium</span>
+              <span>Select →</span>
+            </div>
+          </button>
+
+          <button type="button" class="md-mode-card md-mode-card-sky" data-mode-pick="t20">
+            <div>
+              <div class="md-mode-top">
+                <span class="md-mode-tag">🏆 Full Broadcast</span>
+                <span class="md-mode-meta">2 / 5 / 10 / 20 Overs</span>
+              </div>
+              <div class="md-mode-name">T20 Full Match</div>
+              <p class="md-mode-desc">Official 3D coin toss, customizable overs, bat &amp; bowl both innings for the trophy.</p>
+            </div>
+            <div class="md-mode-cta">
+              <span>Configure Teams, Overs &amp; Toss</span>
+              <span>Select →</span>
+            </div>
+          </button>
+
+          <button type="button" class="md-mode-card md-mode-card-emerald" data-mode-pick="super_over">
+            <div>
+              <div class="md-mode-top">
+                <span class="md-mode-tag">⚡ Tie-Breaker</span>
+                <span class="md-mode-meta">1 Over · 2 Wickets Max</span>
+              </div>
+              <div class="md-mode-name">Super Over Shootout</div>
+              <p class="md-mode-desc">Sudden-death 1-over shootout! Set a blistering total in 6 balls or chase it down.</p>
+            </div>
+            <div class="md-mode-cta">
+              <span>Configure Teams &amp; Stadium</span>
+              <span>Select →</span>
+            </div>
+          </button>
+        </div>
+
+        <footer class="md-foot">
+          <div class="md-keys">
+            <kbd>▲▼◀▶</kbd> Switch Mode
+            <kbd>OK</kbd> Open Match Setup
+            <kbd>Back</kbd> Main Menu
+          </div>
+          <div class="md-note">Step 2 of 3 · Select Format</div>
+        </footer>
+      </div>
+    </div>
+
     <!-- Lazy-Loading 3D Rig & HDRI Progress Indicator (Fades out automatically on completion) -->
     <div
       id="asset-loading-overlay"
@@ -658,50 +1395,45 @@
     </div>
 
     <!-- ==========================================================================================
-         TV BROADCAST LOWER-THIRD SCORE BAR (Fixed at bottom, full width, 44–56px high on desktop)
+         COMPACT REFERENCE-STYLE TV BROADCAST SCOREBOARD (Fixed at bottom, clean team chips & ball circles)
          ========================================================================================== -->
     <footer
       id="hud-broadcast-bar"
-      class="fixed bottom-0 left-0 right-0 z-20 w-full bg-slate-950/90 backdrop-blur-md border-t-2 border-amber-400/90 shadow-2xl flex items-center justify-between px-2.5 sm:px-4 gap-2 sm:gap-3 whitespace-nowrap overflow-x-auto no-scrollbar"
+      class="fixed bottom-0 left-0 right-0 z-20 w-full bg-slate-950/92 backdrop-blur-md border-t border-slate-700/80 shadow-2xl flex items-center justify-between px-2 sm:px-3.5 gap-1.5 sm:gap-2.5 whitespace-nowrap overflow-x-auto no-scrollbar"
     >
-      <!-- Left Group: Original Tournament Badge + Team Codes & Score + Overs + Target/Situation -->
-      <div class="flex items-center gap-2 sm:gap-3 shrink-0">
-        <!-- 1. Original Tournament Badge ("BOX CRICKET" with custom SVG cricket shield) -->
-        <div class="flex items-center gap-1.5 bg-amber-400 text-slate-950 px-2 py-1 rounded font-display font-extrabold tracking-wider shrink-0 shadow-sm">
-          <svg class="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" />
-            <path d="M8.5 5.5c2 4 2 9 0 13" />
-            <path d="M15.5 5.5c-2 4-2 9 0 13" />
-          </svg>
-          <span class="text-[11px] sm:text-xs leading-none">BOX CRICKET</span>
-        </div>
-
-        <!-- 2. Team Codes with Score and Wickets (e.g. "MET v DYN 240/3") -->
-        <div class="flex items-center gap-1.5 bg-slate-900/95 border border-slate-800 px-2.5 py-1 rounded shrink-0">
-          <span id="hud-score" class="font-display font-bold text-white text-xs sm:text-sm tabular-nums tracking-wide">
-            MET v DYN 0/0
+      <!-- Left Group: Team Chips + Score/Wickets + Overs + Situation -->
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <!-- Team Chips & Score Pill -->
+        <div class="flex items-center gap-1.5 bg-slate-900/95 border border-slate-700/80 px-2 py-0.5 rounded-full shrink-0 shadow-inner">
+          <span id="hud-team-chip-bat" class="px-1.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-display font-black text-[10px] leading-none tracking-wider">
+            IND
+          </span>
+          <span class="text-[9px] font-mono text-slate-400 font-bold">v</span>
+          <span id="hud-team-chip-bowl" class="px-1.5 py-0.5 rounded-full bg-sky-500/25 border border-sky-400/50 text-sky-200 font-display font-bold text-[10px] leading-none tracking-wider">
+            AUS
+          </span>
+          <span id="hud-score" class="font-display font-extrabold text-amber-300 text-xs sm:text-sm tabular-nums tracking-wide ml-0.5">
+            0/0
           </span>
           <span
             id="hud-match-flags"
-            class="px-1.5 py-0.5 rounded bg-amber-400/20 text-amber-300 font-mono text-[9px] font-bold uppercase tracking-wider"
+            class="px-1 py-0.5 rounded-full bg-amber-400/20 text-amber-300 font-mono text-[8px] font-bold uppercase tracking-wider"
           >
             PP
           </span>
         </div>
 
-        <!-- 3. Overs (e.g. "OVERS 38.2") -->
-        <div class="flex items-baseline gap-1 font-mono tabular-nums shrink-0">
-          <span id="lbl-overs-title" class="text-[10px] text-slate-400 font-semibold">OVERS</span>
-          <span id="hud-overs" class="font-bold text-slate-100 text-xs sm:text-sm">0.0</span>
+        <!-- Overs Pill -->
+        <div class="flex items-baseline gap-1 font-mono tabular-nums bg-slate-900/70 border border-slate-800 px-2 py-0.5 rounded-full shrink-0">
+          <span id="lbl-overs-title" class="text-[9px] text-slate-400 font-semibold">OV</span>
+          <span id="hud-overs" class="font-bold text-slate-100 text-[11px] sm:text-xs">0.0</span>
         </div>
 
-        <span class="text-slate-700" aria-hidden="true">|</span>
-
-        <!-- 4. Target or Situation Text (e.g. "NEED 54 FROM 46 BALLS" or "RUN RATE 0.00") -->
+        <!-- Situation / Chase Target -->
         <div class="flex items-baseline gap-1 font-mono tabular-nums shrink-0">
           <span id="lbl-crr-title" class="sr-only">SITUATION</span>
-          <span id="hud-crr" class="font-bold text-emerald-400 text-[11px] sm:text-xs tracking-tight">
-            RUN RATE 0.00
+          <span id="hud-crr" class="font-bold text-emerald-400 text-[10px] sm:text-[11px] tracking-tight">
+            RR 0.00
           </span>
         </div>
       </div>
@@ -747,7 +1479,7 @@
         <!-- Last 6 Balls as Small Dots -->
         <div class="flex items-center gap-1 shrink-0" id="hud-over-dots" title="Last 6 balls"></div>
 
-        <!-- On-Screen Quick Step Left/Right & Sim Over Controls Inside Broadcast Bar -->
+        <!-- On-Screen Quick Step Left/Right, Step Out Charge & Sim Over Controls Inside Broadcast Bar -->
         <div class="flex items-center gap-1 shrink-0">
           <button
             id="btn-bar-step-left"
@@ -766,6 +1498,14 @@
             R▶
           </button>
           <button
+            id="btn-bar-step-out"
+            type="button"
+            title="Toggle Step Out of Crease / Charge Bowler (+6% Power · Stumping Risk)"
+            class="px-1.5 py-0.5 rounded bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-mono text-[10px] font-bold cursor-pointer select-none"
+          >
+            ▲Out
+          </button>
+          <button
             id="btn-bar-sim-over"
             type="button"
             title="Quick Simulate Over"
@@ -775,11 +1515,11 @@
           </button>
         </div>
 
-        <!-- 3. Small Shot Type Indicator Icon Inside the Bar (GROUND / FLY) -->
+        <!-- 3. Small Shot Type Indicator Icon Inside the Bar (GROUND / LOFT) -->
         <button
           id="btn-shot-mode-chip"
           type="button"
-          title="Pre-Selected Shot Mode (G = Ground, F = Fly)"
+          title="Pre-Selected Shot Mode (G = Ground, F / L = Loft)"
           class="flex items-center gap-1 px-2 py-0.5 rounded bg-slate-900 border border-slate-700 hover:border-slate-500 transition-colors cursor-pointer shrink-0"
         >
           <span id="hud-shot-mode-glyph" class="text-[11px] leading-none text-emerald-400" aria-hidden="true">→</span>
@@ -923,6 +1663,7 @@
           <button
             id="btn-qr-play-now"
             type="button"
+            data-tv-default="true"
             class="px-6 py-2.5 text-sm sm:text-base font-display font-extrabold bg-emerald-400 hover:bg-emerald-300 text-slate-950 rounded-xl cursor-pointer shadow-lg tracking-wide"
           >
             ▶ PLAY / START MATCH (OK)
@@ -972,396 +1713,300 @@
     </div>
 
     <!-- ==========================================================================================
-         MODAL 3: Broad 4-Step Pre-Match Setup Wizard (Step 1: Mode & Difficulty, Step 2: Teams, Step 3: Stadium & Pitch, Step 4: Toss & Start)
+         SCREEN 3: UNIFIED SINGLE-SCREEN MATCH SETUP (Teams, Overs, Stadium, Difficulty, Toss & Launch)
          ========================================================================================== -->
-    <div id="modal-setup" class="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="title-modal-setup">
-      <div class="modal-card" style="--modal-w: 940px">
-        <div class="modal-header flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          <div class="flex items-center justify-between gap-3">
+    <div id="modal-setup" class="modal-backdrop wd-setup-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="title-modal-setup">
+      <div class="modal-card wd-setup-shell" style="--modal-w: 1020px">
+        <!-- HEADER RIBBON -->
+        <div class="wd-top-ribbon flex flex-wrap items-center justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <button
+              id="btn-setup-back-modes"
+              type="button"
+              class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 cursor-pointer"
+            >
+              ← Change Mode
+            </button>
             <div>
-              <h2 id="title-modal-setup" class="font-display text-lg sm:text-xl font-bold text-amber-400 tracking-wide">
-                Match Setup · Box Cricket 3D
-              </h2>
-              <p id="setup-wizard-subtitle" class="text-xs text-slate-400">
-                Step 1 of 4 · Choose Game Format &amp; Challenge Level
+              <div class="flex items-center gap-2">
+                <h2 id="title-modal-setup" class="font-display text-base sm:text-xl font-extrabold text-white tracking-wider uppercase">
+                  MATCH SETUP
+                </h2>
+                <span id="wd-step1-target-preview" class="font-mono text-[11px] font-bold text-amber-300 bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 rounded-md">
+                  5-Over Chase
+                </span>
+              </div>
+              <p id="setup-wizard-subtitle" class="text-[11px] text-slate-400">
+                Customize Teams, Overs, Stadium &amp; Difficulty on one screen
               </p>
             </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span id="wd-live-matchup-pill" class="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-slate-900 border border-slate-700 font-mono text-xs font-bold text-amber-300">
+              IND vs AUS
+            </span>
             <button
               id="btn-close-setup"
               type="button"
               aria-label="Close Match Setup Modal"
-              class="sm:hidden min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-sm font-bold cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-
-          <!-- 4-Step Wizard Navigation Tabs -->
-          <div class="flex items-center gap-1.5 bg-slate-900/90 p-1 rounded-xl border border-slate-800 overflow-x-auto no-scrollbar">
-            <button
-              type="button"
-              data-setup-step-tab="1"
-              class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap bg-amber-400 text-slate-950 shadow"
-            >
-              01. Mode &amp; Difficulty
-            </button>
-            <button
-              type="button"
-              data-setup-step-tab="2"
-              class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap text-slate-400 hover:text-slate-200"
-            >
-              02. Teams
-            </button>
-            <button
-              type="button"
-              data-setup-step-tab="3"
-              class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap text-slate-400 hover:text-slate-200"
-            >
-              03. Stadium &amp; Pitch
-            </button>
-            <button
-              type="button"
-              data-setup-step-tab="4"
-              class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer whitespace-nowrap text-slate-400 hover:text-slate-200"
-            >
-              04. Toss &amp; Start
-            </button>
-            <button
-              type="button"
-              data-close-modal="modal-setup"
-              aria-label="Close Match Setup Modal"
-              class="hidden sm:flex ml-1 min-w-[32px] min-h-[32px] items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-sm font-bold cursor-pointer"
+              class="min-w-[32px] min-h-[32px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-sm font-bold cursor-pointer"
             >
               ✕
             </button>
           </div>
         </div>
 
-        <div class="modal-body space-y-4 text-xs sm:text-sm">
-          <!-- ==================== STEP 1: GAME MODE & DIFFICULTY ==================== -->
-          <div id="setup-step-panel-1" class="space-y-4">
-            <div>
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Select Match Format
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  id="btn-setup-mode-chase"
-                  type="button"
-                  data-setup-mode="run_chase"
-                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-amber-400/15 border-amber-400 text-white shadow-lg"
-                >
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="font-display font-bold text-sm sm:text-base text-amber-300">5-OVER RUN CHASE</span>
-                    <span class="font-mono text-[11px] text-amber-300 shrink-0">30 BALLS</span>
+        <div class="modal-body p-3 sm:p-4 overflow-y-auto">
+          <div class="wd-unified-grid">
+            <!-- LEFT COLUMN: ALL MATCH OPTIONS -->
+            <div class="wd-setup-panel-col">
+              <!-- 1. TEAMS VS STEPPER -->
+              <div class="wd-setup-box">
+                <div class="wd-setup-label">
+                  <span class="text-amber-300">1 · Teams (Player 1 vs CPU)</span>
+                  <span class="font-mono text-[10px] text-slate-400">Use ◀ ▶ to cycle</span>
+                </div>
+                <div class="wd-team-stepper-row">
+                  <div class="wd-team-stepper">
+                    <button id="btn-team-a-prev" type="button" aria-label="Previous Your Team" class="wd-step-arrow">◀</button>
+                    <div class="wd-team-readout">
+                      <span id="wd-vs-color-a" class="wd-team-swatch bg-sky-500"></span>
+                      <div class="min-w-0">
+                        <div class="text-[9px] font-mono text-amber-300 uppercase">YOU</div>
+                        <div id="wd-vs-team-a" class="font-display font-extrabold text-xs sm:text-sm text-white truncate">India (IND)</div>
+                      </div>
+                    </div>
+                    <button id="btn-team-a-next" type="button" aria-label="Next Your Team" class="wd-step-arrow">▶</button>
                   </div>
-                  <p class="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
-                    Action-packed 5-over chase against a dynamic target score.
-                  </p>
-                </button>
 
-                <button
-                  id="btn-setup-mode-last-over"
-                  type="button"
-                  data-setup-mode="last_over"
-                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="font-display font-bold text-sm sm:text-base text-rose-400">⚡ 1-OVER THRILLER</span>
-                    <span class="font-mono text-[11px] text-rose-300 shrink-0">6 BALLS CLUTCH</span>
+                  <button
+                    id="btn-swap-teams"
+                    type="button"
+                    title="Swap Teams"
+                    class="px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-400 font-display font-black text-xs cursor-pointer"
+                  >
+                    ⇄ VS
+                  </button>
+
+                  <div class="wd-team-stepper">
+                    <button id="btn-team-b-prev" type="button" aria-label="Previous Opponent Team" class="wd-step-arrow">◀</button>
+                    <div class="wd-team-readout">
+                      <span id="wd-vs-color-b" class="wd-team-swatch bg-amber-400"></span>
+                      <div class="min-w-0">
+                        <div class="text-[9px] font-mono text-sky-300 uppercase">OPP</div>
+                        <div id="wd-vs-team-b" class="font-display font-extrabold text-xs sm:text-sm text-white truncate">Australia (AUS)</div>
+                      </div>
+                    </div>
+                    <button id="btn-team-b-next" type="button" aria-label="Next Opponent Team" class="wd-step-arrow">▶</button>
                   </div>
-                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                    Final over pressure! 6 balls, 2 wickets in hand, high-tension finish in 2 mins.
-                  </p>
-                </button>
+                </div>
 
-                <button
-                  id="btn-setup-mode-t20"
-                  type="button"
-                  data-setup-mode="t20"
-                  class="p-3.5 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="font-display font-bold text-sm sm:text-base text-sky-300">T20 FULL MATCH</span>
-                    <span class="font-mono text-[11px] text-sky-300 shrink-0">TOSS + 2 INN</span>
+                <!-- Optional Full Team Grid -->
+                <details class="mt-2 bg-slate-950/70 border border-slate-800 rounded-xl px-2.5 py-1.5">
+                  <summary class="text-[11px] font-bold text-slate-300 cursor-pointer flex items-center justify-between">
+                    <span>All Teams Roster Grid</span>
+                    <span class="font-mono text-[10px] text-amber-300"><span id="lbl-selected-team-a">India</span> v <span id="lbl-selected-team-b">Australia</span></span>
+                  </summary>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
+                    <div>
+                      <div class="text-[10px] font-bold text-amber-400 mb-1">Your Team</div>
+                      <div id="grid-team-a-cards" class="grid grid-cols-2 gap-1.5"></div>
+                    </div>
+                    <div>
+                      <div class="text-[10px] font-bold text-sky-400 mb-1">Opponent</div>
+                      <div id="grid-team-b-cards" class="grid grid-cols-2 gap-1.5"></div>
+                    </div>
                   </div>
-                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                    Coin toss, Bat &amp; Bowl both innings (2, 5, 10, or 20 overs).
-                  </p>
-                </button>
+                </details>
               </div>
-            </div>
 
-            <!-- T20 Overs Quick Buttons (Shown when T20 is selected on Step 1) -->
-            <div id="setup-step1-t20-overs-wrap" class="hidden p-3.5 rounded-xl bg-slate-950 border border-sky-500/40 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div class="text-xs font-bold text-sky-300">T20 Match Length (Overs Per Innings)</div>
-                <div class="text-[11px] text-slate-400">Pick how many overs each team plays</div>
-              </div>
-              <div class="flex items-center gap-2">
-                <button type="button" data-t20-overs-btn="2" class="px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">2 Overs</button>
-                <button type="button" data-t20-overs-btn="5" class="px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">5 Overs</button>
-                <button type="button" data-t20-overs-btn="10" class="px-3.5 py-2 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">10 Overs</button>
-                <button type="button" data-t20-overs-btn="20" class="px-3.5 py-2 rounded-lg text-xs font-bold bg-sky-400 text-slate-950 border border-sky-300 cursor-pointer">20 Overs</button>
-              </div>
-            </div>
-
-            <div>
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Select Difficulty &amp; Batting Challenge
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  data-diff-card="easy"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="font-display font-bold text-base text-emerald-400">EASY · ARCADE</div>
-                  <div class="text-xs font-mono text-slate-300 mt-1">Chase Target: 20–30 Runs</div>
-                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                    Full Footwork Assist · Generous timing window · Slower bowling pace (90–118 km/h).
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  data-diff-card="medium"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-amber-400/15 border-amber-400 text-white shadow-lg"
-                >
-                  <div class="font-display font-bold text-base text-amber-300">MEDIUM · BALANCED</div>
-                  <div class="text-xs font-mono text-amber-200 mt-1">Chase Target: 40–60 Runs</div>
-                  <p class="text-[11px] text-slate-300 mt-1.5 leading-relaxed">
-                    Smart Light Assist · Skill-based SIX timing · Real outside edges &amp; lofted catch risk.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  data-diff-card="hard"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="font-display font-bold text-base text-rose-400">HARD · PRO LEGEND</div>
-                  <div class="text-xs font-mono text-slate-300 mt-1">Chase Target: 61–100 Runs</div>
-                  <p class="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                    Manual Footwork · Tight pro timing window · Late swing, sharp spin &amp; 145 km/h pace.
-                  </p>
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ==================== STEP 2: CHOOSE TEAMS (YOUR TEAM vs OPPONENT) ==================== -->
-          <div id="setup-step-panel-2" class="hidden space-y-4">
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800">
-                <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-xs font-bold uppercase tracking-wider text-amber-400">Your Team (Player 1)</span>
-                  <span id="lbl-selected-team-a" class="font-display font-bold text-sm text-white">India (IND)</span>
+              <!-- 2. FORMAT QUICK SWITCHER & T20 OVERS -->
+              <div class="wd-setup-box space-y-2">
+                <div class="wd-setup-label">
+                  <span class="text-sky-300">2 · Mode &amp; Overs</span>
                 </div>
-                <div id="grid-team-a-cards" class="grid grid-cols-3 gap-2"></div>
-              </div>
-
-              <div class="p-3.5 rounded-xl bg-slate-950/90 border border-slate-800">
-                <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-xs font-bold uppercase tracking-wider text-sky-400">Opponent Team (AI)</span>
-                  <span id="lbl-selected-team-b" class="font-display font-bold text-sm text-white">Australia (AUS)</span>
-                </div>
-                <div id="grid-team-b-cards" class="grid grid-cols-3 gap-2"></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ==================== STEP 3: STADIUM, DAY/NIGHT & PITCH ==================== -->
-          <div id="setup-step-panel-3" class="hidden space-y-4">
-            <div>
-              <div class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">
-                Select Indian Stadium (3D Venue)
-              </div>
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  data-stadium-card="eden_gardens"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-emerald-500/15 border-emerald-400 text-white shadow-lg"
-                >
-                  <div class="font-display font-bold text-base text-emerald-300">EDEN GARDENS</div>
-                  <div class="text-xs text-slate-300 mt-0.5">Kolkata · Iconic Arched Canopy</div>
-                  <p class="text-[11px] text-slate-400 mt-1.5">
-                    Electric crowd roar, classic batting outfield &amp; towering floodlight pylons.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  data-stadium-card="wankhede"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="font-display font-bold text-base text-sky-300">WANKHEDE STADIUM</div>
-                  <div class="text-xs text-slate-300 mt-0.5">Mumbai · Sea-Breeze Arena</div>
-                  <p class="text-[11px] text-slate-400 mt-1.5">
-                    True bounce red-soil track with extra early swing and fast boundaries.
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  data-stadium-card="narendra_modi"
-                  class="p-4 rounded-xl border-2 text-left transition-all cursor-pointer bg-slate-950 border-slate-800 text-slate-300 hover:border-slate-700"
-                >
-                  <div class="font-display font-bold text-base text-amber-300">NARENDRA MODI</div>
-                  <div class="text-xs text-slate-300 mt-0.5">Ahmedabad · 132,000 Colosseum</div>
-                  <p class="text-[11px] text-slate-400 mt-1.5">
-                    Massive 360° double-tier seating bowl with LED roof ring lighting.
-                  </p>
-                </button>
-              </div>
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              <!-- Time of Day -->
-              <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                <div class="text-xs font-bold uppercase tracking-wider text-sky-300 mb-2">Time of Day</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    data-daynight-card="night"
-                    class="py-2.5 px-3 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300"
-                  >
-                    🌙 Night Lights
+                <div class="wd-chip-grid-4">
+                  <button id="btn-setup-mode-chase" type="button" data-setup-mode="run_chase" class="wd-scenario-card wd-scenario-active-amber" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🎯 5-Ov Chase</div>
                   </button>
-                  <button
-                    type="button"
-                    data-daynight-card="day"
-                    class="py-2.5 px-3 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300"
-                  >
-                    ☀️ Sunny Day
+                  <button id="btn-setup-mode-last-over" type="button" data-setup-mode="last_over" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🔥 Last Over</div>
+                  </button>
+                  <button id="btn-setup-mode-t20" type="button" data-setup-mode="t20" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🏆 T20 Match</div>
+                  </button>
+                  <button id="btn-setup-mode-super-over" type="button" data-setup-mode="super_over" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">⚡ Super Over</div>
+                  </button>
+                </div>
+
+                <div id="setup-step1-t20-overs-wrap" class="hidden pt-1 flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-[11px] font-bold text-sky-300">T20 Overs:</span>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" data-t20-overs-btn="2" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">2 Ov</button>
+                    <button type="button" data-t20-overs-btn="5" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">5 Ov</button>
+                    <button type="button" data-t20-overs-btn="10" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">10 Ov</button>
+                    <button type="button" data-t20-overs-btn="20" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-400 text-slate-950 border border-sky-300 cursor-pointer">20 Ov</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. DIFFICULTY -->
+              <div class="wd-setup-box">
+                <div class="wd-setup-label">
+                  <span class="text-emerald-300">3 · Difficulty &amp; AI Bowling Pace</span>
+                </div>
+                <div class="wd-chip-grid-3">
+                  <button type="button" data-diff-card="easy" class="wd-scenario-card" style="padding:9px 11px">
+                    <div class="font-display font-extrabold text-xs sm:text-sm text-emerald-400">ROOKIE</div>
+                    <div class="text-[10px] font-mono text-slate-300">90–118 KPH · Assist</div>
+                  </button>
+                  <button type="button" data-diff-card="medium" class="wd-scenario-card wd-scenario-active-amber" style="padding:9px 11px">
+                    <div class="font-display font-extrabold text-xs sm:text-sm text-amber-300">PRO</div>
+                    <div class="text-[10px] font-mono text-amber-200">115–136 KPH · Balanced</div>
+                  </button>
+                  <button type="button" data-diff-card="hard" class="wd-scenario-card" style="padding:9px 11px">
+                    <div class="font-display font-extrabold text-xs sm:text-sm text-rose-400">LEGEND</div>
+                    <div class="text-[10px] font-mono text-slate-300">132–150 KPH · Manual</div>
                   </button>
                 </div>
               </div>
 
-              <!-- Pitch Type -->
-              <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                <div class="text-xs font-bold uppercase tracking-wider text-emerald-300 mb-2">Pitch Surface</div>
-                <div class="grid grid-cols-2 gap-1.5">
-                  <button type="button" data-pitch-card="normal" class="py-1.5 px-2 rounded-lg border text-xs font-bold cursor-pointer bg-emerald-500/20 border-emerald-400 text-emerald-300">Balanced</button>
-                  <button type="button" data-pitch-card="green" class="py-1.5 px-2 rounded-lg border text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Green Seam</button>
-                  <button type="button" data-pitch-card="dusty" class="py-1.5 px-2 rounded-lg border text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Dusty Spin</button>
-                  <button type="button" data-pitch-card="hard" class="py-1.5 px-2 rounded-lg border text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Hard Bounce</button>
+              <!-- 4. STADIUM, LIGHTING, PITCH & STANCE -->
+              <div class="wd-setup-box space-y-2">
+                <div class="wd-setup-label">
+                  <span class="text-amber-300">4 · Stadium, Lighting &amp; Pitch</span>
                 </div>
-              </div>
+                <div class="wd-chip-grid-3">
+                  <button type="button" data-stadium-card="eden_gardens" class="wd-scenario-card wd-scenario-active-emerald" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">EDEN GARDENS</div>
+                    <div class="text-[10px] text-emerald-300 font-mono">Kolkata · Fast</div>
+                  </button>
+                  <button type="button" data-stadium-card="wankhede" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">WANKHEDE</div>
+                    <div class="text-[10px] text-sky-300 font-mono">Mumbai · Swing</div>
+                  </button>
+                  <button type="button" data-stadium-card="narendra_modi" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">NARENDRA MODI</div>
+                    <div class="text-[10px] text-amber-300 font-mono">Ahmedabad · Bowl</div>
+                  </button>
+                </div>
 
-              <!-- Batter Hand -->
-              <div class="p-3.5 rounded-xl bg-slate-950 border border-slate-800">
-                <div class="text-xs font-bold uppercase tracking-wider text-amber-300 mb-2">Batter Stance</div>
-                <div class="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    data-hand-card="right"
-                    class="py-2.5 px-3 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300"
-                  >
-                    Right-Hand
-                  </button>
-                  <button
-                    type="button"
-                    data-hand-card="left"
-                    class="py-2.5 px-3 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300"
-                  >
-                    Left-Hand
-                  </button>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <div class="wd-chip-grid-2">
+                    <button type="button" data-daynight-card="night" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300">🌙 Night</button>
+                    <button type="button" data-daynight-card="day" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">☀️ Day</button>
+                  </div>
+                  <div class="wd-chip-grid-2">
+                    <button type="button" data-hand-card="right" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300">Right-Hand</button>
+                    <button type="button" data-hand-card="left" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Left-Hand</button>
+                  </div>
+                </div>
+
+                <div class="wd-chip-grid-4">
+                  <button type="button" data-pitch-card="normal" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-emerald-500/20 border-emerald-400 text-emerald-300">Balanced Pitch</button>
+                  <button type="button" data-pitch-card="green" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Green Seam</button>
+                  <button type="button" data-pitch-card="dusty" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Dusty Spin</button>
+                  <button type="button" data-pitch-card="hard" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Hard Bounce</button>
                 </div>
               </div>
             </div>
-          </div>
 
-          <!-- ==================== STEP 4: MATCH SUMMARY, COIN TOSS / TARGET & START ==================== -->
-          <div id="setup-step-panel-4" class="hidden space-y-4">
-            <!-- Broad Matchup Summary Header -->
-            <div class="p-4 rounded-xl bg-slate-950 border border-slate-800 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div class="text-[11px] font-mono uppercase tracking-wider text-slate-400">Official Matchup</div>
-                <div id="setup-summary-matchup" class="font-display text-xl sm:text-2xl font-bold text-white mt-0.5">
+            <!-- RIGHT COLUMN: LIVE SUMMARY, TOSS / TARGET & START MATCH -->
+            <div class="wd-setup-panel-col">
+              <div class="wd-vs-banner space-y-1.5">
+                <div class="text-[10px] font-mono uppercase tracking-widest text-amber-300">OFFICIAL MATCH BRIEFING</div>
+                <div id="setup-summary-matchup" class="font-display text-lg sm:text-2xl font-extrabold text-white leading-tight">
                   India (IND) vs Australia (AUS)
                 </div>
+                <div id="setup-summary-meta" class="text-xs text-amber-200 font-mono font-bold">
+                  5-Over Run Chase · MEDIUM · Eden Gardens · Night
+                </div>
               </div>
-              <div id="setup-summary-meta" class="text-xs sm:text-sm text-slate-300 font-mono">
-                5-Over Run Chase · Medium · Eden Gardens · Night
-              </div>
-            </div>
 
-            <!-- 4A. RUN CHASE TARGET CARD (Shown when Run Chase 5-Over Mode is selected) -->
-            <div id="setup-chase-card" class="p-5 bg-slate-950 border-2 border-amber-500/60 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div>
-                <div class="text-sm sm:text-base font-display font-bold text-amber-400">
-                  5-Over Run Chase Target (You Bat Only)
+              <!-- Scenario Chase Target Briefing -->
+              <div id="setup-chase-card" class="p-4 bg-slate-950/95 border-2 border-amber-400/70 rounded-2xl space-y-3 shadow-xl">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="wd-tag-pill bg-amber-400/20 text-amber-300 border border-amber-400/40">TARGET BRIEFING</span>
+                  <div id="setup-chase-target-badge" class="px-3 py-1.5 rounded-xl bg-amber-400/20 border border-amber-400 font-mono text-sm sm:text-base font-black text-amber-300">
+                    Target: 48 Runs
+                  </div>
                 </div>
-                <div id="setup-chase-desc" class="text-xs text-slate-300 mt-1">
+                <div id="setup-chase-desc" class="text-xs text-slate-300 leading-relaxed">
                   Opponent already batted 5 overs. Medium Target Range: 40–60 Runs.
-                </div>
-              </div>
-              <div class="flex items-center gap-3 self-stretch sm:self-auto justify-between">
-                <div id="setup-chase-target-badge" class="px-4 py-2 rounded-xl bg-amber-400/20 border border-amber-400/60 font-mono text-base sm:text-lg font-extrabold text-amber-300">
-                  Target: 48 Runs
                 </div>
                 <button
                   id="btn-reroll-target"
                   type="button"
-                  class="px-3.5 py-2 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-100 rounded-xl cursor-pointer transition-colors"
+                  class="w-full py-2 px-3 text-xs font-extrabold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 rounded-xl cursor-pointer transition-colors"
                 >
-                  Roll New Target
+                  🎲 Reroll Chase Target
                 </button>
               </div>
-            </div>
 
-            <!-- 4B. OFFICIAL T20 COIN TOSS CARD (Shown when T20 Mode is selected) -->
-            <div id="setup-toss-card" class="hidden p-5 bg-slate-950 border-2 border-sky-500/60 rounded-xl space-y-4">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div class="text-sm sm:text-base font-display font-bold text-sky-400">
-                    Official T20 Coin Toss
+              <!-- T20 3D Coin Toss Card -->
+              <div id="setup-toss-card" class="hidden p-4 bg-slate-950/95 border-2 border-sky-400/70 rounded-2xl space-y-3 shadow-xl">
+                <div class="flex items-center gap-3">
+                  <div class="coin-3d-stage shrink-0">
+                    <div id="toss-coin-3d" class="coin-3d-inner">
+                      <div class="coin-face coin-face-heads">
+                        <span class="text-[8px] tracking-widest opacity-80">OFFICIAL</span>
+                        <span class="text-xs leading-none">HEADS</span>
+                        <span class="text-[10px]">👑</span>
+                      </div>
+                      <div class="coin-face coin-face-tails">
+                        <span class="text-[8px] tracking-widest opacity-80">CRICKET</span>
+                        <span class="text-xs leading-none">TAILS</span>
+                        <span class="text-[10px]">🏏</span>
+                      </div>
+                    </div>
                   </div>
-                  <div id="toss-result-text" class="text-xs sm:text-sm text-slate-300 mt-1">
-                    Call HEADS or TAILS to flip the coin before starting the match!
+                  <div class="min-w-0">
+                    <div class="text-sm font-display font-extrabold text-sky-400">Official 3D Coin Toss</div>
+                    <div id="toss-result-text" class="text-xs text-slate-300 mt-0.5 leading-snug">
+                      Call HEADS or TAILS before starting the T20 match!
+                    </div>
                   </div>
                 </div>
-                <div class="flex items-center gap-2.5">
-                  <button
-                    id="btn-call-heads"
-                    type="button"
-                    data-coin-call="HEADS"
-                    class="px-4 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl cursor-pointer shadow"
-                  >
-                    Call HEADS
-                  </button>
-                  <button
-                    id="btn-call-tails"
-                    type="button"
-                    data-coin-call="TAILS"
-                    class="px-4 py-2 text-xs sm:text-sm font-bold bg-sky-400 hover:bg-sky-300 text-slate-950 rounded-xl cursor-pointer shadow"
-                  >
-                    Call TAILS
-                  </button>
-                  <button id="btn-flip-coin" type="button" class="hidden px-3 py-2 text-xs font-semibold bg-slate-800 text-amber-400 rounded-xl">
-                    Flip Coin
-                  </button>
+                <div class="grid grid-cols-2 gap-2">
+                  <button id="btn-call-heads" type="button" data-coin-call="HEADS" class="py-2 text-xs font-extrabold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl cursor-pointer">Call HEADS</button>
+                  <button id="btn-call-tails" type="button" data-coin-call="TAILS" class="py-2 text-xs font-extrabold bg-sky-400 hover:bg-sky-300 text-slate-950 rounded-xl cursor-pointer">Call TAILS</button>
+                  <button id="btn-flip-coin" type="button" class="hidden">Flip</button>
+                </div>
+                <div id="toss-user-choice-row" class="hidden pt-2 border-t border-slate-800 space-y-2">
+                  <div class="text-xs font-bold text-emerald-400">You won the toss! Elect first:</div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button id="btn-toss-elect-bat" type="button" class="py-2 text-xs font-bold bg-emerald-500 text-slate-950 rounded-xl cursor-pointer">🏏 Bat First</button>
+                    <button id="btn-toss-elect-bowl" type="button" class="py-2 text-xs font-bold bg-slate-800 text-slate-200 hover:bg-slate-700 rounded-xl cursor-pointer">⚾ Bowl First</button>
+                  </div>
                 </div>
               </div>
 
-              <!-- Shown when User wins the Toss in T20 Mode -->
-              <div id="toss-user-choice-row" class="hidden pt-3 border-t border-slate-800 flex flex-wrap items-center justify-between gap-3">
-                <span class="text-xs sm:text-sm font-bold text-emerald-400">You won the toss! Choose what to do first:</span>
-                <div class="flex items-center gap-2.5">
+              <!-- BIG LAUNCH CTAs -->
+              <div class="p-3 rounded-2xl bg-slate-950/95 border border-emerald-500/40 space-y-2">
+                <button
+                  id="btn-start-match"
+                  type="button"
+                  data-tv-default="true"
+                  class="w-full wd-launch-btn py-3 px-4 text-sm sm:text-base rounded-xl cursor-pointer"
+                >
+                  🏏 START MATCH
+                </button>
+                <div class="grid grid-cols-2 gap-2">
                   <button
-                    id="btn-toss-elect-bat"
+                    id="btn-setup-open-qr"
                     type="button"
-                    class="px-4 py-2 text-xs sm:text-sm font-bold bg-emerald-500 text-slate-950 rounded-xl cursor-pointer"
+                    class="py-2 px-3 text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 rounded-xl cursor-pointer"
                   >
-                    Bat First
+                    📱 Pair Phone (QR)
                   </button>
                   <button
-                    id="btn-toss-elect-bowl"
                     type="button"
-                    class="px-4 py-2 text-xs sm:text-sm font-bold bg-slate-800 text-slate-200 hover:bg-slate-700 rounded-xl cursor-pointer"
+                    data-close-modal="modal-setup"
+                    class="py-2 px-3 text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl cursor-pointer"
                   >
-                    Bowl First
+                    ✕ Cancel / Back
                   </button>
                 </div>
               </div>
@@ -1374,6 +2019,7 @@
               <option value="run_chase" selected>Run Chase (5 Overs)</option>
               <option value="last_over">1-Over Finisher Thriller (6 Balls)</option>
               <option value="t20">T20 Match (20 Overs)</option>
+              <option value="super_over">Super Over Shootout (1 Over)</option>
             </select>
             <select id="setup-overs" aria-label="Overs">
               <option value="1">1 Over</option>
@@ -1423,49 +2069,6 @@
             </select>
             <input id="setup-jersey-color" type="color" value="#0284c7" />
             <input id="setup-jersey-num" type="number" min="1" max="99" value="18" />
-          </div>
-        </div>
-
-        <div class="modal-footer justify-between flex-wrap gap-2">
-          <div class="flex items-center gap-2">
-            <button
-              id="btn-setup-prev-step"
-              type="button"
-              class="hidden px-4 py-2 text-xs sm:text-sm font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl cursor-pointer"
-            >
-              ← Back
-            </button>
-            <button
-              type="button"
-              data-close-modal="modal-setup"
-              class="px-3.5 py-2 text-xs font-semibold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl cursor-pointer"
-            >
-              Resume Current
-            </button>
-          </div>
-
-          <div class="flex items-center gap-2.5">
-            <button
-              id="btn-setup-quick-start"
-              type="button"
-              class="px-4 py-2 text-xs sm:text-sm font-bold bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/50 text-emerald-300 rounded-xl cursor-pointer"
-            >
-              Quick Start Match
-            </button>
-            <button
-              id="btn-setup-next-step"
-              type="button"
-              class="px-6 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl cursor-pointer shadow-lg"
-            >
-              Next: Choose Teams →
-            </button>
-            <button
-              id="btn-start-match"
-              type="button"
-              class="hidden px-6 py-2 text-xs sm:text-sm font-bold bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-xl cursor-pointer shadow-lg"
-            >
-              Start Match
-            </button>
           </div>
         </div>
       </div>
@@ -1593,6 +2196,7 @@
             <button
               id="btn-scorecard-rematch"
               type="button"
+              data-tv-default="true"
               class="px-4 py-2 text-xs sm:text-sm font-display font-bold tracking-wider uppercase bg-amber-400 hover:bg-amber-300 text-slate-950 rounded-lg shadow-lg cursor-pointer"
             >
               🔥 Instant Rematch (Press OK / Enter)
@@ -1679,9 +2283,9 @@
             <div>
               <label class="block text-[11px] text-slate-300 mb-0.5">Graphics Preset</label>
               <select id="setting-quality" class="w-full bg-slate-950 border border-slate-700 rounded-lg px-2 py-1.5 text-white">
-                <option value="low">Low (Mobile Fast)</option>
-                <option value="medium">Medium (Bloom)</option>
-                <option value="high" selected>High (HDRI + DOF)</option>
+                <option value="low">Low (TV Fast)</option>
+                <option value="medium">Medium (Balanced)</option>
+                <option value="high" selected>High (Full Crisp)</option>
               </select>
             </div>
             <div>
@@ -1790,10 +2394,9 @@
               <input id="setting-sensitivity" type="range" min="0.5" max="2.0" step="0.1" value="1.0" class="w-full accent-amber-400" />
             </div>
             <div>
-              <label class="block text-[10px] text-slate-400 mb-0.5">DOF / Bokeh</label>
-              <select id="setting-dof" class="w-full bg-slate-900 border border-slate-700 rounded-lg px-1.5 py-1 text-white">
-                <option value="on" selected>DOF On</option>
-                <option value="off">DOF Off</option>
+              <label class="block text-[10px] text-slate-400 mb-0.5">Post-FX (TV Mode)</label>
+              <select id="setting-dof" disabled title="Disabled for Smart TV frame-rate stability" class="w-full bg-slate-900/60 border border-slate-800 rounded-lg px-1.5 py-1 text-slate-400 cursor-not-allowed">
+                <option value="off" selected>Off (TV Fast)</option>
               </select>
             </div>
             <div>
@@ -1845,6 +2448,99 @@
           </button>
         </div>
       </div>
+    </div>
+
+    <!-- ==========================================================================================
+         MODAL: Install App (PWA) & Hosted Android TV Wrapper APK Guide
+         ========================================================================================== -->
+    <div id="modal-tv-apk" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="title-modal-tv-apk">
+      <div class="modal-card" style="--modal-w: 580px">
+        <div class="modal-header">
+          <div class="flex items-center gap-2">
+            <span class="text-lg">📺</span>
+            <h2 id="title-modal-tv-apk" class="font-display text-base sm:text-lg font-extrabold text-amber-400">
+              Install App / Android TV APK
+            </h2>
+          </div>
+          <button
+            id="btn-close-tv-apk"
+            type="button"
+            aria-label="Close Install Modal"
+            class="min-w-[30px] min-h-[30px] flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-sm font-bold cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modal-body space-y-3 text-xs text-slate-200">
+          <!-- Native Browser PWA Install Button (Shown when Chromium beforeinstallprompt fires) -->
+          <button
+            id="btn-tv-apk-native-install"
+            type="button"
+            data-tv-default="true"
+            class="hidden w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-display font-extrabold text-sm cursor-pointer shadow-lg"
+          >
+            📲 Install App Directly on This Device
+          </button>
+
+          <!-- iOS Safari Guided Install Instructions -->
+          <div id="tv-apk-ios-guide" class="hidden p-3 rounded-xl bg-sky-500/10 border border-sky-400/40 space-y-1">
+            <div class="font-display font-bold text-sky-300 text-xs">Install on iPhone / iPad (Safari)</div>
+            <p class="text-[11px] text-slate-300 leading-relaxed">
+              1. Tap the <strong>Share</strong> icon in Safari toolbar.<br />
+              2. Scroll down and tap <strong>Add to Home Screen</strong>.
+            </p>
+          </div>
+
+          <!-- Hosted URL Box -->
+          <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <span class="text-[10px] font-mono uppercase tracking-wider text-amber-300 font-bold">Hosted Live Game URL</span>
+              <span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-mono text-[10px] font-bold">PWA Ready ✓</span>
+            </div>
+            <div id="tv-apk-live-url" class="font-mono text-[11px] text-sky-300 break-all bg-slate-900 px-2.5 py-1.5 rounded-lg border border-slate-800">
+              https://ais-pre-zvp4v3wgakmcnnxwlzmq5a-611650499151.asia-east1.run.app
+            </div>
+            <button
+              id="btn-tv-apk-copy-url"
+              type="button"
+              data-tv-default="true"
+              class="w-full py-2 px-3 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-display font-extrabold text-xs cursor-pointer"
+            >
+              📋 Copy Hosted URL
+            </button>
+          </div>
+
+          <!-- 2 Fast Ways to Generate Android TV APK -->
+          <div class="p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-2">
+            <div class="font-display font-bold text-white text-xs">Build Android TV APK (No Mouse Cursor · Native Remote)</div>
+            <div class="text-[11px] text-slate-300 leading-relaxed space-y-1.5">
+              <div><strong class="text-emerald-400">1. GitHub Actions (Recommended, Free):</strong> Sync repo to GitHub → In GitHub <em>Actions → New workflow</em>, paste <code class="text-amber-300">android-tv-apk/github-workflow-build-apk.yml</code> → Run → Download <code class="text-amber-300">BoxCricket3D-AndroidTV.apk</code>.</div>
+              <div><strong class="text-sky-400">2. PWABuilder.com (2-Min Online):</strong> Copy Hosted URL above → Paste on <em>pwabuilder.com</em> → Package for Android → Download APK.</div>
+              <div><strong class="text-amber-300">3. Install on TV:</strong> Send APK via <em>Send Files to TV</em> or USB drive → Install → Launch directly from Android TV Home Screen!</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-footer justify-end">
+          <button
+            type="button"
+            data-close-modal="modal-tv-apk"
+            class="px-4 py-1.5 text-xs font-bold bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg cursor-pointer"
+          >
+            Close (Back)
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Non-Intrusive Offline Connectivity Indicator -->
+    <div
+      id="pwa-offline-banner"
+      class="hidden fixed bottom-14 left-3 z-50 flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-bold text-slate-950 shadow-xl"
+    >
+      <span class="inline-block w-2 h-2 rounded-full bg-slate-950 animate-pulse"></span>
+      <span>Offline Mode — Cached Stadium Ready</span>
     </div>
 
     <script type="module" src="./src/main.js"></script>

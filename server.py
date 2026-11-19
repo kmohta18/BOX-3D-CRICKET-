@@ -70,6 +70,9 @@ async def read_ws_frame(reader: asyncio.StreamReader):
         ext = await reader.readexactly(8)
         payload_len = struct.unpack("!Q", ext)[0]
 
+    if payload_len > 16384:
+        return None
+
     mask_key = await reader.readexactly(4) if masked else b""
     payload = bytearray(await reader.readexactly(payload_len))
     if masked:
@@ -207,6 +210,14 @@ async def handle_http_client(reader: asyncio.StreamReader, writer: asyncio.Strea
         rel_path = path.lstrip("/") or "index.html"
         if rel_path == "c":
             rel_path = "controller.html"
+        blocked_files = {"server.py", "server.ts", "package.json", "package-lock.json", "tsconfig.json", "vite.config.ts"}
+        if rel_path in blocked_files or rel_path.startswith("."):
+            writer.write(
+                b"HTTP/1.1 403 Forbidden\r\nContent-Type: text/plain\r\nContent-Length: 9\r\nConnection: close\r\n\r\nForbidden"
+            )
+            await writer.drain()
+            writer.close()
+            return
         safe_path = os.path.normpath(os.path.join(ROOT_DIR, rel_path))
         if not safe_path.startswith(ROOT_DIR) or not os.path.isfile(safe_path):
             not_found = b"404 Not Found"

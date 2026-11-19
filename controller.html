@@ -20,6 +20,10 @@
       }
       .font-display { font-family: 'Chakra Petch', sans-serif; }
       .font-mono { font-family: 'JetBrains Mono', monospace; font-variant-numeric: tabular-nums; }
+      body { height: 100dvh; max-height: 100dvh; }
+      .grid-cols-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+      #ctrl-wheel-svg { width: 112px; height: 112px; flex-shrink: 0; }
+      #ctrl-shot-buttons-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
     </style>
   </head>
 
@@ -31,7 +35,17 @@
           <span class="font-display text-xs sm:text-sm font-bold text-amber-400 truncate">BOX CRICKET PAD</span>
           <span id="ctrl-status" class="text-[10px] font-mono text-emerald-400 truncate">Connecting...</span>
         </div>
-        <div id="ctrl-room-ping" class="font-mono text-[11px] font-bold text-white shrink-0">CRIC · 12ms</div>
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            id="btn-ctrl-fullscreen"
+            type="button"
+            title="Toggle Fullscreen"
+            class="px-1.5 py-0.5 bg-slate-800 active:bg-slate-700 border border-slate-700 rounded text-[10px] font-mono font-bold text-emerald-300 cursor-pointer"
+          >
+            ⛶ FS
+          </button>
+          <div id="ctrl-room-ping" class="font-mono text-[11px] font-bold text-white shrink-0">CRIC · 12ms</div>
+        </div>
       </div>
 
       <!-- Live Broadcast Score & Ball Status Strip on Phone -->
@@ -101,6 +115,7 @@
             <span class="text-slate-400">SPD <strong id="tel-speed" class="text-amber-400">0°/s</strong></span>
             <span class="text-slate-400">YAW <strong id="tel-yaw" class="text-sky-400">0°</strong></span>
             <span class="text-slate-400">PIT <strong id="tel-pitch" class="text-emerald-400">0°</strong></span>
+            <span id="ctrl-cam-mode" class="px-1 rounded bg-slate-800 text-[9px] text-amber-300 font-bold">PRO</span>
           </div>
         </div>
 
@@ -117,66 +132,183 @@
             id="btn-mode-fly"
             class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
           >
-            <span class="leading-tight">FLY</span>
+            <span class="leading-tight">LOFT</span>
             <span class="text-[9px] font-sans font-semibold opacity-80 leading-tight">24–44° · Big Six</span>
           </button>
         </div>
 
-        <!-- Manual Crease Guard / Step Left & Right Buttons -->
-        <div class="grid grid-cols-2 gap-1.5 pt-0.5">
+        <!-- Manual Crease Guard / Step Left, Step Out Charge & Step Right Buttons -->
+        <div class="grid grid-cols-3 gap-1.5 pt-0.5">
           <button
             id="btn-ctrl-left"
-            class="py-1.5 px-2 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
+            class="py-1.5 px-1.5 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
           >
-            <span>◀</span> <span>STEP LEFT</span>
+            <span>◀</span> <span>LEFT</span>
+          </button>
+          <button
+            id="btn-ctrl-step-out"
+            type="button"
+            class="py-1.5 px-1.5 bg-slate-950 active:bg-amber-400 active:text-slate-950 border border-slate-700 text-amber-300 font-display font-extrabold text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-all"
+          >
+            <span>▲</span> <span id="lbl-ctrl-step-out">CHARGE</span>
           </button>
           <button
             id="btn-ctrl-right"
-            class="py-1.5 px-2 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
+            class="py-1.5 px-1.5 bg-slate-950 active:bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1"
           >
-            <span>STEP RIGHT</span> <span>▶</span>
+            <span>RIGHT</span> <span>▶</span>
           </button>
         </div>
       </div>
 
-      <!-- Interactive Bat/Bowl Gesture & Swipe Area (Auto-scales to remaining viewport height) -->
-      <div id="touch-gesture-pad" class="flex-1 min-h-[60px] bg-slate-900/90 border-2 border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center p-2 text-center relative overflow-hidden">
-        <div class="font-display text-xs sm:text-sm font-bold text-white" id="pad-mode-title">
-          SWING PHONE OR SWIPE HERE
+      <!-- Context-Sensitive TV Popup / DRS / Catch QTE Action Bar (Bug #7 Fix) -->
+      <div id="ctrl-tv-popup-bar" class="hidden shrink-0 flex items-center gap-1.5">
+        <button
+          id="btn-ctrl-drs"
+          class="hidden flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-amber-400 to-yellow-300 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer animate-pulse"
+        >
+          📺 TAKE DRS REVIEW (T)
+        </button>
+        <button
+          id="btn-ctrl-qte"
+          class="hidden flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-sky-400 to-emerald-400 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer animate-bounce"
+        >
+          🧤 TAP NOW · CATCH REFLEX QTE!
+        </button>
+        <button
+          id="btn-ctrl-modal-continue"
+          class="hidden flex-1 py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-400 text-slate-950 font-display font-black text-xs shadow-lg cursor-pointer"
+        >
+          ✅ CONTINUE / AUTO-SELECT ON TV
+        </button>
+      </div>
+
+      <!-- Interactive 360° Angle Wheel + Live Fielder Radar + Air-Swing / Swipe Pad (Bug #6 & #8 Fix) -->
+      <div id="touch-gesture-pad" class="flex-1 min-h-[150px] bg-slate-900/95 border-2 border-slate-700/90 rounded-2xl flex flex-col items-center justify-between p-2 text-center relative overflow-hidden select-none">
+        <div class="w-full flex items-center justify-between gap-1 text-[10px] px-1">
+          <span id="ctrl-wheel-sector-badge" class="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono font-bold">
+            STRAIGHT · 0° · FRONT
+          </span>
+          <span id="ctrl-sensor-mode-badge" class="px-2 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-mono text-[9px] truncate">
+            Checking Gyro...
+          </span>
         </div>
-        <p id="pad-mode-sub" class="text-[10px] text-slate-400 max-w-xs leading-snug mt-0.5 line-clamp-2">
-          Swing phone like a bat or swipe in 360° across this pad. Tap to bowl/skip replay.
-        </p>
-        <div id="pad-feedback" class="mt-1 font-mono text-[10px] text-amber-400 truncate max-w-full">
-          Mode: GROUND (0–8°) · Stream Ready
+
+        <!-- Live 360° Field Radar & Aim Wheel SVG -->
+        <div class="relative flex items-center justify-center my-0.5">
+          <svg id="ctrl-wheel-svg" viewBox="0 0 150 150" class="w-32 h-32 sm:w-36 sm:h-36 touch-none cursor-pointer">
+            <circle cx="75" cy="75" r="64" fill="rgba(6, 78, 59, 0.55)" stroke="rgba(16, 185, 129, 0.65)" stroke-width="2" />
+            <circle cx="75" cy="75" r="31" fill="none" stroke="rgba(255, 255, 255, 0.22)" stroke-width="1" stroke-dasharray="3 3" />
+            <!-- Pitch rectangle -->
+            <rect x="71" y="61" width="8" height="28" rx="1.5" fill="rgba(214, 184, 138, 0.75)" />
+            <!-- Aim Wedge & Line -->
+            <path id="ctrl-wheel-cone" d="M 75 75 L 58 18 A 64 64 0 0 1 92 18 Z" fill="rgba(52, 211, 153, 0.24)" />
+            <line id="ctrl-wheel-line" x1="75" y1="75" x2="75" y2="19" stroke="#34d399" stroke-width="2.4" stroke-linecap="round" />
+            <!-- Live Fielders Group -->
+            <g id="ctrl-wheel-fielders"></g>
+            <!-- Striker Dot & Aim Handle -->
+            <circle cx="75" cy="75" r="3.2" fill="#f59e0b" stroke="#090f1d" stroke-width="1" />
+            <circle id="ctrl-wheel-dot" cx="75" cy="19" r="5" fill="#10b981" stroke="#ffffff" stroke-width="1.5" />
+            <text x="75" y="10" text-anchor="middle" fill="rgba(167,243,208,0.85)" font-size="7" font-family="monospace" font-weight="bold">STRAIGHT</text>
+            <text x="75" y="146" text-anchor="middle" fill="rgba(253,230,138,0.75)" font-size="7" font-family="monospace" font-weight="bold">BEHIND</text>
+          </svg>
         </div>
+
+        <div class="w-full space-y-0.5">
+          <div class="font-display text-[11px] font-bold text-white leading-tight" id="pad-mode-title">
+            AIM 360° WHEEL · SWING PHONE OR TAP SHOT BELOW
+          </div>
+          <p id="pad-mode-sub" class="text-[9px] text-slate-400 leading-tight hidden sm:block">
+            Drag wheel to aim into gaps (Blue dots = Fielders), then swing phone in the air or tap a shot button!
+          </p>
+          <div id="pad-feedback" class="font-mono text-[10px] text-amber-400 truncate max-w-full">
+            Mode: GROUND (0–8°) · Stream Ready
+          </div>
+        </div>
+      </div>
+
+      <!-- Direct 1-Tap Shot Buttons on Phone (Works alongside Air-Swing & 360° Wheel!) -->
+      <div id="ctrl-shot-buttons-row" class="shrink-0 grid grid-cols-4 gap-1.5">
+        <button
+          id="btn-ctrl-shot-def"
+          type="button"
+          class="min-h-[38px] py-1 px-1.5 rounded-xl bg-slate-800 active:bg-slate-700 border border-slate-600 text-slate-200 font-display font-bold text-[11px] shadow cursor-pointer"
+        >
+          🛡️ DEF
+        </button>
+        <button
+          id="btn-ctrl-shot-push"
+          type="button"
+          class="min-h-[38px] py-1 px-1.5 rounded-xl bg-sky-500/25 active:bg-sky-500/40 border border-sky-400/60 text-sky-200 font-display font-bold text-[11px] shadow cursor-pointer"
+        >
+          ⚡ PUSH
+        </button>
+        <button
+          id="btn-ctrl-shot-stroke"
+          type="button"
+          class="min-h-[38px] py-1 px-1.5 rounded-xl bg-emerald-500 active:bg-emerald-400 text-slate-950 font-display font-extrabold text-[11px] shadow cursor-pointer"
+        >
+          🏏 STROKE
+        </button>
+        <button
+          id="btn-ctrl-shot-loft"
+          type="button"
+          class="min-h-[38px] py-1 px-1.5 rounded-xl bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-extrabold text-[11px] shadow cursor-pointer"
+        >
+          🚀 LOFT 6
+        </button>
       </div>
     </main>
 
     <!-- Bottom Thumb Zone: Context-Sensitive for Batting vs Bowling -->
     <footer class="shrink-0 space-y-1.5 pb-[max(4px,env(safe-area-inset-bottom,4px))]">
-      <!-- Bowling Run-Up Hold Button + Bowler Type (Shown ONLY when user is Bowling!) -->
-      <div id="ctrl-bowling-row" class="hidden grid grid-cols-3 gap-1.5">
-        <button id="btn-runup-hold" class="col-span-2 min-h-[42px] py-1.5 px-2 bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-bold text-xs rounded-xl shadow cursor-pointer truncate">
-          HOLD RUN-UP &amp; SWING
-        </button>
-        <select id="ctrl-bowler-type" aria-label="Bowler Type" class="min-h-[42px] bg-slate-900 border border-slate-700 text-[11px] font-semibold text-white rounded-xl px-1.5 text-center">
-          <option value="fast">Fast</option>
-          <option value="medium">Medium</option>
-          <option value="spin">Spin</option>
-        </select>
+      <!-- Bowling Mini-Pad: Quick Length/Variation Presets + Line L/R + Run-Up Hold (Shown ONLY when user is Bowling!) -->
+      <div id="ctrl-bowling-row" class="hidden space-y-1.5">
+        <div class="grid grid-cols-4 gap-1">
+          <button id="btn-bowl-yorker" type="button" class="py-1.5 px-1 rounded-lg bg-sky-500/25 border border-sky-400/60 text-sky-200 font-display font-bold text-[10px] cursor-pointer">
+            🎯 YORKER
+          </button>
+          <button id="btn-bowl-good" type="button" class="py-1.5 px-1 rounded-lg bg-amber-500/25 border border-amber-400/60 text-amber-200 font-display font-bold text-[10px] cursor-pointer">
+            🔥 GOOD
+          </button>
+          <button id="btn-bowl-bouncer" type="button" class="py-1.5 px-1 rounded-lg bg-rose-500/25 border border-rose-400/60 text-rose-200 font-display font-bold text-[10px] cursor-pointer">
+            ⚡ BOUNCER
+          </button>
+          <button id="btn-bowl-slower" type="button" class="py-1.5 px-1 rounded-lg bg-emerald-500/25 border border-emerald-400/60 text-emerald-200 font-display font-bold text-[10px] cursor-pointer">
+            🌀 SLOWER
+          </button>
+        </div>
+        <div class="grid grid-cols-4 gap-1.5">
+          <button id="btn-bowl-line-l" type="button" class="min-h-[40px] py-1 px-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] cursor-pointer">
+            ◀ LINE L
+          </button>
+          <button id="btn-runup-hold" class="col-span-2 min-h-[40px] py-1.5 px-2 bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-extrabold text-xs rounded-xl shadow cursor-pointer truncate">
+            HOLD RUN-UP &amp; BOWL
+          </button>
+          <button id="btn-bowl-line-r" type="button" class="min-h-[40px] py-1 px-1.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-200 font-display font-bold text-[11px] cursor-pointer">
+            LINE R ▶
+          </button>
+        </div>
+        <div class="flex items-center justify-between gap-2 px-1">
+          <span class="text-[10px] font-mono text-slate-400">Bowler Pace / Spin Style:</span>
+          <select id="ctrl-bowler-type" aria-label="Bowler Type" class="h-7 bg-slate-900 border border-slate-700 text-[11px] font-semibold text-white rounded-lg px-2">
+            <option value="fast">⚡ Fast Pace</option>
+            <option value="medium">🎯 Medium Swing</option>
+            <option value="spin">🌀 Spin Wizard</option>
+          </select>
+        </div>
       </div>
 
-      <!-- Calibration (3s Upright), Hold to Run & Turn Back -->
+      <!-- Calibration (3s Upright), 1-Tap RUN & 1-Tap NO RUN -->
       <div class="grid grid-cols-3 gap-1.5">
-        <button id="btn-ctrl-calibrate" class="min-h-[42px] py-1.5 bg-emerald-500 active:bg-emerald-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
-          Calibrate (3s)
+        <button id="btn-ctrl-calibrate" class="min-h-[42px] py-1.5 bg-slate-800 active:bg-slate-700 text-emerald-300 border border-slate-700 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
+          🎯 ZERO BAT
         </button>
-        <button id="btn-ctrl-run" class="min-h-[42px] py-1.5 bg-sky-500 active:bg-sky-400 text-slate-950 font-bold text-[11px] rounded-xl cursor-pointer px-1 truncate">
-          Hold/Jog · Run
+        <button id="btn-ctrl-run" class="min-h-[42px] py-1.5 bg-emerald-500 active:bg-emerald-400 text-slate-950 font-extrabold text-xs rounded-xl shadow cursor-pointer px-1 truncate">
+          🏃 RUN
         </button>
-        <button id="btn-ctrl-turnback" class="min-h-[42px] py-1.5 bg-slate-800 active:bg-slate-700 text-amber-300 font-bold text-[11px] rounded-xl border border-slate-700 cursor-pointer px-1 truncate">
-          Turn Back
+        <button id="btn-ctrl-turnback" class="min-h-[42px] py-1.5 bg-rose-500 active:bg-rose-400 text-white font-extrabold text-xs rounded-xl shadow cursor-pointer px-1 truncate">
+          🛑 NO RUN
         </button>
       </div>
     </footer>
@@ -217,12 +349,45 @@
       roomInputEl.value = roomCode;
       roomPingEl.textContent = `${roomCode} · 12ms`;
 
+      const btnCtrlFs = document.getElementById('btn-ctrl-fullscreen');
+      if (btnCtrlFs) {
+        btnCtrlFs.addEventListener('click', async () => {
+          try {
+            const doc = document;
+            const el = doc.documentElement;
+            const isFs = doc.fullscreenElement || doc.webkitFullscreenElement;
+            if (!isFs) {
+              if (el.requestFullscreen) await el.requestFullscreen();
+              else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+              if (screen.orientation && screen.orientation.lock) {
+                screen.orientation.lock('landscape').catch(() => {});
+              }
+              btnCtrlFs.textContent = '⛶ EXIT';
+            } else {
+              if (doc.exitFullscreen) await doc.exitFullscreen();
+              else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+              btnCtrlFs.textContent = '⛶ FS';
+            }
+          } catch (_) {}
+        });
+      }
+
       let ws = null;
       const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('box_cricket_3d_bus') : null;
       let rttMs = 11;
 
       let selectedShotMode = 'ground'; // Default GROUND
       let isModeLocked = false;
+      let currentWheelAimDeg = 0;
+      let lastWheelEditMs = 0;
+      let wheelUserDraggedThisBall = false;
+      let hostDirSign = -1;
+      let hostHandedness = 'right';
+      let latestFielders = [];
+      let lastFieldersSvgKey = '';
+      const ctrlSessionId = Math.random().toString(36).slice(2, 7);
+      let ctrlMsgSeq = 0;
+      const seenCtrlMsgIds = new Set();
 
       // Sensor state streamed at ~85Hz
       const sensor = {
@@ -237,42 +402,110 @@
         az: 0
       };
 
-      function updateShotModeUI() {
-        const isGround = selectedShotMode === 'ground';
-        btnGround.className = `min-h-[44px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
-          isGround
-            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
-            : 'bg-slate-950 text-slate-400 border-slate-800'
-        } ${isModeLocked ? 'opacity-65' : ''}`;
+      function getSectorLabel(deg) {
+        const a = ((((deg + 180) % 360) + 360) % 360) - 180;
+        const absA = Math.abs(a);
+        const fw = absA <= 72 ? 'FRONT' : 'BACK';
+        // Convert screen wheel angle to world yaw (+X = Leg side for RHB, -X = Off side for RHB)
+        const handSign = hostHandedness === 'left' ? -1 : 1;
+        const legSignedYaw = a * (hostDirSign || -1) * handSign;
+        const isLegSide = legSignedYaw >= 0;
+        let sec = 'STRAIGHT';
+        if (absA <= 18) sec = 'STRAIGHT';
+        else if (absA <= 62) sec = isLegSide ? 'ON / MID-WKT' : 'COVER DRIVE';
+        else if (absA <= 118) sec = isLegSide ? 'SQUARE LEG' : 'POINT / CUT';
+        else if (absA <= 156) sec = isLegSide ? 'FINE LEG' : 'THIRD MAN';
+        else sec = 'SCOOP / RAMP';
+        const sign = a > 0 ? '+' : '';
+        return `${sec} · ${sign}${Math.round(a)}° · ${fw}`;
+      }
 
-        btnFly.className = `min-h-[44px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
-          !isGround
-            ? 'bg-amber-400 text-slate-950 border-amber-200 shadow'
-            : 'bg-slate-950 text-slate-400 border-slate-800'
-        } ${isModeLocked ? 'opacity-65' : ''}`;
+      function renderPhoneWheelUI() {
+        const lineEl = document.getElementById('ctrl-wheel-line');
+        const coneEl = document.getElementById('ctrl-wheel-cone');
+        const dotEl = document.getElementById('ctrl-wheel-dot');
+        const fieldersEl = document.getElementById('ctrl-wheel-fielders');
+        const badgeEl = document.getElementById('ctrl-wheel-sector-badge');
 
-        if (isModeLocked) {
-          lockBadge.textContent = `LOCKED (${selectedShotMode.toUpperCase()})`;
-          lockBadge.className = 'font-mono font-bold text-amber-400 truncate';
-        } else {
-          lockBadge.textContent = `UNLOCKED · ${selectedShotMode.toUpperCase()}`;
-          lockBadge.className = 'font-mono font-bold text-emerald-400 truncate';
+        const deg = currentWheelAimDeg || 0;
+        const rad = (deg * Math.PI) / 180;
+        const r = 56;
+        // On phone wheel, 0° (STRAIGHT) is at the top (y < 75)
+        const tx = 75 + Math.sin(rad) * r;
+        const ty = 75 - Math.cos(rad) * r;
+
+        if (lineEl) {
+          lineEl.setAttribute('x2', tx.toFixed(1));
+          lineEl.setAttribute('y2', ty.toFixed(1));
+          lineEl.setAttribute('stroke', selectedShotMode === 'fly' ? '#fbbf24' : '#34d399');
+        }
+        if (dotEl) {
+          dotEl.setAttribute('cx', tx.toFixed(1));
+          dotEl.setAttribute('cy', ty.toFixed(1));
+          dotEl.setAttribute('fill', selectedShotMode === 'fly' ? '#f59e0b' : '#10b981');
+        }
+        if (coneEl) {
+          const half = (16 * Math.PI) / 180;
+          const x1 = 75 + Math.sin(rad - half) * 64;
+          const y1 = 75 - Math.cos(rad - half) * 64;
+          const x2 = 75 + Math.sin(rad + half) * 64;
+          const y2 = 75 - Math.cos(rad + half) * 64;
+          coneEl.setAttribute('d', `M 75 75 L ${x1.toFixed(1)} ${y1.toFixed(1)} A 64 64 0 0 1 ${x2.toFixed(1)} ${y2.toFixed(1)} Z`);
+          coneEl.setAttribute('fill', selectedShotMode === 'fly' ? 'rgba(245, 158, 11, 0.25)' : 'rgba(52, 211, 153, 0.24)');
+        }
+        if (badgeEl) {
+          badgeEl.textContent = getSectorLabel(deg);
+        }
+        if (fieldersEl && Array.isArray(latestFielders)) {
+          const fieldersKey = `${hostDirSign}:${JSON.stringify(latestFielders)}`;
+          if (fieldersKey !== lastFieldersSvgKey) {
+            lastFieldersSvgKey = fieldersKey;
+            const maxR = 60.0;
+            const wheelR = 60.0;
+            let html = '';
+            latestFielders.forEach((pt, idx) => {
+              const fx = 75 + ((pt[0] * hostDirSign) / maxR) * wheelR;
+              // Straight down the ground is -Z in world coordinates; map straight to top of wheel (y < 75)
+              const fy = 75 + ((pt[1] * (hostDirSign < 0 ? 1 : -1)) / maxR) * wheelR;
+              const color = idx === latestFielders.length - 1 ? '#a7f3d0' : '#38bdf8';
+              html += `<circle cx="${fx.toFixed(1)}" cy="${fy.toFixed(1)}" r="2.6" fill="${color}" opacity="0.92" />`;
+            });
+            fieldersEl.innerHTML = html;
+          }
         }
       }
 
+      function updateShotModeUI() {
+        const isGround = selectedShotMode === 'ground';
+        btnGround.className = `min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+          isGround
+            ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
+            : 'bg-slate-950 text-slate-400 border-slate-800'
+        }`;
+
+        btnFly.className = `min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+          !isGround
+            ? 'bg-amber-400 text-slate-950 border-amber-200 shadow'
+            : 'bg-slate-950 text-slate-400 border-slate-800'
+        }`;
+
+        const modeDisplay = selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
+        lockBadge.textContent = `READY · ${modeDisplay}`;
+        lockBadge.className = `font-mono font-bold truncate ${
+          selectedShotMode === 'fly' ? 'text-amber-400' : 'text-emerald-400'
+        }`;
+        renderPhoneWheelUI();
+      }
+
+      // Bug #4 Fix: Allow switching between GROUND and LOFT anytime before bat-ball contact
       function selectShotMode(mode) {
-        if (isModeLocked) {
-          padFeedback.textContent = `Mode locked (${selectedShotMode.toUpperCase()}) after bowler release!`;
-          if (navigator.vibrate) navigator.vibrate([20, 30, 20]);
-          return;
-        }
         selectedShotMode = mode;
-        if (navigator.vibrate) navigator.vibrate(35);
+        if (navigator.vibrate) navigator.vibrate(30);
         updateShotModeUI();
         sendPacket({ type: 'shot_mode', mode: selectedShotMode });
         padFeedback.textContent = mode === 'ground'
-          ? 'GROUND Selected (0–8° flat swing)'
-          : 'FLY Selected (20–50° rising swing)';
+          ? 'GROUND Selected (0–8° flat carpet drive)'
+          : 'LOFT Selected (24–40° aerial six shot)';
       }
 
       btnGround.addEventListener('click', () => selectShotMode('ground'));
@@ -382,7 +615,7 @@
         ws.onclose = () => {
           statusEl.textContent = 'Reconnecting...';
           statusEl.className = 'text-[11px] font-mono text-amber-400';
-          setTimeout(connectWS, 1500);
+          setTimeout(connectWS, 800);
         };
       }
 
@@ -391,12 +624,13 @@
       }
 
       function sendPacket(payload) {
-        const msg = { ...payload, room: roomCode, slot };
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify(msg));
-        }
+        const msgId = payload?.msgId || `ctrl_${slot}_${ctrlSessionId}_${++ctrlMsgSeq}`;
+        const msg = { ...payload, room: roomCode, slot, msgId };
         if (bc) {
           bc.postMessage(msg);
+        }
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify(msg));
         }
       }
 
@@ -405,8 +639,13 @@
       const ballStatusEl = document.getElementById('ctrl-ball-status');
       const streakBadgeEl = document.getElementById('ctrl-streak-badge');
       const battingPanelEl = document.getElementById('ctrl-batting-panel');
+      const shotBtnsRowEl = document.getElementById('ctrl-shot-buttons-row');
       const bowlingRowEl = document.getElementById('ctrl-bowling-row');
       const playRematchBtn = document.getElementById('btn-ctrl-play-rematch');
+      const tvPopupBarEl = document.getElementById('ctrl-tv-popup-bar');
+      const drsBtnEl = document.getElementById('btn-ctrl-drs');
+      const qteBtnEl = document.getElementById('btn-ctrl-qte');
+      const modalContBtnEl = document.getElementById('btn-ctrl-modal-continue');
       const padTitleEl = document.getElementById('pad-mode-title');
       const padSubEl = document.getElementById('pad-mode-sub');
 
@@ -417,6 +656,86 @@
           playRematchBtn.classList.add('hidden');
         });
       }
+
+      // Bug #7 Fix: Bind DRS Review, Catch QTE, and Modal Continue buttons on Phone
+      drsBtnEl?.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate([50, 30, 60]);
+        sendPacket({ type: 'phone_action', action: 'drs_review' });
+      });
+      qteBtnEl?.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate([40, 20, 40]);
+        sendPacket({ type: 'phone_action', action: 'catch_qte' });
+      });
+      modalContBtnEl?.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate(35);
+        sendPacket({ type: 'phone_action', action: 'modal_continue' });
+      });
+
+      // Bind 1-Tap Direct Shot Buttons on Phone (`DEF`, `PUSH`, `STROKE`, `LOFT 6`)
+      const bindPhoneShotBtn = (id, actionName, modeToSet = null) => {
+        const btn = document.getElementById(id);
+        if (!btn) return;
+        btn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          if (navigator.vibrate) navigator.vibrate(35);
+          if (modeToSet) {
+            selectedShotMode = modeToSet;
+            updateShotModeUI();
+          }
+          sendPacket({
+            type: 'phone_action',
+            action: actionName,
+            aimDeg: currentWheelAimDeg,
+            wheelExplicit: wheelUserDraggedThisBall,
+            shotMode: selectedShotMode
+          });
+          padFeedback.textContent = wheelUserDraggedThisBall
+            ? `Played ${actionName.replace('_shot', '').toUpperCase()} · ${getSectorLabel(currentWheelAimDeg)}`
+            : `Played ${actionName.replace('_shot', '').toUpperCase()} (Bat Direction)`;
+        });
+      };
+      bindPhoneShotBtn('btn-ctrl-shot-def', 'defend_shot', 'ground');
+      bindPhoneShotBtn('btn-ctrl-shot-push', 'push_shot', 'ground');
+      bindPhoneShotBtn('btn-ctrl-shot-stroke', 'stroke_shot', 'ground');
+      bindPhoneShotBtn('btn-ctrl-shot-loft', 'loft_shot', 'fly');
+
+      // Bind Step Out / Charge Down Pitch Toggle Button on Phone
+      const stepOutBtnEl = document.getElementById('btn-ctrl-step-out');
+      const stepOutLblEl = document.getElementById('lbl-ctrl-step-out');
+      stepOutBtnEl?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate(30);
+        sendPacket({ type: 'phone_action', action: 'toggle_step_out' });
+      });
+
+      // Bind Phone Bowling Length & Line Presets
+      const bindBowlPresetBtn = (id, actionName, label) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          if (navigator.vibrate) navigator.vibrate(25);
+          sendPacket({ type: 'phone_action', action: actionName });
+          padFeedback.textContent = `Pitch Target: ${label}`;
+        });
+      };
+      bindBowlPresetBtn('btn-bowl-yorker', 'bowl_yorker', '🎯 YORKER (Blockhole)');
+      bindBowlPresetBtn('btn-bowl-good', 'bowl_good', '🔥 GOOD LENGTH (Stock)');
+      bindBowlPresetBtn('btn-bowl-bouncer', 'bowl_bouncer', '⚡ BOUNCER (Short)');
+      bindBowlPresetBtn('btn-bowl-slower', 'bowl_slower', '🌀 SLOWER / VARIATION');
+
+      document.getElementById('btn-bowl-line-l')?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate(18);
+        sendPacket({ type: 'crease_step', dir: -1, held: true });
+        padFeedback.textContent = 'Shifted Bowling Line Left';
+      });
+      document.getElementById('btn-bowl-line-r')?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate(18);
+        sendPacket({ type: 'crease_step', dir: 1, held: true });
+        padFeedback.textContent = 'Shifted Bowling Line Right';
+      });
 
       // Screen Wake Lock so phone never dims or locks while swinging in the air
       let wakeLockSentinel = null;
@@ -438,19 +757,26 @@
       function applyRoleUI(role = 'bat') {
         const isBowl = role === 'bowl';
         if (battingPanelEl) battingPanelEl.classList.toggle('hidden', isBowl);
+        if (shotBtnsRowEl) shotBtnsRowEl.classList.toggle('hidden', isBowl);
         if (bowlingRowEl) bowlingRowEl.classList.toggle('hidden', !isBowl);
         if (padTitleEl) {
-          padTitleEl.textContent = isBowl ? 'HOLD RUN-UP OR SWIPE TO BOWL' : 'SWING PHONE OR SWIPE HERE';
-        }
-        if (padSubEl) {
-          padSubEl.textContent = isBowl
-            ? 'Hold Run-Up button below and swing phone overarm to release ball!'
-            : 'Swing phone like a bat or swipe in 360° across this pad. Tap to skip replay.';
+          padTitleEl.textContent = isBowl
+            ? 'HOLD RUN-UP OR SWIPE TO BOWL'
+            : 'AIM 360° WHEEL · SWING PHONE OR TAP SHOT';
         }
       }
 
+      let isDraggingWheel = false;
       function handleIncoming(msg) {
         if (!msg || (msg.room && msg.room !== roomCode)) return;
+        if (msg.msgId) {
+          if (seenCtrlMsgIds.has(msg.msgId)) return;
+          seenCtrlMsgIds.add(msg.msgId);
+          if (seenCtrlMsgIds.size > 300) {
+            const first = seenCtrlMsgIds.values().next().value;
+            seenCtrlMsgIds.delete(first);
+          }
+        }
         if (msg.type === 'pong' && msg.clientTs) {
           rttMs = Math.max(2, Math.round((Date.now() - msg.clientTs) * 0.5));
           roomPingEl.textContent = `${roomCode} · ${rttMs}ms`;
@@ -458,7 +784,7 @@
           if (navigator.vibrate) {
             navigator.vibrate(msg.pattern || [70]);
           }
-          padFeedback.textContent = 'CONTACT VIBRATION!';
+          padFeedback.textContent = msg.label || '🏏 BAT-BALL IMPACT!';
         } else if (msg.type === 'shot_mode_lock') {
           isModeLocked = Boolean(msg.locked);
           if (msg.mode) selectedShotMode = msg.mode;
@@ -467,9 +793,56 @@
           const myRole = slot === 'p2' ? msg.p2Role : msg.p1Role;
           if (myRole) applyRoleUI(myRole);
         } else if (msg.type === 'match_hud') {
+          const camBadge = document.getElementById('ctrl-cam-mode');
+          if (camBadge) {
+            const camName = msg.cameraMode || 'pro';
+            camBadge.textContent = camName === 'broadcast' ? 'TV' : 'PRO';
+            camBadge.className = `px-1 rounded font-mono text-[9px] font-bold ${camName === 'broadcast' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`;
+          }
           if (liveScoreEl && msg.scoreText) liveScoreEl.textContent = msg.scoreText;
           if (liveNeedEl && msg.needText) liveNeedEl.textContent = msg.needText;
           if (msg.userRole) applyRoleUI(msg.userRole);
+          if (typeof msg.dirSign === 'number') hostDirSign = msg.dirSign;
+          if (msg.handedness) hostHandedness = msg.handedness;
+          if (Array.isArray(msg.fielders)) latestFielders = msg.fielders;
+          if (msg.wheelLocked === false && !isDraggingWheel) {
+            wheelUserDraggedThisBall = false;
+          }
+          if (
+            !isDraggingWheel &&
+            typeof msg.aimDeg === 'number' &&
+            performance.now() - lastWheelEditMs > 650
+          ) {
+            currentWheelAimDeg = msg.aimDeg;
+          }
+          if (msg.shotMode && msg.shotMode !== selectedShotMode) {
+            selectedShotMode = msg.shotMode;
+          }
+          updateShotModeUI();
+          if (msg.lastShotFeedback && padFeedback) {
+            padFeedback.textContent = msg.lastShotFeedback;
+          }
+
+          // Bug #7 Fix: Show/hide DRS, Catch QTE, and Modal Continue buttons on Phone
+          const showDrs = Boolean(msg.drsAvailable);
+          const showQte = Boolean(msg.qteActive);
+          const showModal = Boolean(msg.activeModal);
+          if (drsBtnEl) drsBtnEl.classList.toggle('hidden', !showDrs);
+          if (qteBtnEl) qteBtnEl.classList.toggle('hidden', !showQte);
+          if (modalContBtnEl) {
+            modalContBtnEl.classList.toggle('hidden', !showModal);
+            if (msg.activeModal === 'squad') {
+              modalContBtnEl.textContent = '✅ AUTO-SELECT NEXT PLAYER ON TV';
+            } else if (msg.activeModal === 'wagon') {
+              modalContBtnEl.textContent = '▶ CONTINUE TO NEXT OVER';
+            } else {
+              modalContBtnEl.textContent = '✅ CONTINUE ON TV';
+            }
+          }
+          if (tvPopupBarEl) {
+            tvPopupBarEl.classList.toggle('hidden', !showDrs && !showQte && !showModal);
+          }
+
           if (streakBadgeEl && msg.streakText) {
             streakBadgeEl.textContent = msg.streakText;
             streakBadgeEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
@@ -489,23 +862,36 @@
               playRematchBtn.classList.add('hidden');
             }
           }
+          if (stepOutBtnEl) {
+            const outActive = Boolean(msg.stepOutCharge);
+            if (stepOutLblEl) stepOutLblEl.textContent = outActive ? 'OUT!' : 'CHARGE';
+            stepOutBtnEl.className = outActive
+              ? 'py-1.5 px-1.5 bg-amber-400 text-slate-950 border border-amber-200 font-display font-black text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1 shadow animate-pulse'
+              : 'py-1.5 px-1.5 bg-slate-950 active:bg-amber-400 active:text-slate-950 border border-slate-700 text-amber-300 font-display font-extrabold text-[10px] rounded-lg cursor-pointer flex items-center justify-center gap-1 transition-all';
+          }
           if (ballStatusEl && msg.ballStatus) {
-            ballStatusEl.textContent = msg.ballStatus;
+            const statusTxt = msg.isFreeHit ? `🔥 FREE HIT · ${msg.ballStatus}` : msg.ballStatus;
+            ballStatusEl.textContent = statusTxt;
             ballStatusEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
-              msg.ballStatus.includes('SWING')
-                ? 'bg-amber-400 text-slate-950 animate-pulse'
-                : msg.ballStatus.includes('DANGER')
-                  ? 'bg-red-500 text-white animate-pulse'
-                  : msg.ballStatus.includes('RUN') || msg.ballStatus.includes('SAFE')
-                    ? 'bg-sky-400 text-slate-950'
-                    : 'bg-emerald-500/20 text-emerald-300'
+              msg.isFreeHit
+                ? 'bg-gradient-to-r from-amber-400 to-rose-500 text-slate-950 animate-pulse'
+                : msg.ballStatus.includes('SWING')
+                  ? 'bg-amber-400 text-slate-950 animate-pulse'
+                  : msg.ballStatus.includes('DANGER')
+                    ? 'bg-red-500 text-white animate-pulse'
+                    : msg.ballStatus.includes('RUN') || msg.ballStatus.includes('SAFE')
+                      ? 'bg-sky-400 text-slate-950'
+                      : 'bg-emerald-500/20 text-emerald-300'
             }`;
           }
         }
       }
 
-      // iOS 13+ & Android Motion Sensor Permission Handler
-      document.getElementById('btn-ios-permission').addEventListener('click', async () => {
+      // iOS 13+ & Android Motion Sensor Permission Handler (Auto-requests on first screen tap!)
+      let iosSensorsRequested = false;
+      async function ensureMotionSensorsPermission(fromExplicitBtn = false) {
+        if (iosSensorsRequested && !fromExplicitBtn) return;
+        iosSensorsRequested = true;
         try {
           if (
             typeof DeviceMotionEvent !== 'undefined' &&
@@ -518,15 +904,37 @@
             ) {
               await DeviceOrientationEvent.requestPermission();
             }
-            padFeedback.textContent = `iOS Sensors: ${p1.toUpperCase()}`;
-          } else {
-            padFeedback.textContent = 'Hardware Motion Sensors Active (85 Hz)';
+            if (fromExplicitBtn) padFeedback.textContent = `iOS Sensors: ${p1.toUpperCase()}`;
+          } else if (fromExplicitBtn) {
+            padFeedback.textContent = 'Hardware Motion & Tilt Sensors Active (85 Hz)';
           }
-          if (navigator.vibrate) navigator.vibrate(40);
+          if (fromExplicitBtn && navigator.vibrate) navigator.vibrate(40);
         } catch {
-          padFeedback.textContent = 'Using Touch Swipe Sensor Simulation';
+          if (fromExplicitBtn) padFeedback.textContent = 'Using 360° Wheel + Touch Swipe Controls';
         }
+      }
+
+      document.getElementById('btn-ios-permission').addEventListener('click', () => {
+        ensureMotionSensorsPermission(true);
       });
+      window.addEventListener(
+        'click',
+        () => {
+          ensureMotionSensorsPermission(false);
+        },
+        { once: true, passive: true }
+      );
+
+      let lastHardwareMotionMs = 0;
+      const sensorBadgeEl = document.getElementById('ctrl-sensor-mode-badge');
+      const markHardwareSensorsLive = () => {
+        lastHardwareMotionMs = performance.now();
+        if (sensorBadgeEl) {
+          sensorBadgeEl.textContent = '🏏 85Hz Air-Swing & Tilt Active';
+          sensorBadgeEl.className =
+            'px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono text-[9px] truncate';
+        }
+      };
 
       // Cross-platform DeviceOrientation (handles both Android alpha and iOS webkitCompassHeading)
       window.addEventListener('deviceorientation', (e) => {
@@ -537,9 +945,20 @@
         }
         if (e.beta !== null) sensor.beta = e.beta;
         if (e.gamma !== null) sensor.gamma = e.gamma;
+        if (e.gamma !== null || e.beta !== null) {
+          markHardwareSensorsLive();
+        }
       });
 
       window.addEventListener('devicemotion', (e) => {
+        if (
+          e.rotationRate &&
+          (Math.abs(e.rotationRate.beta || 0) > 0.01 ||
+            Math.abs(e.rotationRate.alpha || 0) > 0.01 ||
+            Math.abs(e.rotationRate.gamma || 0) > 0.01)
+        ) {
+          markHardwareSensorsLive();
+        }
         if (e.rotationRate) {
           sensor.gx = e.rotationRate.beta || 0;
           sensor.gy = e.rotationRate.alpha || 0;
@@ -553,8 +972,34 @@
         }
       });
 
-      // Stream Sensor Data at ~85 Hz (every 12ms)
+      // Bug #8 Fix: Detect when HTTP LAN IP or desktop browser has no active hardware gyro after 1.5s
+      setTimeout(() => {
+        if (lastHardwareMotionMs === 0 && sensorBadgeEl) {
+          if (!window.isSecureContext) {
+            sensorBadgeEl.textContent = '🎯 Touch/Wheel Mode (Use HTTPS for Gyro)';
+            sensorBadgeEl.className =
+              'px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 font-mono text-[9px] truncate';
+          } else {
+            sensorBadgeEl.textContent = '🎯 360° Wheel + Swipe/Buttons Ready';
+            sensorBadgeEl.className =
+              'px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/50 text-sky-300 font-mono text-[9px] truncate';
+          }
+        }
+      }, 1500);
+
+      // Stream Sensor Data at ~85 Hz when hardware gyro is active; throttle to 2 Hz keepalive in Touch/Wheel mode to save TV CPU & Wi-Fi bandwidth
+      let lastSensorSendMs = 0;
+      let lastTelText = { spd: '', yaw: '', pit: '' };
       setInterval(() => {
+        const nowPerf = performance.now();
+        const hasLiveGyro = lastHardwareMotionMs > 0 && nowPerf - lastHardwareMotionMs < 4000;
+        const isTouchingPad = Boolean(startPt) || isDraggingWheel;
+        const minSendIntervalMs = hasLiveGyro || isTouchingPad ? 12 : 500;
+        if (nowPerf - lastSensorSendMs < minSendIntervalMs) {
+          return;
+        }
+        lastSensorSendMs = nowPerf;
+
         sendPacket({
           type: 'sensor',
           alpha: Math.round(sensor.alpha * 10) / 10,
@@ -570,18 +1015,66 @@
         });
 
         const omegaMag = Math.round(Math.hypot(sensor.gx, sensor.gy, sensor.gz));
-        speedEl.textContent = `${omegaMag}°/s`;
-        yawEl.textContent = `${Math.round(sensor.alpha)}°`;
-        pitchEl.textContent = `${Math.round(sensor.beta)}°`;
+        const spdTxt = `${omegaMag}°/s`;
+        const yawTxt = `${Math.round(sensor.alpha)}°`;
+        const pitTxt = `${Math.round(sensor.beta)}°`;
+        if (lastTelText.spd !== spdTxt) { lastTelText.spd = spdTxt; speedEl.textContent = spdTxt; }
+        if (lastTelText.yaw !== yawTxt) { lastTelText.yaw = yawTxt; yawEl.textContent = yawTxt; }
+        if (lastTelText.pit !== pitTxt) { lastTelText.pit = pitTxt; pitchEl.textContent = pitTxt; }
 
-        sensor.gx *= 0.82;
-        sensor.gy *= 0.82;
-        sensor.gz *= 0.82;
+        // Only decay synthetic/stale gyro values if hardware devicemotion hasn't fired in >36ms
+        if (nowPerf - lastHardwareMotionMs > 36) {
+          sensor.gx *= 0.82;
+          sensor.gy *= 0.82;
+          sensor.gz *= 0.82;
+        }
       }, 12);
 
       setInterval(() => {
         sendPacket({ type: 'ping', clientTs: Date.now() });
       }, 2000);
+
+      // Interactive 360° Angle Wheel SVG on Phone Controller (Bug #6 Fix)
+      const wheelSvg = document.getElementById('ctrl-wheel-svg');
+      const updateWheelFromPointer = (e) => {
+        if (!wheelSvg) return;
+        const rect = wheelSvg.getBoundingClientRect();
+        const cx = rect.left + rect.width * 0.5;
+        const cy = rect.top + rect.height * 0.5;
+        const dx = e.clientX - cx;
+        const dy = e.clientY - cy;
+        if (Math.hypot(dx, dy) < 6) return;
+        // 0° at top (straight down ground), +90° right, -90° left, ±180° behind
+        const deg = Math.round(Math.atan2(dx, -dy) * (180 / Math.PI));
+        currentWheelAimDeg = deg;
+        lastWheelEditMs = performance.now();
+        wheelUserDraggedThisBall = true;
+        renderPhoneWheelUI();
+        sendPacket({ type: 'wheel_aim', deg });
+      };
+
+      wheelSvg?.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        isDraggingWheel = true;
+        try {
+          wheelSvg.setPointerCapture(e.pointerId);
+        } catch {}
+        updateWheelFromPointer(e);
+      });
+      wheelSvg?.addEventListener('pointermove', (e) => {
+        if (!isDraggingWheel) return;
+        e.stopPropagation();
+        updateWheelFromPointer(e);
+      });
+      const endWheelDrag = (e) => {
+        if (!isDraggingWheel) return;
+        e.stopPropagation();
+        isDraggingWheel = false;
+        lastWheelEditMs = performance.now();
+        padFeedback.textContent = `Aim Locked: ${getSectorLabel(currentWheelAimDeg)} · Swing or Tap Shot!`;
+      };
+      wheelSvg?.addEventListener('pointerup', endWheelDrag);
+      wheelSvg?.addEventListener('pointercancel', endWheelDrag);
 
       // Touch Swipe Pad on Controller
       const pad = document.getElementById('touch-gesture-pad');
@@ -589,44 +1082,60 @@
       let startTs = 0;
 
       pad.addEventListener('pointerdown', (e) => {
+        if (isDraggingWheel) return;
         startPt = { x: e.clientX, y: e.clientY };
         startTs = performance.now();
       });
 
       pad.addEventListener('pointermove', (e) => {
-        if (!startPt) return;
+        if (!startPt || isDraggingWheel) return;
+        const hasLiveGyro = lastHardwareMotionMs > 0 && performance.now() - lastHardwareMotionMs < 4000;
+        // When hardware Gyro bat mode is active, NEVER lock wheel_aim from accidental palm/thumb contact on pad!
+        if (hasLiveGyro) return;
         const dx = e.clientX - startPt.x;
         const dy = e.clientY - startPt.y;
-        sensor.gx = -dy * 4.2;
-        sensor.gz = -dx * 3.8;
-        sensor.alpha = -(dx / 110) * 32;
-        sensor.beta = 75 - (dy / 110) * 40;
+        if (Math.hypot(dx, dy) > 12) {
+          const liveAngleDeg = Math.round(Math.atan2(dx, -dy) * (180 / Math.PI));
+          currentWheelAimDeg = liveAngleDeg;
+          lastWheelEditMs = performance.now();
+          wheelUserDraggedThisBall = true;
+          renderPhoneWheelUI();
+          sendPacket({ type: 'wheel_aim', deg: liveAngleDeg });
+          padFeedback.textContent = `Aiming ${getSectorLabel(liveAngleDeg)} · Release to Swing`;
+        }
       });
 
       pad.addEventListener('pointerup', (e) => {
-        if (!startPt) return;
+        if (!startPt || isDraggingWheel) return;
         const dx = e.clientX - startPt.x;
         const dy = e.clientY - startPt.y;
         const dt = Math.max(16, performance.now() - startTs);
         const dist = Math.hypot(dx, dy);
         startPt = null;
+        const hasLiveGyro = lastHardwareMotionMs > 0 && performance.now() - lastHardwareMotionMs < 4000;
+        const swipeThreshold = hasLiveGyro ? 52 : 16;
 
-        if (dist > 15) {
-          const speedDeg = Math.min(580, Math.max(200, (dist / dt) * 285));
-          // Full 360-degree swipe angle: 0° = straight up (over bowler), +90° = right, -90° = left, ±180° = down (behind wicket)
-          const shotAngleDeg = Math.atan2(dx, -dy) * (180 / Math.PI);
+        if (dist > swipeThreshold) {
+          const speedDeg = Math.min(580, Math.max(260, (dist / dt) * 295));
+          const shotAngleDeg = Math.round(Math.atan2(dx, -dy) * (180 / Math.PI));
+          currentWheelAimDeg = shotAngleDeg;
+          renderPhoneWheelUI();
           const planePitchDeg = selectedShotMode === 'fly'
-            ? Math.max(22, Math.min(46, (dist / 130) * 34))
+            ? Math.max(26, Math.min(44, (dist / 120) * 35))
             : 4;
           sendPacket({
             type: 'touch_swipe',
             speedDeg,
             dirX: Math.max(-1, Math.min(1, dx / 110)),
-            shotAngleDeg: Math.round(shotAngleDeg),
-            planePitchDeg
+            shotAngleDeg,
+            planePitchDeg,
+            clientTs: Date.now()
           });
-          padFeedback.textContent = `Swung ${selectedShotMode.toUpperCase()} · ${Math.round(shotAngleDeg)}° (${Math.round(speedDeg)}°/s)`;
-        } else {
+          if (navigator.vibrate) navigator.vibrate([45, 30, 45]);
+          const modeDisplay = selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
+          const dirLabel = getSectorLabel(currentWheelAimDeg);
+          padFeedback.textContent = `Swung ${modeDisplay} · ${dirLabel} (${Math.round(speedDeg)}°/s) · Sent!`;
+        } else if (dist <= 14) {
           // Single tap on phone gesture pad skips active replay or bowls next ball
           sendPacket({
             type: 'touch_swipe',
@@ -655,33 +1164,33 @@
       });
 
       document.getElementById('btn-ctrl-calibrate').addEventListener('click', () => {
-        if (navigator.vibrate) navigator.vibrate(40);
-        sendPacket({ type: 'calibrate' });
-        padFeedback.textContent = 'Hold upright and steady for 3 seconds...';
+        if (navigator.vibrate) navigator.vibrate([30, 20, 45]);
+        lastWheelEditMs = performance.now();
+        currentWheelAimDeg = 0;
+        wheelUserDraggedThisBall = false;
+        renderPhoneWheelUI();
+        sendPacket({ type: 'calibrate_zero' });
+        padFeedback.textContent = '🎯 Bat Grip Zeroed! 0° Straight set to your current pose!';
       });
 
+      // Bug #2 Fix: 1-Tap or Hold RUN button triggers full sprint all the way to the crease!
       const ctrlRunBtn = document.getElementById('btn-ctrl-run');
       ctrlRunBtn.addEventListener('pointerdown', (e) => {
         e.preventDefault();
-        if (navigator.vibrate) navigator.vibrate(25);
+        if (navigator.vibrate) navigator.vibrate(30);
         sendPacket({ type: 'run_hold', held: true });
         sendPacket({ type: 'quick_flick' });
-        padFeedback.textContent = 'Running between wickets (or walk/jog with phone)!';
-      });
-      ctrlRunBtn.addEventListener('pointerup', (e) => {
-        e.preventDefault();
-        sendPacket({ type: 'run_hold', held: false });
-      });
-      ctrlRunBtn.addEventListener('pointercancel', () => {
-        sendPacket({ type: 'run_hold', held: false });
+        padFeedback.textContent = '🏃 SPRINTING! Full speed to crease (Tap NO RUN to cancel)!';
       });
 
       const ctrlTurnBackBtn = document.getElementById('btn-ctrl-turnback');
       if (ctrlTurnBackBtn) {
-        ctrlTurnBackBtn.addEventListener('click', () => {
-          if (navigator.vibrate) navigator.vibrate([30, 30]);
+        ctrlTurnBackBtn.addEventListener('pointerdown', (e) => {
+          e.preventDefault();
+          if (navigator.vibrate) navigator.vibrate([35, 25, 35]);
+          sendPacket({ type: 'run_hold', held: false });
           sendPacket({ type: 'turn_back' });
-          padFeedback.textContent = 'Turning back to crease!';
+          padFeedback.textContent = '🛑 NO RUN! Diving back safely to crease!';
         });
       }
 

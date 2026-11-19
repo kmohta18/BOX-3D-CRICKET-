@@ -18,6 +18,9 @@ export class NetworkManager {
       p2: { connected: false, lastSeen: 0, latencyMs: 14, role: 'bowl' }
     };
     this.onlinePeerConnected = false;
+    this._clientSessionId = Math.random().toString(36).slice(2, 7);
+    this._msgSeq = 0;
+    this._seenMsgIds = new Set();
 
     // 30-second disconnect grace timer
     this.disconnectPaused = false;
@@ -42,8 +45,17 @@ export class NetworkManager {
       onQuickFlick: null,
       onTouchSwipe: null,
       onCreaseStep: null,
+      onWheelAim: null,
+      onPhoneAction: null,
       onPauseChange: null,
-      onOnlineState: null
+      onOnlineState: null,
+      onOnlinePeerJoin: null,
+      onOnlinePeerDisconnect: null,
+      onOnlineBowlAim: null,
+      onOnlineBowlRelease: null,
+      onOnlineBatShot: null,
+      onOnlineRunAction: null,
+      onOnlineDeliveryComplete: null
     };
 
     if (this.bc) {
@@ -113,6 +125,13 @@ export class NetworkManager {
     }
     this.slot = slot;
 
+    // Wavedash hosts static game files and does not run this project's custom /ws relay.
+    // Keep local BroadcastChannel controls available without retrying a missing socket forever.
+    if (window.Wavedash) {
+      this.connected = false;
+      return;
+    }
+
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${proto}//${window.location.host}/ws?room=${this.roomCode}&role=${this.role}&slot=${slot}`;
 
@@ -145,7 +164,7 @@ export class NetworkManager {
 
       this.ws.onclose = () => {
         this.connected = false;
-        setTimeout(() => this.connect(this.roomCode, this.slot), 2000);
+        setTimeout(() => this.connect(this.roomCode, this.slot), 800);
       };
 
       this.ws.onerror = () => {};
@@ -153,20 +172,22 @@ export class NetworkManager {
   }
 
   send(payload) {
-    const msg = { ...payload, room: this.roomCode };
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(msg));
-    }
+    const msgId = payload?.msgId || `${this.role}_${this.slot || 'p1'}_${this._clientSessionId}_${++this._msgSeq}`;
+    const msg = { ...payload, room: this.roomCode, msgId };
     if (this.bc) {
       this.bc.postMessage(msg);
     }
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify(msg));
+    }
   }
 
-  vibratePhone(slot = 'p1', pattern = [65]) {
+  vibratePhone(slot = 'p1', pattern = [65], label = null) {
     this.send({
       type: 'vibrate',
       slot,
-      pattern
+      pattern,
+      label
     });
   }
 
@@ -196,8 +217,51 @@ export class NetworkManager {
     });
   }
 
+  sendOnlineBowlAim(payload = {}) {
+    this.send({
+      type: 'online_bowl_aim',
+      ...payload
+    });
+  }
+
+  sendOnlineBowlRelease(delivery = {}) {
+    this.send({
+      type: 'online_bowl_release',
+      delivery
+    });
+  }
+
+  sendOnlineBatShot(shotPayload = {}) {
+    this.send({
+      type: 'online_bat_shot',
+      ...shotPayload
+    });
+  }
+
+  sendOnlineRunAction(actionPayload = {}) {
+    this.send({
+      type: 'online_run_action',
+      ...actionPayload
+    });
+  }
+
+  sendOnlineState(state = {}) {
+    this.send({
+      type: 'online_state',
+      state
+    });
+  }
+
   handleMessage(msg) {
     if (!msg || (msg.room && msg.room !== this.roomCode)) return;
+    if (msg.msgId) {
+      if (this._seenMsgIds.has(msg.msgId)) return;
+      this._seenMsgIds.add(msg.msgId);
+      if (this._seenMsgIds.size > 400) {
+        const first = this._seenMsgIds.values().next().value;
+        this._seenMsgIds.delete(first);
+      }
+    }
 
     const slot = msg.slot || 'p1';
     const ctrl = this.controllers[slot] || this.controllers.p1;
@@ -214,6 +278,10 @@ export class NetworkManager {
       }
       this.send({ type: 'joined_ack', slot, p1Role: this.controllers.p1.role, p2Role: this.controllers.p2.role });
       return;
+    }
+
+    if (msg.slot === 'p1' || msg.slot === 'p2') {
+      ctrl.lastSeen = performance.now();
     }
 
     if (msg.type === 'ping') {
@@ -253,6 +321,11 @@ export class NetworkManager {
       return;
     }
 
+    if (msg.type === 'calibrate_zero' && this.callbacks.onCalibrateZero) {
+      this.callbacks.onCalibrateZero(slot);
+      return;
+    }
+
     if (msg.type === 'runup_hold' && this.callbacks.onRunupHold) {
       this.callbacks.onRunupHold(Boolean(msg.held), slot);
       return;
@@ -288,6 +361,16 @@ export class NetworkManager {
       return;
     }
 
+    if (msg.type === 'wheel_aim' && this.callbacks.onWheelAim) {
+      this.callbacks.onWheelAim(msg, slot);
+      return;
+    }
+
+    if (msg.type === 'phone_action' && this.callbacks.onPhoneAction) {
+      this.callbacks.onPhoneAction(msg, slot);
+      return;
+    }
+
     if (msg.type === 'start_or_rematch' && this.callbacks.onStartOrRematch) {
       this.callbacks.onStartOrRematch(msg, slot);
       return;
@@ -298,20 +381,84 @@ export class NetworkManager {
       return;
     }
 
+    if (msg.type === 'join' && (msg.role === 'online_peer' || msg.role === 'host')) {
+      this.onlinePeerConnected = true;
+      this.send({
+        type: 'online_peer_ack',
+        room: this.roomCode,
+        senderRole: this.role,
+        ts: Date.now()
+      });
+      if (this.callbacks.onOnlinePeerJoin) {
+        this.callbacks.onOnlinePeerJoin(msg);
+      }
+      return;
+    }
+
+    if (msg.type === 'online_peer_ack') {
+      this.onlinePeerConnected = true;
+      if (this.callbacks.onOnlinePeerJoin) {
+        this.callbacks.onOnlinePeerJoin(msg);
+      }
+      return;
+    }
+
+    if (msg.type === 'online_peer_disconnect') {
+      this.onlinePeerConnected = false;
+      if (this.callbacks.onOnlinePeerDisconnect) {
+        this.callbacks.onOnlinePeerDisconnect(msg);
+      }
+      return;
+    }
+
+    if (msg.type === 'online_bowl_aim' && this.callbacks.onOnlineBowlAim) {
+      this.onlinePeerConnected = true;
+      this.callbacks.onOnlineBowlAim(msg);
+      return;
+    }
+
+    if (msg.type === 'online_bowl_release' && this.callbacks.onOnlineBowlRelease) {
+      this.onlinePeerConnected = true;
+      this.callbacks.onOnlineBowlRelease(msg);
+      return;
+    }
+
+    if (msg.type === 'online_bat_shot' && this.callbacks.onOnlineBatShot) {
+      this.onlinePeerConnected = true;
+      this.callbacks.onOnlineBatShot(msg);
+      return;
+    }
+
+    if (msg.type === 'online_run_action' && this.callbacks.onOnlineRunAction) {
+      this.onlinePeerConnected = true;
+      this.callbacks.onOnlineRunAction(msg);
+      return;
+    }
+
+    if (msg.type === 'online_delivery_complete' && this.callbacks.onOnlineDeliveryComplete) {
+      this.onlinePeerConnected = true;
+      this.callbacks.onOnlineDeliveryComplete(msg);
+      return;
+    }
+
     if (msg.type === 'online_state' && this.callbacks.onOnlineState) {
       this.onlinePeerConnected = true;
       this.callbacks.onOnlineState(msg.state);
     }
   }
 
+  getOnlineInviteUrl() {
+    const base = this.getActiveBaseUrl();
+    return `${base}/?room=${this.roomCode}&online=1`;
+  }
+
   triggerDisconnectPause(slot = 'p1') {
     const ctrl = this.controllers[slot];
     if (ctrl && ctrl.connected) {
       ctrl.connected = false;
-      this.disconnectPaused = true;
-      this.disconnectDeadline = performance.now() + 30000;
+      this.disconnectPaused = false;
       if (this.callbacks.onControllerStatus) this.callbacks.onControllerStatus(this.controllers);
-      if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(true, 30);
+      if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false, 0);
     }
   }
 
@@ -319,7 +466,7 @@ export class NetworkManager {
     const now = performance.now();
     ['p1', 'p2'].forEach((slot) => {
       const ctrl = this.controllers[slot];
-      if (ctrl.connected && now - ctrl.lastSeen > 4500) {
+      if (ctrl.connected && now - ctrl.lastSeen > 8500) {
         this.triggerDisconnectPause(slot);
       }
     });

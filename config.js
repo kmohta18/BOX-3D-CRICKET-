@@ -22,9 +22,9 @@ export const DIFFICULTY_PROFILES = {
     paceMaxKmh: 118,
     swingTurnScale: 0.42,
     lateMovement: false,
-    timingWindowMs: { perfect: 95, good: 185, mistime: 300 },
-    fielderCatchSkill: 0.52,
-    fielderSpeedMultiplier: 0.82,
+    timingWindowMs: { perfect: 115, good: 205, mistime: 315 },
+    fielderCatchSkill: 0.56,
+    fielderSpeedMultiplier: 0.85,
     deliveryPreview: 'always', // 'always' | 'briefly' | 'hidden'
     looseBallsPerOver: 2,
     battingAssist: 'full' // 'full' | 'light' | 'off'
@@ -45,9 +45,9 @@ export const DIFFICULTY_PROFILES = {
     paceMaxKmh: 132,
     swingTurnScale: 0.72,
     lateMovement: false,
-    timingWindowMs: { perfect: 72, good: 150, mistime: 265 },
-    fielderCatchSkill: 0.70,
-    fielderSpeedMultiplier: 0.90,
+    timingWindowMs: { perfect: 88, good: 170, mistime: 270 },
+    fielderCatchSkill: 0.72,
+    fielderSpeedMultiplier: 0.92,
     deliveryPreview: 'always',
     looseBallsPerOver: 1,
     battingAssist: 'light'
@@ -68,9 +68,9 @@ export const DIFFICULTY_PROFILES = {
     paceMaxKmh: 146,
     swingTurnScale: 1.0,
     lateMovement: true,
-    timingWindowMs: { perfect: 52, good: 118, mistime: 225 },
+    timingWindowMs: { perfect: 68, good: 142, mistime: 235 },
     fielderCatchSkill: 0.84,
-    fielderSpeedMultiplier: 0.96,
+    fielderSpeedMultiplier: 0.98,
     deliveryPreview: 'briefly',
     looseBallsPerOver: 0,
     battingAssist: 'off'
@@ -176,8 +176,10 @@ export function loadGameConfig() {
         if (parsed.handedness) gameConfig.handedness = parsed.handedness === 'left' ? 'left' : 'right';
         if (typeof parsed.sensitivity === 'number') gameConfig.sensitivity = parsed.sensitivity;
         if (parsed.bowlingAssist) gameConfig.bowlingAssist = parsed.bowlingAssist;
-        if (parsed.autoBowl && ['fast', 'normal', 'manual'].includes(parsed.autoBowl)) {
+        if (parsed.autoBowl && ['fast', 'normal'].includes(parsed.autoBowl)) {
           gameConfig.autoBowl = parsed.autoBowl;
+        } else {
+          gameConfig.autoBowl = 'normal';
         }
         if (parsed.replays) gameConfig.replays = parsed.replays;
         if (parsed.uiSize) gameConfig.uiSize = parsed.uiSize;

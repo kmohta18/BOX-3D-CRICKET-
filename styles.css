@@ -1557,3 +1557,19 @@
     }
   }
 }
+
+#length-banner {
+  position: fixed; left: 50%; top: 62%; transform: translate(-50%, -50%) scale(1);
+  font-family: 'Anton', Impact, 'Arial Narrow Bold', sans-serif; font-size: clamp(28px, 5.2vw, 64px);
+  letter-spacing: 0.12em; color: #fcd34d; text-shadow: 0 3px 0 #b45309, 0 0 14px rgba(0,0,0,0.55);
+  -webkit-text-stroke: 1px rgba(120,53,15,0.65);
+  pointer-events: none; opacity: 0; z-index: 40; white-space: nowrap;
+}
+#length-banner.show { animation: lenBanner 1.5s ease-out forwards; }
+@keyframes lenBanner {
+  0% { opacity: 0; transform: translate(-50%, -40%) scale(0.7); }
+  14% { opacity: 1; transform: translate(-50%, -50%) scale(1.06); }
+  24% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -56%) scale(1); }
+}

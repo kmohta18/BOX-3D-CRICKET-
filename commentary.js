@@ -550,6 +550,12 @@ class CommentarySystem {
    * ('en' | 'hi' | 'hinglish'), updates captions (if enabled), and speaks audio (if spoken is enabled).
    */
   trigger(eventType, context = {}, force = false) {
+    // Only trigger commentary during active gameplay (after user clicks Play Match), unless testing voice in Settings
+    const app = typeof window !== 'undefined' ? window.__boxCricketApp : null;
+    if (app && !app.matchPlayConfirmed && !context?.__testVoicePreview) {
+      return null;
+    }
+
     const captionsOn = Boolean(gameConfig.commentary.enabled);
     const spokenOn = Boolean(gameConfig.commentary.spoken);
     if (!captionsOn && !spokenOn) return null;

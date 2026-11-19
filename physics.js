@@ -7,8 +7,13 @@ import * as THREE from 'three';
  * stump/bail collision, LBW, Wide & No-Ball detection.
  */
 
-export const PITCH_HALF_LENGTH = 10.06; // 20.12m total between stumps
-export const CREASE_Z = 8.84;           // Popping crease 1.22m in front of stumps
+export const PITCH_HALF_LENGTH = 10.06; // 20.12m (22 yards) total between stumps
+export const BOWLING_CREASE_Z = 10.06;  // MCC Law 7.2: Bowling crease drawn through the stumps
+export const CREASE_Z = 8.84;           // MCC Law 7.3: Popping crease 1.22m (4ft) in front of bowling crease
+export const POPPING_CREASE_Z = 8.84;   // Alias for popping crease Z coordinate
+export const RETURN_CREASE_X = 1.22;    // MCC Law 7.4: Return creases at ±1.22m on the 3.05m pitch
+export const WIDE_GUIDELINE_X = 0.56;   // Limited-Overs Wide guideline at ±0.56m (aligned with 3D stump width & batter reach)
+export const PROTECTED_AREA_Z = 7.32;   // MCC Law 41.13: Protected area marker 1.52m (5ft) in front of popping crease
 export const STUMP_HEIGHT = 0.71;
 export const STUMP_WIDTH = 0.2286;      // 9 inches across 3 stumps
 export const BALL_RADIUS = 0.036;       // 3.6cm radius (scaled slightly visually in 3D)
@@ -212,7 +217,7 @@ export class BallPhysics {
     this.wearSpots.length = 0;
   }
 
-  reset(x = 0.25, y = 2.05, z = -CREASE_Z) {
+  reset(x = 0.35, y = 1.15, z = -CREASE_Z - 6.5) {
     this.pos.set(x, y, z);
     this.prevPos.copy(this.pos);
     this.vel.set(0, 0, 0);
@@ -227,6 +232,9 @@ export class BallPhysics {
     this.enteredBatZoneTime = 0;
     this.idealContactTime = 0;
     this.isOverstepNoBall = false;
+    this.isReturnCreaseNoBall = false;
+    this.noBallReason = '';
+    this.wideReason = '';
     this.isWide = false;
     this.isNoBall = false;
     this.hitPad = false;
@@ -234,6 +242,7 @@ export class BallPhysics {
     this.isPlayedOn = false;
     this.aerialAfterHit = false;
     this.bouncedAfterHit = false;
+    this.boundaryScored = false;
     this.shotDistance = 0;
     this.trailCount = 0;
   }
@@ -260,6 +269,7 @@ export class BallPhysics {
     dipFactor = 0
   }) {
     const releaseY = variationId === 'undercutter' ? 1.88 : 2.08;
+    const returnCreaseCut = Math.abs(releaseX) >= RETURN_CREASE_X;
     this.reset(releaseX, releaseY, -CREASE_Z + (overstepped ? 0.35 : -0.05));
     this.state = 'bowled';
     this.speedKmh = THREE.MathUtils.clamp(speedKmh, 58, 158);
@@ -273,15 +283,23 @@ export class BallPhysics {
     this.bounceMod = Number(bounceMod) || 1.0;
     this.dipFactor = Number(dipFactor) || 0;
     this.targetX = Number(targetX) || 0;
-    this.isOverstepNoBall = overstepped;
-    this.isNoBall = overstepped;
+    this.isOverstepNoBall = Boolean(overstepped);
+    this.isReturnCreaseNoBall = Boolean(returnCreaseCut);
+    this.isNoBall = Boolean(overstepped || returnCreaseCut);
+    this.noBallReason = overstepped
+      ? 'Front-Foot Overstep (Popping Crease)'
+      : returnCreaseCut
+        ? 'Back-Foot Return Crease Violation'
+        : '';
 
     const speedMs = this.speedKmh / 3.6;
-    const dzToBounce = Math.max(4.0, bounceZ - this.pos.z);
+    const isBeamerFullToss = bounceZ >= CREASE_Z + 0.45;
+    const dzToBounce = Math.max(4.0, (isBeamerFullToss ? CREASE_Z : bounceZ) - this.pos.z);
     const flightTimeToBounce = dzToBounce / (speedMs * 0.96);
 
     const gravity = 9.81 + Math.max(0, this.dipFactor) * 1.35;
-    const vy = (0.04 - this.pos.y + 0.5 * gravity * flightTimeToBounce * flightTimeToBounce) / flightTimeToBounce;
+    const targetHeightAtPoint = isBeamerFullToss ? 1.16 : 0.04;
+    const vy = (targetHeightAtPoint - this.pos.y + 0.5 * gravity * flightTimeToBounce * flightTimeToBounce) / flightTimeToBounce;
 
     const totalDz = CREASE_Z - this.pos.z;
     const totalTime = totalDz / (speedMs * 0.92);
@@ -321,6 +339,7 @@ export class BallPhysics {
 
     const nowSec = performance.now() * 0.001;
     this.idealContactTime = nowSec + totalTime;
+    this.deliveryBounceZ = bounceZ; // where this ball will pitch (used so the batter picks a shot that suits its length)
     this.pushTrailPoint();
   }
 
@@ -340,7 +359,7 @@ export class BallPhysics {
    * Step ball physics with sub-stepping and 3D seam quaternion integration
    */
   update(dt, callbacks = {}) {
-    if (this.state === 'idle' || this.state === 'runup' || this.state === 'dead') return;
+    if (this.state === 'idle' || this.state === 'runup' || this.state === 'fielded' || this.state === 'dead') return;
 
     const clampedDt = Math.min(dt, 0.05);
     const subSteps = 4;
@@ -370,7 +389,7 @@ export class BallPhysics {
       // 2. Aerodynamic drag
       const speed = this.vel.length();
       if (speed > 0.01) {
-        const dragCoeff = this.state === 'hit' ? 0.0095 : 0.0065;
+        const dragCoeff = this.state === 'hit' ? 0.0115 : 0.0085;
         _vDrag.copy(this.vel).multiplyScalar(-dragCoeff * speed);
         _vAccel.add(_vDrag);
       }
@@ -428,11 +447,12 @@ export class BallPhysics {
               (Math.random() - 0.5) * profile.seamJitter * 0.45 * (1 + localWear * 0.35) * this.vel.z;
             this.vel.x += spinDeviation + cutterDeviation + seamVariation;
 
-            // Keep normal deliveries inside the playable batting corridor at the stumps so they don't drift wide!
-            if (Math.abs(this.targetX) <= 0.68 && this.vel.z > 5.0) {
+            // Only stabilize balls aimed directly at the stumps (|targetX| <= 0.16) so wider deliveries
+            // or swinging/turning balls can naturally cross the Wide Guideline (±0.56m)!
+            if (Math.abs(this.targetX) <= 0.16 && this.vel.z > 5.0) {
               const dtToStumps = Math.max(0.04, (PITCH_HALF_LENGTH - this.pos.z) / this.vel.z);
               const projXAtStumps = this.pos.x + this.vel.x * dtToStumps;
-              const maxAllowedStumpX = 0.56;
+              const maxAllowedStumpX = 0.48;
               if (Math.abs(projXAtStumps) > maxAllowedStumpX) {
                 const clampedStumpX = THREE.MathUtils.clamp(projXAtStumps, -maxAllowedStumpX, maxAllowedStumpX);
                 this.vel.x = (clampedStumpX - this.pos.x) / dtToStumps;
@@ -444,26 +464,31 @@ export class BallPhysics {
             if (callbacks.onPitchBounce) {
               callbacks.onPitchBounce(this.pitchBouncePos, profile.id, localWear);
             }
-          } else {
+          } else if (Math.abs(this.vel.y) > 0.65) {
             this.vel.y = Math.abs(this.vel.y) * 0.52;
-            this.vel.x *= 0.88;
-            this.vel.z *= 0.88;
+            this.vel.x *= 0.92;
+            this.vel.z *= 0.92;
+          } else {
+            this.vel.y = 0;
+            const pitchRollFriction = Math.pow(0.78, subDt);
+            this.vel.x *= pitchRollFriction;
+            this.vel.z *= pitchRollFriction;
           }
-        } else if (this.state === 'hit') {
+        } else if (this.state === 'hit' || this.state === 'boundary_flight') {
           this.bouncedAfterHit = true;
           this.aerialAfterHit = false;
           if (Math.abs(this.vel.y) > 1.2) {
-            this.vel.y = Math.abs(this.vel.y) * 0.52;
-            this.vel.x *= 0.84;
-            this.vel.z *= 0.84;
-            if (callbacks.onOutfieldBounce) callbacks.onOutfieldBounce(this.pos);
+            this.vel.y = Math.abs(this.vel.y) * 0.54;
+            this.vel.x *= 0.89;
+            this.vel.z *= 0.89;
+            if (this.state === 'hit' && callbacks.onOutfieldBounce) callbacks.onOutfieldBounce(this.pos);
           } else {
-            // Rolling on turf: spin ball forward along velocity vector
+            // Balanced stadium turf rolling resistance
             this.vel.y = 0;
-            const rollFriction = Math.pow(0.52, subDt);
+            const rollFriction = Math.pow(0.56, subDt);
             this.vel.x *= rollFriction;
             this.vel.z *= rollFriction;
-            this.omega.set(this.vel.z * 14, 0, -this.vel.x * 14);
+            this.omega.set(this.vel.z * 16, 0, -this.vel.x * 16);
           }
         }
       }
@@ -481,6 +506,12 @@ export class BallPhysics {
         if (callbacks.onBatZoneEnter) callbacks.onBatZoneEnter(this);
       }
 
+      // MCC Law 21.7: Ball bouncing more than twice before reaching the striker's popping crease is a No-Ball
+      if (this.state === 'bowled' && this.bounceCount > 2 && this.pos.z < CREASE_Z && !this.isNoBall) {
+        this.isNoBall = true;
+        this.noBallReason = 'More Than Two Bounces Before Popping Crease';
+      }
+
       // Record exact ball coordinates & velocity as it crosses the popping crease (z = CREASE_Z = 8.84)
       if (this.state === 'bowled' && !this.crossedCrease && this.prevPos.z < CREASE_Z && this.pos.z >= CREASE_Z) {
         this.crossedCrease = true;
@@ -491,9 +522,55 @@ export class BallPhysics {
           CREASE_Z
         );
         this.creaseCrossVel.copy(this.vel);
-        // Waist-high full toss No-Ball check strictly at the popping crease (so Yorkers never falsely trigger No-Ball!)
-        if (!this.bouncedOnPitch && this.creaseCrossPos.y > 1.32) {
+        // 1. MCC Law 41.7: Waist-high full toss No-Ball check strictly at the popping crease
+        if (!this.bouncedOnPitch && this.creaseCrossPos.y > 1.02) {
           this.isNoBall = true;
+          if (!this.noBallReason) this.noBallReason = 'Waist-High Full Toss (Beamer)';
+        }
+        // 2. MCC Law 41.6: Dangerous head-high bouncer No-Ball (> 1.78m at popping crease)
+        if (this.bouncedOnPitch && this.creaseCrossPos.y > 1.78) {
+          this.isNoBall = true;
+          if (!this.noBallReason) this.noBallReason = 'Dangerous Bouncer Above Head Height';
+        }
+        // 2.5 Bug #2 Fix: Detect if unhit ball struck the striker's pads/body at the Popping Crease
+        // so a ball hitting the pads is eligible for LBW and is NEVER falsely called a Leg-Side Wide!
+        const batterX = Number(this.currentBatsmanX) || 0;
+        if (
+          this.state === 'bowled' &&
+          Math.abs(this.creaseCrossPos.x - batterX) <= 0.19 &&
+          this.creaseCrossPos.y >= 0.03 &&
+          this.creaseCrossPos.y <= STUMP_HEIGHT + 0.08
+        ) {
+          this.hitPad = true;
+        }
+        // 3. Limited-Overs / T20 Wide Guideline & Leg-Stump Wide check at the Popping Crease
+        if (!this.isNoBall && !this.hitPad) {
+          const hand = this.currentHandedness || 'right';
+          // Consistent with batting.js (line 453) & checkLBW (line 674):
+          // For Right-Handed batter: +X is Off-Side, -X is Leg-Side.
+          // For Left-Handed batter: -X is Off-Side, +X is Leg-Side.
+          const offSign = hand === 'left' ? -1 : 1;
+          const legSign = -offSign;
+          const signedOffDist = this.creaseCrossPos.x * offSign;
+          const signedLegDist = this.creaseCrossPos.x * legSign;
+          const batterOffShift = Math.max(0, batterX * offSign);
+          const batterLegShift = Math.max(0, batterX * legSign);
+
+          // Off-side Wide: outside the painted Wide Guideline (0.56m, or shifted if batter moved toward off side)
+          const offWideLimit = Math.min(RETURN_CREASE_X - 0.10, WIDE_GUIDELINE_X - 0.06 + batterOffShift * 0.65);
+          // Leg-side Wide (strict T20 rule): passing outside leg stump & behind batter's pads (>= 0.27m on leg side)
+          const legWideLimit = 0.27 + batterLegShift * 0.75;
+
+          if (signedOffDist >= offWideLimit) {
+            this.isWide = true;
+            this.wideReason = 'Outside Off-Side Wide Guideline';
+          } else if (signedLegDist >= legWideLimit) {
+            this.isWide = true;
+            this.wideReason = 'Down the Leg Side Wide';
+          } else if (this.bouncedOnPitch && this.creaseCrossPos.y > 1.62) {
+            this.isWide = true;
+            this.wideReason = 'Over Head-Height Wide';
+          }
         }
       }
 
@@ -518,30 +595,92 @@ export class BallPhysics {
           return;
         }
 
-        // Only call Wide if the unhit ball passes well outside the wide tramline at both the crease and the stumps
-        const creaseXAbs = this.crossedCrease ? Math.abs(this.creaseCrossPos.x) : Math.abs(xAtStumps);
-        if (this.state === 'bowled' && Math.abs(xAtStumps) > 0.85 && creaseXAbs > 0.80 && !this.hitPad) {
-          this.isWide = true;
+        // Also check at the Bowling Crease / Stump line if ball swung/spun past the Wide Guideline (±0.56m) or Leg Stump
+        if (this.state === 'bowled' && !this.isNoBall && !this.isWide && !this.hitPad) {
+          const batterX = Number(this.currentBatsmanX) || 0;
+          const hand = this.currentHandedness || 'right';
+          const offSign = hand === 'left' ? -1 : 1;
+          const legSign = -offSign;
+          const offAtStumps = xAtStumps * offSign;
+          const legAtStumps = xAtStumps * legSign;
+          const batterOffShift = Math.max(0, batterX * offSign);
+          const batterLegShift = Math.max(0, batterX * legSign);
+
+          if (offAtStumps >= WIDE_GUIDELINE_X - 0.04 + batterOffShift * 0.65) {
+            this.isWide = true;
+            this.wideReason = 'Outside Off-Side Wide Guideline';
+          } else if (legAtStumps >= 0.30 + batterLegShift * 0.75) {
+            this.isWide = true;
+            this.wideReason = 'Down the Leg Side Wide';
+          }
         }
       }
 
-      // Check if bowled ball went past keeper without being hit
-      if (this.state === 'bowled' && this.pos.z > PITCH_HALF_LENGTH + 5.2) {
+      // Check if bowled ball went past keeper or slowed down behind the crease without being hit
+      if (
+        this.state === 'bowled' &&
+        (this.pos.z > PITCH_HALF_LENGTH + 2.2 ||
+          (this.bouncedOnPitch && this.pos.z >= CREASE_Z - 0.4 && this.vel.z < 1.8) ||
+          (this.bouncedOnPitch && this.bounceCount > 14 && this.vel.z < 3.2))
+      ) {
         this.state = 'dead';
         if (callbacks.onBallThroughToKeeper) callbacks.onBallThroughToKeeper(this);
         return;
       }
 
-      // Check Boundary Rope (radius = BOUNDARY_RADIUS) when hit
-      if (this.state === 'hit') {
+      // Check Boundary Rope (radius = BOUNDARY_RADIUS) when hit, and allow realistic post-rope carry into stands/boards
+      if (this.state === 'hit' || this.state === 'boundary_flight') {
         const horizDist = Math.hypot(this.pos.x, this.pos.z);
-        this.shotDistance = horizDist;
-        if (horizDist >= BOUNDARY_RADIUS) {
+        if (!this.boundaryScored) {
+          this.shotDistance = horizDist;
+        }
+        if (horizDist >= BOUNDARY_RADIUS && !this.boundaryScored) {
+          this.boundaryScored = true;
           const isSix = !this.bouncedAfterHit && this.pos.y > 0.15;
+          if (isSix) {
+            const g = 9.81;
+            const remT =
+              (this.vel.y + Math.sqrt(Math.max(0, this.vel.y * this.vel.y + 2 * g * Math.max(0, this.pos.y)))) / g;
+            const horizSpd = Math.hypot(this.vel.x, this.vel.z);
+            this.shotDistance = Math.round(Math.min(115, Math.max(66, horizDist + horizSpd * remT * 0.94)));
+          } else {
+            this.shotDistance = Math.round(BOUNDARY_RADIUS + 2);
+          }
           this.shotLandingPos.copy(this.pos);
-          this.state = 'dead';
+          this.state = 'boundary_flight';
           if (callbacks.onBoundary) callbacks.onBoundary(isSix ? 6 : 4, this);
-          return;
+        }
+
+        if (this.state === 'boundary_flight') {
+          // Elevated spectator stands begin at BOUNDARY_RADIUS + 4.5m (51m): let SIXes bounce off the stand tiers!
+          if (!this.bouncedAfterHit && horizDist >= BOUNDARY_RADIUS + 4.5) {
+            const standFloorY = 1.4 + Math.min(4.2, (horizDist - (BOUNDARY_RADIUS + 4.5)) * 0.22);
+            if (this.pos.y <= standFloorY) {
+              this.pos.y = standFloorY;
+              this.bouncedAfterHit = true;
+              this.aerialAfterHit = false;
+              this.vel.y = Math.abs(this.vel.y) * 0.42;
+              this.vel.x *= 0.55;
+              this.vel.z *= 0.55;
+              if (callbacks.onStandBounce) callbacks.onStandBounce(this.pos);
+            }
+          }
+          // Stop ground FOUR gently against the LED sponsor ribbon at BOUNDARY_RADIUS + 3.0m
+          if (this.bouncedAfterHit && horizDist >= BOUNDARY_RADIUS + 3.0 && this.pos.y < 0.8) {
+            const scale = (BOUNDARY_RADIUS + 3.0) / Math.max(1, horizDist);
+            this.pos.x *= scale;
+            this.pos.z *= scale;
+            this.vel.multiplyScalar(-0.22);
+            if (this.vel.lengthSq() < 0.8) {
+              this.vel.set(0, 0, 0);
+              this.state = 'dead';
+              return;
+            }
+          } else if (horizDist >= BOUNDARY_RADIUS + 34.0 || (this.bouncedAfterHit && this.vel.lengthSq() < 0.35)) {
+            this.vel.set(0, 0, 0);
+            this.state = 'dead';
+            return;
+          }
         }
 
         if (this.bouncedAfterHit && this.vel.lengthSq() < 0.25) {
@@ -558,13 +697,15 @@ export class BallPhysics {
    * Evaluates LBW rule at the batter's popping crease (z = CREASE_Z)
    * Returns true if the ball struck the batter's pads in front of the stumps and was projected to hit the wickets.
    */
-  checkLBW(batsmanX = 0) {
+  checkLBW(batsmanX = 0, handedness = 'right') {
     if (this.isNoBall || this.isWide) return false;
     const impactPos = this.crossedCrease ? this.creaseCrossPos : this.pos;
     const impactVel = this.crossedCrease ? this.creaseCrossVel : this.vel;
 
-    // Must not pitch outside leg stump
-    if (this.bouncedOnPitch && this.pitchBouncePos.x < -0.20) return false;
+    // Must not pitch outside leg stump (leg side is -X for right-hander, +X for left-hander)
+    const pitchedOutsideLeg =
+      handedness === 'left' ? this.pitchBouncePos.x > 0.20 : this.pitchBouncePos.x < -0.20;
+    if (this.bouncedOnPitch && pitchedOutsideLeg) return false;
 
     // Must impact pad near batter's legs and in line with or just outside off stump
     const distFromLegs = Math.abs(impactPos.x - batsmanX);

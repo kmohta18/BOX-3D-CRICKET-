@@ -364,34 +364,46 @@ class SoundEngine {
       return;
     }
 
-    // Sweet Spot Crack: 3-Layer Acoustic Model (Deep Willow Thump + Blade Resonance + Leather Crack Transient)
+    // Sweet Spot Crack: 4-Layer Acoustic Model (Chest Thump + Deep Willow Thump + Blade Resonance + Leather Crack)
+    const thumpOsc = this.ctx.createOscillator();
+    const thumpGain = this.ctx.createGain();
+    thumpOsc.type = 'sine';
+    thumpOsc.frequency.setValueAtTime(118 + clampedPower * 24, now);
+    thumpOsc.frequency.exponentialRampToValueAtTime(38, now + 0.085);
+    thumpGain.gain.setValueAtTime(Math.min(0.95, 0.36 * clampedPower), now);
+    thumpGain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    thumpOsc.connect(thumpGain);
+    this.connectWithPan(thumpGain, this.effectsGain, pan);
+    thumpOsc.start(now);
+    thumpOsc.stop(now + 0.095);
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'triangle';
-    const baseFreq = 210 + clampedPower * 88;
+    const baseFreq = 225 + clampedPower * 95;
     osc.frequency.setValueAtTime(baseFreq, now);
-    osc.frequency.exponentialRampToValueAtTime(50, now + 0.098);
+    osc.frequency.exponentialRampToValueAtTime(52, now + 0.105);
 
-    gain.gain.setValueAtTime(Math.min(1.0, 0.45 + clampedPower * 0.55), now);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.105);
+    gain.gain.setValueAtTime(Math.min(1.0, 0.52 + clampedPower * 0.55), now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.112);
 
     osc.connect(gain);
     this.connectWithPan(gain, this.effectsGain, pan);
     osc.start(now);
-    osc.stop(now + 0.11);
+    osc.stop(now + 0.118);
 
     // Layer 2: English Willow sweet-spot harmonic ring
     const ringOsc = this.ctx.createOscillator();
     const ringGain = this.ctx.createGain();
     ringOsc.type = 'sine';
-    ringOsc.frequency.setValueAtTime(540 + clampedPower * 120, now);
-    ringOsc.frequency.exponentialRampToValueAtTime(280, now + 0.065);
-    ringGain.gain.setValueAtTime(0.26 * clampedPower, now);
-    ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+    ringOsc.frequency.setValueAtTime(580 + clampedPower * 135, now);
+    ringOsc.frequency.exponentialRampToValueAtTime(295, now + 0.07);
+    ringGain.gain.setValueAtTime(0.30 * clampedPower, now);
+    ringGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
     ringOsc.connect(ringGain);
     this.connectWithPan(ringGain, this.effectsGain, pan);
     ringOsc.start(now);
-    ringOsc.stop(now + 0.075);
+    ringOsc.stop(now + 0.08);
 
     if (this.whiteNoiseBuf) {
       const noise = this.ctx.createBufferSource();

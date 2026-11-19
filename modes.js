@@ -186,6 +186,15 @@ export const GAME_MODES = {
     getBowlerMax: () => 1,
     getPowerplayOvers: () => 0
   },
+  super_over: {
+    id: 'super_over',
+    nameEn: '⚡ Super Over Shootout (1 Over)',
+    nameHi: '⚡ सुपर ओवर शूटआउट (1 ओवर)',
+    defaultOvers: 1,
+    overOptions: [1],
+    getBowlerMax: () => 1,
+    getPowerplayOvers: () => 0
+  },
   t20: {
     id: 't20',
     nameEn: 'T20 Match',
@@ -199,10 +208,12 @@ export const GAME_MODES = {
 
 export class MatchEngine {
   constructor() {
-    this.modeId = ['t20', 'last_over', 'run_chase'].includes(gameConfig.modeId) ? gameConfig.modeId : 'run_chase';
-    this.totalOvers = this.modeId === 't20' ? 20 : this.modeId === 'last_over' ? 1 : 5;
+    this.modeId = ['t20', 'last_over', 'super_over', 'run_chase'].includes(gameConfig.modeId)
+      ? gameConfig.modeId
+      : 'run_chase';
+    this.totalOvers = this.modeId === 't20' ? 20 : this.modeId === 'last_over' || this.modeId === 'super_over' ? 1 : 5;
     this.bowlerMaxOvers = this.modeId === 't20' ? 4 : 1;
-    this.powerplayOvers = this.modeId === 't20' ? 6 : this.modeId === 'last_over' ? 0 : 2;
+    this.powerplayOvers = this.modeId === 't20' ? 6 : this.modeId === 'last_over' || this.modeId === 'super_over' ? 0 : 2;
 
     this.matchType = 'ai'; // 'ai' | 'local1v1' | 'online1v1'
     this.difficulty = normalizeDifficultyKey(gameConfig.difficulty || 'medium'); // 'easy' | 'medium' | 'hard'
@@ -219,13 +230,16 @@ export class MatchEngine {
     this.userRole = 'bat'; // 'bat' | 'bowl' in current innings
 
     // Match progress
-    this.innings = this.modeId === 't20' ? 1 : 2;
+    this.innings = this.modeId === 't20' || this.modeId === 'super_over' ? 1 : 2;
     this.targetRuns = null;
     this.firstInningsScore = null;
-    this.isSuperOver = false;
+    this.isSuperOver = this.modeId === 'super_over';
     this.isMatchOver = false;
     this.userWonMatch = null;
     this.longestSixMeters = 0;
+    this.drsReviewsRemaining = 2;
+    this.lastDismissalSnapshot = null;
+    this.lastCompletedOverSummary = null;
     this.winnerTextEn = '';
     this.winnerTextHi = '';
 
@@ -254,10 +268,11 @@ export class MatchEngine {
     userBattedFirst = true,
     customTargetRuns = null
   }) {
-    const normalizedMode = ['t20', 'last_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
+    const normalizedMode = ['t20', 'last_over', 'super_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
     const mode = GAME_MODES[normalizedMode] || GAME_MODES.run_chase;
     this.modeId = mode.id;
-    this.totalOvers = mode.id === 'run_chase' ? 5 : mode.id === 'last_over' ? 1 : (overs || mode.defaultOvers);
+    this.totalOvers =
+      mode.id === 'run_chase' ? 5 : mode.id === 'last_over' || mode.id === 'super_over' ? 1 : overs || mode.defaultOvers;
     this.bowlerMaxOvers = mode.getBowlerMax(this.totalOvers);
     this.powerplayOvers = mode.getPowerplayOvers(this.totalOvers);
 
@@ -364,7 +379,9 @@ export class MatchEngine {
       balls: 0,
       runs: 0,
       wickets: 0,
-      consecutiveWickets: 0
+      consecutiveWickets: 0,
+      confidence: 70, // 0..100 rhythm/confidence meter
+      stamina: 100    // 0..100 spell stamina
     }));
 
     // Current over ball-by-ball badges ('0', '1', '2', '4', '6', 'W', 'WD', 'NB')
@@ -433,6 +450,7 @@ export class MatchEngine {
     isWicket = false,
     wicketTypeEn = 'Bowled',
     wicketTypeHi = 'बोल्ड',
+    runOutVictim = 'striker',
     shotAngleRad = 0,
     shotDistance = 0
   }) {
@@ -450,13 +468,14 @@ export class MatchEngine {
     }
 
     const striker = this.getActiveStriker();
+    const nonStriker = this.getActiveNonStriker();
     const bowler = this.getActiveBowler();
 
     const prevStrikerRuns = striker.runs;
     let freeHitDismissalPrevented = false;
 
-    // Free Hit rule: Batsman can only be dismissed Run Out on a Free Hit!
-    if (this.freeHit && isWicket && wicketTypeEn !== 'Run Out') {
+    // MCC Law 21.18 & Free Hit rule: Batsman can only be dismissed Run Out on a No-Ball or Free Hit!
+    if ((this.freeHit || isNoBall) && isWicket && wicketTypeEn !== 'Run Out') {
       isWicket = false;
       freeHitDismissalPrevented = true;
     }
@@ -466,6 +485,7 @@ export class MatchEngine {
       this.extras.wides += 1 + runsScored;
       this.extras.total += 1 + runsScored;
       bowler.runs += 1 + runsScored;
+      bowler.confidence = Math.max(25, (bowler.confidence ?? 70) - 6);
       this.currentOverBalls.push(runsScored > 0 ? `WD+${runsScored}` : 'WD');
       // Wide does not count as a legal ball and keeps Free Hit if active
       this.checkInningsEnd();
@@ -488,8 +508,34 @@ export class MatchEngine {
       if (runsScored === 4 && isBoundary) striker.fours++;
       if (runsScored === 6 && isBoundary) striker.sixes++;
       bowler.runs += 1 + runsScored;
+      bowler.confidence = Math.max(20, (bowler.confidence ?? 70) - 8);
       this.freeHit = true; // Next delivery is a FREE HIT!
-      this.currentOverBalls.push(runsScored > 0 ? `NB+${runsScored}` : 'NB');
+
+      // If a batter was Run Out on a No-Ball (MCC Law 21.18), record the Run Out wicket too!
+      if (isWicket && wicketTypeEn === 'Run Out') {
+        this.wickets++;
+        const victimIsNonStriker = runOutVictim === 'nonStriker' && nonStriker;
+        const outBatter = victimIsNonStriker ? nonStriker : striker;
+        outBatter.isOut = true;
+        outBatter.statusEn = 'OUT (Run Out)';
+        outBatter.statusHi = 'आउट (रन आउट)';
+        const nextBatterIdx = Math.max(this.strikerIndex, this.nonStrikerIndex) + 1;
+        if (nextBatterIdx < 11 && this.wickets < this.maxWickets) {
+          if (outBatter.index === this.nonStrikerIndex) {
+            this.nonStrikerIndex = nextBatterIdx;
+            this.battingCard[this.nonStrikerIndex].statusEn = 'Not Out';
+            this.battingCard[this.nonStrikerIndex].statusHi = 'नाबाद';
+          } else {
+            this.strikerIndex = nextBatterIdx;
+            this.battingCard[this.strikerIndex].statusEn = 'Not Out';
+            this.battingCard[this.strikerIndex].statusHi = 'नाबाद';
+          }
+        }
+        this.currentOverBalls.push('NB+W');
+      } else {
+        this.currentOverBalls.push(runsScored > 0 ? `NB+${runsScored}` : 'NB');
+      }
+
       const milestoneReached =
         prevStrikerRuns < 100 && striker.runs >= 100
           ? 100
@@ -511,6 +557,7 @@ export class MatchEngine {
     // Legal delivery
     this.legalBalls++;
     bowler.balls++;
+    bowler.stamina = Math.max(35, (bowler.stamina ?? 100) - 3.5);
     striker.balls++;
     this.freeHit = false;
 
@@ -518,45 +565,89 @@ export class MatchEngine {
     let hatTrickWicket = false;
 
     if (isWicket) {
+      // Save pre-dismissal snapshot so a successful DRS review can cleanly overturn this wicket
+      this.lastDismissalSnapshot = {
+        wicketsBefore: this.wickets,
+        strikerIndexBefore: this.strikerIndex,
+        nonStrikerIndexBefore: this.nonStrikerIndex,
+        bowlerIndexBefore: this.currentBowlerIndex,
+        bowlerWicketsBefore: bowler.wickets,
+        bowlerConsecutiveBefore: bowler.consecutiveWickets || 0,
+        wicketTypeEn,
+        victimIsNonStriker: wicketTypeEn === 'Run Out' && runOutVictim === 'nonStriker' && Boolean(nonStriker)
+      };
+
+      // Credit any runs completed BEFORE a Run-Out occurred on a subsequent run attempt!
+      const completedRunsOnWicket = wicketTypeEn === 'Run Out' ? Math.max(0, Number(runsScored) || 0) : 0;
+      if (completedRunsOnWicket > 0) {
+        this.runs += completedRunsOnWicket;
+        striker.runs += completedRunsOnWicket;
+        bowler.runs += completedRunsOnWicket;
+        if (completedRunsOnWicket % 2 === 1) {
+          this.swapStrike();
+        }
+      }
+
       this.wickets++;
       if (wicketTypeEn !== 'Run Out') {
         bowler.wickets++;
         bowler.consecutiveWickets = (bowler.consecutiveWickets || 0) + 1;
+        bowler.confidence = Math.min(100, (bowler.confidence ?? 70) + 18);
         if (bowler.consecutiveWickets >= 3) {
           hatTrickWicket = true;
         }
       } else {
         bowler.consecutiveWickets = 0;
+        bowler.confidence = Math.min(100, (bowler.confidence ?? 70) + 10);
       }
-      striker.isOut = true;
+
+      // Attribute Run-Out to the actual batter (Striker or Non-Striker) who was out of their ground!
+      const victimIsNonStriker = wicketTypeEn === 'Run Out' && runOutVictim === 'nonStriker' && nonStriker;
+      const outBatter = victimIsNonStriker ? nonStriker : striker;
+      outBatter.isOut = true;
+
       const bowlerShort = bowler.name.split(' ')[1] || bowler.name;
       if (wicketTypeEn === 'Run Out') {
-        striker.statusEn = 'OUT (Run Out)';
-        striker.statusHi = 'आउट (रन आउट)';
+        outBatter.statusEn = 'OUT (Run Out)';
+        outBatter.statusHi = 'आउट (रन आउट)';
       } else if (wicketTypeEn === 'Bowled') {
-        striker.statusEn = `OUT (b ${bowlerShort})`;
-        striker.statusHi = `आउट (बोल्ड ${bowlerShort})`;
+        outBatter.statusEn = `OUT (b ${bowlerShort})`;
+        outBatter.statusHi = `आउट (बोल्ड ${bowlerShort})`;
       } else if (wicketTypeEn === 'LBW') {
-        striker.statusEn = `OUT (lbw b ${bowlerShort})`;
-        striker.statusHi = `आउट (LBW ${bowlerShort})`;
+        outBatter.statusEn = `OUT (lbw b ${bowlerShort})`;
+        outBatter.statusHi = `आउट (LBW ${bowlerShort})`;
       } else if (wicketTypeEn === 'Stumped') {
-        striker.statusEn = `OUT (st b ${bowlerShort})`;
-        striker.statusHi = `आउट (स्टम्प ${bowlerShort})`;
+        outBatter.statusEn = `OUT (st b ${bowlerShort})`;
+        outBatter.statusHi = `आउट (स्टम्प ${bowlerShort})`;
       } else {
-        striker.statusEn = `OUT (${wicketTypeEn} b ${bowlerShort})`;
-        striker.statusHi = `आउट (${wicketTypeHi} - ${bowlerShort})`;
+        outBatter.statusEn = `OUT (${wicketTypeEn} b ${bowlerShort})`;
+        outBatter.statusHi = `आउट (${wicketTypeHi} - ${bowlerShort})`;
       }
-      this.currentOverBalls.push('W');
+      this.currentOverBalls.push(completedRunsOnWicket > 0 ? `${completedRunsOnWicket}W` : 'W');
 
-      // Bring in next batter
+      // Bring in next batter into the dismissed batter's slot
       const nextBatterIdx = Math.max(this.strikerIndex, this.nonStrikerIndex) + 1;
+      this.lastDismissalSnapshot.replacementBatterIdx =
+        nextBatterIdx < 11 && this.wickets < this.maxWickets ? nextBatterIdx : null;
       if (nextBatterIdx < 11 && this.wickets < this.maxWickets) {
-        this.strikerIndex = nextBatterIdx;
-        this.battingCard[this.strikerIndex].statusEn = 'Batting *';
-        this.battingCard[this.strikerIndex].statusHi = 'बल्लेबाजी *';
+        if (outBatter.index === this.nonStrikerIndex) {
+          this.nonStrikerIndex = nextBatterIdx;
+          this.battingCard[this.nonStrikerIndex].statusEn = 'Not Out';
+          this.battingCard[this.nonStrikerIndex].statusHi = 'नाबाद';
+        } else {
+          this.strikerIndex = nextBatterIdx;
+          this.battingCard[this.strikerIndex].statusEn = 'Batting *';
+          this.battingCard[this.strikerIndex].statusHi = 'बल्लेबाजी *';
+        }
       }
     } else {
+      this.lastDismissalSnapshot = null;
       bowler.consecutiveWickets = 0;
+      if (runsScored === 0) {
+        bowler.confidence = Math.min(100, (bowler.confidence ?? 70) + 6);
+      } else if (runsScored >= 4) {
+        bowler.confidence = Math.max(20, (bowler.confidence ?? 70) - (runsScored === 6 ? 14 : 9));
+      }
       this.runs += runsScored;
       striker.runs += runsScored;
       bowler.runs += runsScored;
@@ -597,6 +688,24 @@ export class MatchEngine {
     let overCompleted = false;
     if (!this.isMatchOver && inningsEndState !== 'innings_break' && this.legalBalls > 0 && this.legalBalls % 6 === 0) {
       overCompleted = true;
+      const overBallsCopy = [...this.currentOverBalls];
+      let runsInOver = 0;
+      let wicketsInOver = 0;
+      overBallsCopy.forEach((b) => {
+        if (String(b).includes('W')) wicketsInOver++;
+        const num = parseInt(String(b).replace(/\D/g, ''), 10);
+        if (!Number.isNaN(num)) runsInOver += num;
+      });
+      this.lastCompletedOverSummary = {
+        overNumber: Math.floor(this.legalBalls / 6),
+        battingTeamShort: this.battingTeam?.short || 'BAT',
+        scoreStr: `${this.runs}/${this.wickets}`,
+        runsInOver,
+        wicketsInOver,
+        bowlerName: bowler.name,
+        balls: overBallsCopy,
+        wagonShots: this.wagonWheel.slice(-6)
+      };
       this.swapStrike();
       this.currentOverBalls = [];
       this.rotateBowler();
@@ -612,6 +721,51 @@ export class MatchEngine {
       hatTrickWicket,
       onHatTrickNext: (this.getActiveBowler().consecutiveWickets || 0) === 2
     };
+  }
+
+  overturnLastWicketViaDRS() {
+    const snap = this.lastDismissalSnapshot;
+    if (!snap) return false;
+    this.wickets = Math.max(0, snap.wicketsBefore);
+    this.isMatchOver = false;
+    this.winnerTextEn = '';
+    this.winnerTextHi = '';
+
+    // Reset replacement batter back to Yet to Bat if they were brought in
+    if (typeof snap.replacementBatterIdx === 'number' && this.battingCard[snap.replacementBatterIdx]) {
+      this.battingCard[snap.replacementBatterIdx].isOut = false;
+      this.battingCard[snap.replacementBatterIdx].statusEn = 'Yet to Bat';
+      this.battingCard[snap.replacementBatterIdx].statusHi = 'बल्लेबाजी शेष';
+    }
+
+    this.strikerIndex = snap.strikerIndexBefore;
+    this.nonStrikerIndex = snap.nonStrikerIndexBefore;
+
+    const restoredStriker = this.battingCard[this.strikerIndex];
+    if (restoredStriker) {
+      restoredStriker.isOut = false;
+      restoredStriker.statusEn = 'Batting *';
+      restoredStriker.statusHi = 'बल्लेबाजी *';
+    }
+    const restoredNonStriker = this.battingCard[this.nonStrikerIndex];
+    if (restoredNonStriker) {
+      restoredNonStriker.isOut = false;
+      restoredNonStriker.statusEn = 'Not Out';
+      restoredNonStriker.statusHi = 'नाबाद';
+    }
+
+    const bowlerCard = this.bowlingCard.find((b) => b.rosterIndex === snap.bowlerIndexBefore);
+    if (bowlerCard) {
+      bowlerCard.wickets = snap.bowlerWicketsBefore;
+      bowlerCard.consecutiveWickets = snap.bowlerConsecutiveBefore;
+    }
+
+    if (this.currentOverBalls.length > 0 && String(this.currentOverBalls[this.currentOverBalls.length - 1]).includes('W')) {
+      this.currentOverBalls[this.currentOverBalls.length - 1] = '0';
+    }
+
+    this.lastDismissalSnapshot = null;
+    return true;
   }
 
   swapStrike() {

@@ -1,0 +1,598 @@
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 600; font-display: swap; src: url('./fonts/barlow-condensed-latin-600-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 700; font-display: swap; src: url('./fonts/barlow-condensed-latin-700-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 800; font-display: swap; src: url('./fonts/barlow-condensed-latin-800-normal.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: italic; font-weight: 700; font-display: swap; src: url('./fonts/barlow-condensed-latin-700-italic.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: italic; font-weight: 800; font-display: swap; src: url('./fonts/barlow-condensed-latin-800-italic.woff2') format('woff2'); }
+
+:root {
+  --md-ink: #f4f7ff;
+  --md-dim: #a6b7db;
+  --md-gold: #fbbf24;
+  --md-green: #34d977;
+  --md-sky: #38bdf8;
+  --md-card: rgba(12, 22, 48, 0.88);
+  --md-card-hi: rgba(24, 42, 86, 0.94);
+  --md-line: rgba(120, 160, 255, 0.24);
+  --md-head: 'Barlow Condensed', 'Arial Narrow', Impact, 'Chakra Petch', sans-serif;
+}
+
+/* ============================================================================
+   UNIVERSAL TV REMOTE D-PAD FOCUS RING (High-Contrast Gold, Zero Paint Lag)
+   ============================================================================ */
+body.tv-nav-active button:focus,
+body.tv-nav-active a:focus,
+body.tv-nav-active select:focus,
+body.tv-nav-active input:focus,
+body.tv-nav-active summary:focus,
+.tv-focus-active,
+button:focus-visible,
+a:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible {
+  outline: 3px solid #fbbf24 !important;
+  outline-offset: 2px !important;
+  box-shadow: 0 0 0 4px rgba(251, 191, 36, 0.28), 0 10px 24px rgba(0, 0, 0, 0.65) !important;
+  position: relative;
+  z-index: 4;
+}
+
+/* Disable heavy blur filters on full-screen overlays for buttery Smart TV FPS */
+#modal-setup.wd-setup-backdrop {
+  background: rgba(2, 6, 23, 0.84) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* ============================================================================
+   SCREEN 1: MAIN MENU (#md-home) — Live 3D Stadium Backdrop + Left TV Rail
+   ============================================================================ */
+#md-home {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: max(18px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) max(18px, env(safe-area-inset-bottom)) max(24px, env(safe-area-inset-left));
+  background:
+    linear-gradient(90deg, rgba(4, 9, 24, 0.94) 0%, rgba(4, 9, 24, 0.82) 34%, rgba(4, 9, 24, 0.26) 66%, rgba(4, 9, 24, 0.35) 100%),
+    linear-gradient(180deg, rgba(4, 8, 22, 0.55) 0%, transparent 25%, transparent 75%, rgba(4, 8, 22, 0.82) 100%);
+  color: var(--md-ink);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  animation: md-fade 0.25s ease both;
+}
+#md-home.md-hidden,
+#md-modes.md-hidden {
+  display: none !important;
+}
+@keyframes md-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.md-topbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.md-logo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.md-logo svg {
+  width: 52px;
+  height: 52px;
+  flex: none;
+}
+.md-title {
+  font-family: var(--md-head);
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  font-size: clamp(32px, 4.4vw, 52px);
+  line-height: 0.92;
+  letter-spacing: 0.01em;
+  margin: 0;
+  color: #fff6d6;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.7);
+}
+.md-title em {
+  color: #38bdf8;
+  font-style: italic;
+}
+.md-tag {
+  margin: 3px 0 0;
+  font-family: var(--md-head);
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  font-size: 13px;
+  color: var(--md-gold);
+  text-transform: uppercase;
+}
+
+.md-pill-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.md-pill {
+  appearance: none;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(148, 163, 184, 0.34);
+  background: rgba(12, 22, 48, 0.86);
+  color: var(--md-ink);
+  font-family: var(--md-head);
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  font-size: 13px;
+  text-transform: uppercase;
+  transition: transform 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+.md-pill:hover {
+  background: rgba(30, 50, 102, 0.92);
+  border-color: rgba(251, 191, 36, 0.75);
+}
+.md-pill svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* Left Vertical Main Menu Rail */
+.md-home-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 12px 0;
+}
+.md-home-rail {
+  width: min(410px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.md-nav-btn {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 13px 18px;
+  border-radius: 16px;
+  border: 1.5px solid rgba(120, 160, 255, 0.28);
+  background: linear-gradient(135deg, rgba(16, 30, 66, 0.92) 0%, rgba(9, 17, 40, 0.94) 100%);
+  color: #f8fafc;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.md-nav-btn:hover {
+  transform: translateX(4px);
+  border-color: rgba(251, 191, 36, 0.85);
+  background: linear-gradient(135deg, rgba(28, 50, 104, 0.95) 0%, rgba(14, 24, 56, 0.96) 100%);
+}
+.md-nav-btn-primary {
+  padding: 17px 20px;
+  border: 2px solid #4ade80;
+  background: linear-gradient(135deg, #22c55e 0%, #10b981 55%, #059669 100%);
+  color: #022c22;
+  box-shadow: 0 10px 28px rgba(16, 185, 129, 0.35);
+}
+.md-nav-btn-primary:hover {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  border-color: #fef08a;
+}
+.md-nav-btn-quick {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22) 0%, rgba(15, 23, 42, 0.94) 100%);
+}
+.md-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.md-nav-icon {
+  font-size: 20px;
+  line-height: 1;
+  flex: none;
+}
+.md-nav-label {
+  font-family: var(--md-head);
+  font-weight: 800;
+  font-size: clamp(19px, 2vw, 24px);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  line-height: 1.05;
+}
+.md-nav-sub {
+  font-size: 11px;
+  opacity: 0.8;
+  margin-top: 2px;
+  line-height: 1.25;
+}
+.md-nav-btn-primary .md-nav-sub {
+  color: #064e3b;
+  font-weight: 600;
+  opacity: 0.92;
+}
+.md-nav-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 4px 9px;
+  border-radius: 8px;
+  background: rgba(2, 6, 23, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  white-space: nowrap;
+  flex: none;
+}
+.md-nav-btn-primary .md-nav-badge {
+  background: rgba(2, 44, 34, 0.22);
+  border-color: rgba(2, 44, 34, 0.35);
+  color: #022c22;
+}
+
+/* Right-side Live Stadium Floating Preview Badge */
+.md-arena-badge {
+  align-self: flex-end;
+  padding: 12px 16px;
+  border-radius: 16px;
+  background: rgba(7, 13, 30, 0.84);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  text-align: right;
+  max-width: 300px;
+}
+.md-arena-badge-kicker {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--md-green);
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+}
+.md-arena-badge-title {
+  font-family: var(--md-head);
+  font-size: 24px;
+  font-weight: 800;
+  font-style: italic;
+  text-transform: uppercase;
+  color: #ffffff;
+  line-height: 1.05;
+  margin-top: 2px;
+}
+.md-arena-badge-sub {
+  font-size: 11px;
+  color: var(--md-dim);
+  margin-top: 3px;
+}
+
+.md-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 6px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+.md-keys {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-family: var(--md-head);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 13px;
+  color: var(--md-dim);
+}
+.md-keys kbd {
+  font-family: var(--md-head);
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--md-ink);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+}
+.md-note {
+  font-size: 11px;
+  color: #93a5cb;
+}
+
+/* ============================================================================
+   SCREEN 2: GAME MODE SELECTION (#md-modes) — Clean 2x2 TV Grid
+   ============================================================================ */
+#md-modes {
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: max(16px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  background: rgba(4, 9, 24, 0.88);
+  color: var(--md-ink);
+  font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+  animation: md-fade 0.2s ease both;
+}
+.md-modes-shell {
+  width: min(980px, 100%);
+  max-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  background: linear-gradient(165deg, rgba(12, 22, 50, 0.96) 0%, rgba(5, 10, 26, 0.98) 100%);
+  box-shadow: 0 28px 64px rgba(0, 0, 0, 0.78);
+  overflow-y: auto;
+}
+.md-modes-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.18);
+  padding-bottom: 12px;
+}
+.md-modes-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.md-modes-title {
+  margin: 0;
+  font-family: var(--md-head);
+  font-weight: 800;
+  font-style: italic;
+  font-size: clamp(26px, 3vw, 36px);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #ffffff;
+}
+.md-modes-title span {
+  color: var(--md-gold);
+}
+.md-modes-sub {
+  font-size: 12px;
+  color: var(--md-dim);
+}
+.md-modes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.md-mode-card {
+  appearance: none;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 18px 20px;
+  border-radius: 18px;
+  border: 2px solid rgba(71, 85, 105, 0.72);
+  background: linear-gradient(160deg, rgba(18, 32, 68, 0.92) 0%, rgba(9, 16, 38, 0.96) 100%);
+  color: #f8fafc;
+  transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+.md-mode-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--md-gold);
+}
+.md-mode-card-amber { border-color: rgba(251, 191, 36, 0.52); }
+.md-mode-card-rose { border-color: rgba(251, 113, 133, 0.52); }
+.md-mode-card-sky { border-color: rgba(56, 189, 248, 0.52); }
+.md-mode-card-emerald { border-color: rgba(52, 211, 153, 0.52); }
+.md-mode-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.md-mode-tag {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+}
+.md-mode-card-amber .md-mode-tag { color: #fde047; background: rgba(245, 158, 11, 0.18); border-color: rgba(251, 191, 36, 0.45); }
+.md-mode-card-rose .md-mode-tag { color: #fda4af; background: rgba(244, 63, 94, 0.18); border-color: rgba(251, 113, 133, 0.45); }
+.md-mode-card-sky .md-mode-tag { color: #7dd3fc; background: rgba(56, 189, 248, 0.18); border-color: rgba(56, 189, 248, 0.45); }
+.md-mode-card-emerald .md-mode-tag { color: #6ee7b7; background: rgba(16, 185, 129, 0.18); border-color: rgba(52, 211, 153, 0.45); }
+.md-mode-meta {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--md-dim);
+}
+.md-mode-name {
+  font-family: var(--md-head);
+  font-weight: 800;
+  font-style: italic;
+  font-size: clamp(24px, 2.5vw, 31px);
+  line-height: 1;
+  text-transform: uppercase;
+  color: #ffffff;
+  margin-top: 2px;
+}
+.md-mode-desc {
+  font-size: 12.5px;
+  color: #cbd5e1;
+  line-height: 1.4;
+}
+.md-mode-cta {
+  font-family: var(--md-head);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--md-gold);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+/* ============================================================================
+   SCREEN 3: UNIFIED SINGLE-SCREEN MATCH SETUP (#modal-setup)
+   ============================================================================ */
+.wd-unified-grid {
+  display: grid;
+  grid-template-columns: 1.35fr 1fr;
+  gap: 14px;
+  align-items: start;
+}
+.wd-setup-panel-col {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+}
+.wd-setup-box {
+  background: rgba(7, 13, 30, 0.92);
+  border: 1px solid rgba(51, 65, 85, 0.85);
+  border-radius: 14px;
+  padding: 11px 13px;
+}
+.wd-setup-label {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #94a3b8;
+  margin-bottom: 7px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wd-team-stepper-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 8px;
+  align-items: center;
+}
+.wd-team-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 7px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  border: 1.5px solid rgba(71, 85, 105, 0.8);
+}
+.wd-step-arrow {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(100, 116, 139, 0.55);
+  color: #f8fafc;
+  font-weight: 900;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex: none;
+}
+.wd-step-arrow:hover {
+  background: #fbbf24;
+  color: #020617;
+  border-color: #fde68a;
+}
+.wd-team-readout {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  flex: 1;
+  justify-content: center;
+}
+.wd-team-swatch {
+  width: 10px;
+  height: 26px;
+  border-radius: 999px;
+  flex: none;
+}
+.wd-chip-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.wd-chip-grid-4 {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+.wd-chip-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+.wd-mini-card {
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1.5px solid rgba(51, 65, 85, 0.85);
+  background: rgba(15, 23, 42, 0.92);
+  color: #e2e8f0;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.wd-mini-card:hover {
+  border-color: rgba(148, 163, 184, 0.7);
+}
+
+@media (max-width: 880px) {
+  .wd-unified-grid {
+    grid-template-columns: 1fr;
+  }
+  .md-modes-grid {
+    grid-template-columns: 1fr;
+  }
+  .md-arena-badge {
+    display: none;
+  }
+}
+@media (max-height: 580px) {
+  #md-home {
+    padding: 12px 16px;
+  }
+  .md-nav-btn {
+    padding: 9px 14px;
+  }
+  .md-nav-btn-primary {
+    padding: 11px 16px;
+  }
+  .md-nav-sub {
+    display: none;
+  }
+}

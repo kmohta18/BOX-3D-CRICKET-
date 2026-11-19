@@ -10,34 +10,47 @@ import { getDifficultyProfile } from './config.js';
 const _qCurrent = new THREE.Quaternion();
 const _qStanceInv = new THREE.Quaternion();
 const _qRel = new THREE.Quaternion();
+const _qWorldDelta = new THREE.Quaternion();
 const _qPredDelta = new THREE.Quaternion();
 const _qPredicted = new THREE.Quaternion();
 const _deviceEuler = new THREE.Euler(0, 0, 0, 'ZXY');
 const _relEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 const _omegaAxis = new THREE.Vector3();
+const _omegaDevice = new THREE.Vector3();
+const _omegaWorld = new THREE.Vector3();
 const _localVelVec = new THREE.Vector3();
 
 export const SHOT_TYPES = {
   STRAIGHT_DRIVE: { id: 'straight', shotKey: 'straight_drive', anim: 'drive', nameEn: 'STRAIGHT DRIVE', nameHi: 'स्ट्रेट ड्राइव' },
-  COVER_DRIVE: { id: 'cover', shotKey: 'cover_drive', anim: 'drive', nameEn: 'COVER DRIVE', nameHi: 'कवर ड्राइव' },
-  ON_DRIVE: { id: 'ondrive', shotKey: 'on_drive', anim: 'drive', nameEn: 'ON DRIVE', nameHi: 'ऑन ड्राइव' },
-  LEG_FLICK: { id: 'flick', shotKey: 'leg_flick', anim: 'pull', nameEn: 'MID-WICKET FLICK', nameHi: 'मिड-विकेट फ्लिक' },
+  COVER_DRIVE: { id: 'cover', shotKey: 'cover_drive', anim: 'drive_cover', nameEn: 'COVER DRIVE', nameHi: 'कवर ड्राइव' },
+  INSIDE_OUT_LOFT: { id: 'insideout', shotKey: 'inside_out_loft', anim: 'drive_cover_loft', nameEn: 'INSIDE-OUT LOFT', nameHi: 'इनसाइड-आउट लॉफ्ट' },
+  ON_DRIVE: { id: 'ondrive', shotKey: 'on_drive', anim: 'drive_on_whip', nameEn: 'ON DRIVE', nameHi: 'ऑन ड्राइव' },
+  LEG_FLICK: { id: 'flick', shotKey: 'leg_flick', anim: 'flick', nameEn: 'MID-WICKET FLICK', nameHi: 'मिड-विकेट फ्लिक' },
   SQUARE_CUT: { id: 'cut', shotKey: 'square_cut', anim: 'cut', nameEn: 'SQUARE CUT', nameHi: 'स्क्वायर कट' },
+  LOFTED_CUT: { id: 'loftedcut', shotKey: 'lofted_cut', anim: 'cut_loft', nameEn: 'LOFTED SQUARE CUT', nameHi: 'लॉफ्टेड स्क्वायर कट' },
   PULL_SHOT: { id: 'pull', shotKey: 'pull_shot', anim: 'pull', nameEn: 'PULL SHOT', nameHi: 'पुल शॉट' },
+  HOOK_SHOT: { id: 'hook', shotKey: 'hook_shot', anim: 'hook_loft', nameEn: 'SWIVEL HOOK', nameHi: 'हुक शॉट' },
   SWEEP_SHOT: { id: 'sweep', shotKey: 'sweep_shot', anim: 'sweep', nameEn: 'SWEEP SHOT', nameHi: 'स्वीप शॉट' },
-  LATE_CUT: { id: 'latecut', shotKey: 'late_cut', anim: 'cut', nameEn: 'LATE CUT', nameHi: 'लेट कट' },
-  REVERSE_SWEEP: { id: 'reversesweep', shotKey: 'reverse_sweep', anim: 'sweep', nameEn: 'REVERSE SWEEP', nameHi: 'रिवर्स स्वीप' },
-  FINE_GLANCE: { id: 'fineglance', shotKey: 'fine_glance', anim: 'pull', nameEn: 'FINE LEG GLANCE', nameHi: 'फाइन लेग ग्लांस' },
-  SCOOP_SHOT: { id: 'scoop', shotKey: 'scoop_shot', anim: 'scoop', nameEn: 'SCOOP SHOT', nameHi: 'स्कूप शॉट' },
+  SLOG_SWEEP: { id: 'slogsweep', shotKey: 'slog_sweep', anim: 'slog_sweep', nameEn: 'SLOG SWEEP', nameHi: 'स्लॉग स्वीप' },
+  LATE_CUT: { id: 'latecut', shotKey: 'late_cut', anim: 'cut_late', nameEn: 'LATE CUT', nameHi: 'लेट कट' },
+  UPPER_CUT: { id: 'uppercut', shotKey: 'upper_cut', anim: 'upper_cut', nameEn: 'UPPER CUT', nameHi: 'अपर कट' },
+  REVERSE_SWEEP: { id: 'reversesweep', shotKey: 'reverse_sweep', anim: 'reverse_sweep', nameEn: 'REVERSE SWEEP', nameHi: 'रिवर्स स्वीप' },
+  PADDLE_SWEEP: { id: 'paddlesweep', shotKey: 'paddle_sweep', anim: 'paddle_flick', nameEn: 'PADDLE FLICK', nameHi: 'पैडल फ्लिक' },
+  FINE_GLANCE: { id: 'fineglance', shotKey: 'fine_glance', anim: 'glance', nameEn: 'FINE LEG GLANCE', nameHi: 'फाइन लेग ग्लांस' },
+  SCOOP_SHOT: { id: 'scoop', shotKey: 'scoop_shot', anim: 'scoop', nameEn: 'DILSCOOP', nameHi: 'स्कूप शॉट' },
   RAMP_SHOT: { id: 'ramp', shotKey: 'ramp_shot', anim: 'ramp', nameEn: 'RAMP SHOT', nameHi: 'रैम्प शॉट' },
-  LOFTED_DRIVE: { id: 'loft', shotKey: 'lofted_six', anim: 'loft', nameEn: 'HELICOPTER LOFT', nameHi: 'हेलिकॉप्टर लॉफ्ट' },
+  HELICOPTER_LOFT: { id: 'helicopter', shotKey: 'helicopter_loft', anim: 'helicopter', nameEn: 'HELICOPTER SHOT', nameHi: 'हेलिकॉप्टर शॉट' },
+  LOFTED_DRIVE: { id: 'loft', shotKey: 'lofted_six', anim: 'loft', nameEn: 'LOFTED STRAIGHT SIX', nameHi: 'लॉफ्टेड स्ट्रेट सिक्स' },
   DEFENCE: { id: 'defence', shotKey: 'defence', anim: 'defence', nameEn: 'SOLID DEFENCE', nameHi: 'डिफेंस' }
 };
 
 export const TIMING_WINDOWS_MS = {
-  easy: { perfect: 120, good: 210, mistime: 310 },
-  pro: { perfect: 80, good: 165, mistime: 260 },
-  legend: { perfect: 55, good: 125, mistime: 215 }
+  rookie: { perfect: 148, good: 260, mistime: 370 },
+  easy: { perfect: 148, good: 260, mistime: 370 },
+  medium: { perfect: 118, good: 222, mistime: 335 },
+  pro: { perfect: 118, good: 222, mistime: 335 },
+  hard: { perfect: 92, good: 182, mistime: 285 },
+  legend: { perfect: 92, good: 182, mistime: 285 }
 };
 
 export const STEPS_PER_RUN = 20;
@@ -56,6 +69,8 @@ export class BattingSystem {
     // Stance & Crease position
     this.screenRightSign = -1; // -1 in Broadcast camera (looking +Z, so Screen-Right is -X); +1 in Pro/Overhead camera
     this.creaseX = 0.0;       // Lateral guard (-0.52m to +0.52m)
+    this.manualCreaseOffsetX = 0.0; // Persistent manual step/drag offset so 85Hz sensor stream never wipes STEP L/R
+    this.sensorCreaseOffsetX = 0.0; // Live phone tilt lateral offset
     this.creaseZOffset = 0.0; // Forward (+0.55m) or Back (-0.45m)
     this.footwork = 'neutral';
     this.bodyPivotYaw = 0.0;  // Visual pivot of batsman feet & shoulders toward 360° shot direction
@@ -65,6 +80,10 @@ export class BattingSystem {
     this.calibProgress = 0;
     this.isCalibrated = false;
     this.hasAutoStance = false;
+    this.stanceAlpha = 0;
+    this.stanceBeta = 70;
+    this.stanceGamma = 0;
+    this.phoneRightDeg = 0;   // Positive = Phone tilted/turned RIGHT, Negative = Phone tilted/turned LEFT
     this.qStance = new THREE.Quaternion();
     this.currentQuat = new THREE.Quaternion();
     this.batVisualQuat = new THREE.Quaternion();
@@ -95,7 +114,15 @@ export class BattingSystem {
     this.swingPeakTime = 0;
     this.swingStartPitchDeg = 0;
     this.lastSwingTime = 0;
+    this.manualSwingAimLockUntil = 0;
+    this.wheelAimLockedThisBall = false;
+    this.needsSoftStanceRecenter = false;
+    this.steadyStanceTimer = 0;
+    this.worldGyroRightRate = 0;
+    this.autoTrackBallEnabled = true;
+    this.manualCreaseOverrideThisBall = false;
     this.lastFlickTime = 0;
+    this.manualSwingArmed = false;
     this.shotExecutedThisBall = false;
     this.activeShotType = SHOT_TYPES.STRAIGHT_DRIVE;
     this.sensitivity = 1.0;
@@ -114,7 +141,7 @@ export class BattingSystem {
     this.holdRunActive = false; // Keyboard R or on-screen/phone HOLD RUN button fallback
     this.holdStepAccum = 0;
 
-    // Keyboard & Touch 360° Direction State
+    // Keyboard, 360° Angle Wheel & Touch Direction State
     this.keys = {
       left: false,
       right: false,
@@ -123,6 +150,12 @@ export class BattingSystem {
     };
     this.aimDirectionX = 0;
     this.aimDirectionZ = 1; // +1 = forward (0°), -1 = behind wicket (180°)
+    this.virtualStickActive = false;
+    this.custom360AimDeg = 0; // Screen angle in degrees (-180..+180, 0 = Straight toward bowler)
+    this.autoResetAimEveryBall = true; // Resets wheel angle to 0° Straight after each ball
+    this.shotAssistGapSnap = true; // Snaps angle up to 10° toward nearest fielding gap when ON
+    this.controllerLayoutHand = 'right'; // 'right' = Wheel Left / Buttons Right, 'left' = Swapped
+    this.stepOutCharge = false; // Toggleable Step-Out / Charge Down Pitch stance (z offset +0.42m)
 
     // Last contact telemetry for HUD & Debug Panel
     this.lastContact = {
@@ -202,31 +235,172 @@ export class BattingSystem {
   }
 
   setShotMode(mode, force = false) {
-    if (this.modeLocked && !force) return false;
-    if (mode === 'ground' || mode === 'fly') {
-      this.shotMode = mode;
+    // Allow switching GROUND / LOFT anytime before the ball is actually hit!
+    if (this.shotExecutedThisBall && this.modeLocked && !force) return false;
+    const normalized = mode === 'loft' ? 'fly' : mode;
+    if (normalized === 'ground' || normalized === 'fly') {
+      this.shotMode = normalized;
       return true;
     }
     return false;
   }
 
+  getShotModeLabel() {
+    return this.shotMode === 'fly' ? 'LOFT' : 'GROUND';
+  }
+
   lockShotMode() {
-    this.modeLocked = true;
+    // Only lock after contact is executed; pre-contact mode switching remains open
+    this.modeLocked = Boolean(this.shotExecutedThisBall);
   }
 
   unlockShotMode() {
     this.modeLocked = false;
   }
 
-  resetForNextBall() {
+  /**
+   * Solution 1 + Solution 2 Combo:
+   * Deterministic skill-based footwork from 360° shot direction & ball length (zero random RNG penalty!).
+   * - Forward hemisphere (drives, flicks, straight lofts, sweeps) => 'front' footwork
+   * - Square/behind hemisphere on short/back-of-length balls (pulls, hooks, cuts) => 'back' footwork
+   */
+  toggleStepOutCharge(forceState = null) {
+    this.stepOutCharge = typeof forceState === 'boolean' ? forceState : !this.stepOutCharge;
+    if (this.stepOutCharge) {
+      this.footwork = 'front';
+      this.creaseZOffset = 0.42;
+    } else {
+      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, null);
+      this.creaseZOffset = this.footwork === 'front' ? 0.16 : -0.16;
+    }
+    return this.stepOutCharge;
+  }
+
+  computeSmartFootwork(yawRad = this.swingPlaneYaw, ball = null) {
+    if (this.keys.up || this.stepOutCharge) return 'front';
+    if (this.keys.down) return 'back';
+
+    const absDeg = Math.abs(THREE.MathUtils.radToDeg(yawRad || 0));
+    if (ball && ball.state === 'bowled') {
+      const bounceZ = ball.pitchBouncePos?.z ?? 4.5;
+      const isShortBall = ball.bouncedOnPitch && bounceZ < 3.2;
+      if (isShortBall) {
+        return absDeg >= 30 ? 'back' : 'front';
+      }
+      // Full, Yorker, or Good-length delivery: forward drives/lofts/flicks & scoops use front foot; square cuts/pulls use back foot
+      if (absDeg <= 78 || absDeg > 148) {
+        return 'front';
+      }
+      return 'back';
+    }
+
+    // Solution 2: Pre-delivery Angle Wheel / Stance mapping (Front hemisphere <= 72° => 'front', Square/Behind > 72° => 'back')
+    return absDeg <= 72 ? 'front' : 'back';
+  }
+
+  setWheelAimDeg(deg = 0, fromUserWheel = true) {
+    const wrapped = ((((Number(deg) || 0) + 180) % 360) + 360) % 360 - 180;
+    this.custom360AimDeg = Math.round(wrapped);
+    this.virtualStickActive = true;
+    if (fromUserWheel) {
+      this.wheelAimLockedThisBall = true;
+    }
+    const dirSign = this.screenRightSign || -1;
+    const worldRad = THREE.MathUtils.degToRad(this.custom360AimDeg * dirSign);
+    this.swingPlaneYaw = Math.atan2(Math.sin(worldRad), Math.cos(worldRad));
+    this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+    this.aimDirectionX = Math.sin(THREE.MathUtils.degToRad(this.custom360AimDeg));
+    this.aimDirectionZ = Math.cos(THREE.MathUtils.degToRad(this.custom360AimDeg));
+    if (!this.keys.up && !this.keys.down) {
+      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, null);
+      this.creaseZOffset = this.stepOutCharge ? 0.42 : this.footwork === 'front' ? 0.16 : -0.16;
+    }
+    return this.custom360AimDeg;
+  }
+
+  getGapSnapLimitDeg(difficulty = 'pro') {
+    const diffProfile = getDifficultyProfile(difficulty);
+    const assist = diffProfile ? diffProfile.battingAssist : 'light';
+    return assist === 'full' ? 10.5 : assist === 'light' ? 7.5 : 4.5;
+  }
+
+  computeGapSnappedYaw(rawYawRad, fielders, maxSnapDeg = 7.5) {
+    if (!this.shotAssistGapSnap || maxSnapDeg <= 0.1 || !Array.isArray(fielders) || fielders.length < 2) {
+      return rawYawRad;
+    }
+    const angles = fielders
+      .map((f) => {
+        const fx = f?.pos?.x ?? 0;
+        const fz = (f?.pos?.z ?? 0) - CREASE_Z;
+        return Math.atan2(fx, -fz);
+      })
+      .sort((a, b) => a - b);
+
+    let bestMid = rawYawRad;
+    let bestScore = -Infinity;
+    for (let i = 0; i < angles.length; i++) {
+      const a1 = angles[i];
+      const a2 = i + 1 < angles.length ? angles[i + 1] : angles[0] + Math.PI * 2;
+      const gapWidth = a2 - a1;
+      if (gapWidth < THREE.MathUtils.degToRad(14)) continue;
+      const midRaw = a1 + gapWidth * 0.5;
+      const mid = Math.atan2(Math.sin(midRaw), Math.cos(midRaw));
+      const diff = Math.atan2(Math.sin(mid - rawYawRad), Math.cos(mid - rawYawRad));
+      const absDiff = Math.abs(diff);
+      if (absDiff <= THREE.MathUtils.degToRad(24)) {
+        const score = gapWidth - absDiff * 1.45;
+        if (score > bestScore) {
+          bestScore = score;
+          bestMid = mid;
+        }
+      }
+    }
+
+    if (bestScore === -Infinity) return rawYawRad;
+    const delta = Math.atan2(Math.sin(bestMid - rawYawRad), Math.cos(bestMid - rawYawRad));
+    const maxSnapRad = THREE.MathUtils.degToRad(maxSnapDeg);
+    const snapped = rawYawRad + THREE.MathUtils.clamp(delta, -maxSnapRad, maxSnapRad);
+    return Math.atan2(Math.sin(snapped), Math.cos(snapped));
+  }
+
+  resetForNextBall({ preserveWheelAim = false, resetCreaseX = false } = {}) {
     this.isSwinging = false;
+    this.swingPeakTime = 0;
+    this.lastSwingTime = 0;
     this.peakSwingSpeedDeg = 0;
+    this.manualSwingArmed = false;
     this.shotExecutedThisBall = false;
+    this.activeShotType = SHOT_TYPES.STRAIGHT_DRIVE;
     this.modeLocked = false;
+    this.manualSwingAimLockUntil = 0;
     this.backliftAngle = 0.25;
     this.bodyPivotYaw = 0;
     this.creaseZOffset = 0;
-    this.footwork = 'neutral';
+    this.sensorCreaseOffsetX = 0;
+    this.needsSoftStanceRecenter = true;
+    this.steadyStanceTimer = 0;
+    this.worldGyroRightRate = 0;
+    if (resetCreaseX) {
+      this.creaseX = 0;
+      this.manualCreaseOffsetX = 0;
+      this.manualCreaseOverrideThisBall = false;
+      this.phoneRightDeg = 0;
+      this.stepOutCharge = false;
+    } else {
+      this.creaseX = THREE.MathUtils.clamp(this.manualCreaseOffsetX || this.creaseX || 0, -0.62, 0.62);
+    }
+    this.footwork = this.stepOutCharge ? 'front' : 'neutral';
+    if (this.stepOutCharge) {
+      this.creaseZOffset = 0.42;
+    }
+    if (!preserveWheelAim && this.autoResetAimEveryBall !== false) {
+      this.wheelAimLockedThisBall = false;
+      this.custom360AimDeg = 0;
+      this.swingPlaneYaw = 0;
+      this.swingDirectionDeg = 0;
+      this.aimDirectionX = 0;
+      this.aimDirectionZ = 1;
+    }
     this.lastContact.didHit = false;
     this.lastContact.outcome = 'none';
     this.runWindowActive = false;
@@ -279,53 +453,95 @@ export class BattingSystem {
     this.calibProgress = 0;
   }
 
+  instantZeroStance() {
+    this.buildDeviceQuaternion(this.rawAlpha, this.rawBeta, this.rawGamma);
+    this.qStance.copy(_qCurrent);
+    this.stanceAlpha = this.rawAlpha;
+    this.stanceBeta = this.rawBeta;
+    this.stanceGamma = this.rawGamma;
+    this.phoneRightDeg = 0;
+    this.worldGyroRightRate = 0;
+    this.wheelAimLockedThisBall = false;
+    this.custom360AimDeg = 0;
+    this.swingPlaneYaw = 0;
+    this.swingDirectionDeg = 0;
+    this.hasAutoStance = true;
+    this.hasHardwareStance = true;
+    this.isCalibrated = true;
+    this.needsSoftStanceRecenter = false;
+    this.steadyStanceTimer = 0;
+  }
+
+  autoTrackBallPosition(ball, dt = 0.016) {
+    if (!this.autoTrackBallEnabled || this.manualCreaseOverrideThisBall) return;
+    if (!ball || ball.state !== 'bowled' || this.shotExecutedThisBall) return;
+    if (this.keys.left || this.keys.right) return;
+
+    // Keep tracking capped inside [-0.24, +0.24] on wide deliveries so genuine wides aren't chased,
+    // while aligning cleanly with all playable deliveries in [-0.44, +0.44].
+    const isProjectedWide = Math.abs(ball.targetX || 0) > 0.52;
+    const trackLimit = isProjectedWide ? 0.24 : 0.44;
+    const predictedX = ball.pos.x + (ball.pos.z < CREASE_Z - 0.55 ? (ball.vel.x || 0) * 0.06 : 0);
+    const targetX = THREE.MathUtils.clamp(predictedX, -trackLimit, trackLimit);
+    this.manualCreaseOffsetX = THREE.MathUtils.damp(this.manualCreaseOffsetX, targetX, 12.0, dt);
+    this.creaseX = this.manualCreaseOffsetX;
+  }
+
   buildDeviceQuaternion(alphaDeg, betaDeg, gammaDeg) {
     const a = THREE.MathUtils.degToRad(alphaDeg || 0);
     const b = THREE.MathUtils.degToRad(betaDeg || 0);
     const g = THREE.MathUtils.degToRad(gammaDeg || 0);
-    _deviceEuler.set(b, a, -g, 'YXZ');
+    // Exact W3C DeviceOrientation intrinsic ZXY order: Rz(alpha) * Rx(beta) * Ry(gamma)
+    _deviceEuler.set(b, g, a, 'ZXY');
     _qCurrent.setFromEuler(_deviceEuler);
     return _qCurrent;
   }
 
   /**
    * Computes full 360° horizontal swing direction in [-PI, +PI] (0 = straight down ground over bowler)
-   * from the swing velocity vector projected on the ground plane in calibrated stance space
-   * (independent of raw compass yaw so compass drift never skews shots), plus a small bat-face correction.
+   * directly from 3D Quaternion World-Up twist + World-space horizontal gyro sweep velocity so
+   * whichever direction the batsman swings/points the phone as a bat, the shot goes cleanly there!
    */
-  compute360SwingDirection() {
+  compute360SwingDirection(fromHardwareGyro = false) {
     const dirSign = this.screenRightSign || -1;
-    // Project angular & linear swing velocity into calibrated stance horizontal plane:
-    // Forward component (+vz_fwd => 0° straight, -vz_fwd => 180° behind wicket)
-    // Lateral component mapped by dirSign so swinging Right always goes Right on screen
-    _localVelVec.set(
-      (-this.filteredOmega.z * 0.65 - this.filteredOmega.y * 0.55 + this.filteredAccel.x * 18.0) * dirSign,
-      0,
-      this.filteredOmega.x * 0.72 - this.filteredAccel.z * 16.0
+    const poseRightDeg = this.phoneRightDeg || 0;
+    const gyroRightRate = this.worldGyroRightRate || 0;
+
+    // Apply ±6° straight sweet-spot deadzone so natural wrist tremor during straight drives stays dead straight
+    const dampedPoseDeg =
+      Math.abs(poseRightDeg) <= 6
+        ? poseRightDeg * 0.25
+        : Math.sign(poseRightDeg) * (1.5 + (Math.abs(poseRightDeg) - 6) * 0.96);
+
+    // Horizontal angular velocity sweep lead (~100ms) in World horizontal plane
+    const gyroSweepDeg = THREE.MathUtils.clamp(gyroRightRate * 0.10, -95, 95);
+    const effectiveGyroSweep =
+      Math.abs(dampedPoseDeg) > 45 && gyroSweepDeg * dampedPoseDeg < 0
+        ? gyroSweepDeg * 0.25
+        : gyroSweepDeg;
+
+    let combinedRightDeg = THREE.MathUtils.clamp(
+      dampedPoseDeg + effectiveGyroSweep,
+      -172,
+      172
     );
 
-    let angleRad = 0;
-    if (Math.hypot(_localVelVec.x, _localVelVec.z) > 12.0) {
-      angleRad = Math.atan2(_localVelVec.x, _localVelVec.z);
+    // When swinging physically with hardware gyro, ALWAYS respect the user's bat swing direction!
+    // Only fall back to wheel aim when NOT from hardware gyro (or if no hardware stance exists).
+    if (!fromHardwareGyro && this.wheelAimLockedThisBall && typeof this.custom360AimDeg === 'number') {
+      combinedRightDeg = this.custom360AimDeg;
     }
 
-    // Small bat-face angle correction (capped at +/-10° so compass drift cannot hijack direction)
-    const faceCorrectionRad = THREE.MathUtils.degToRad(
-      THREE.MathUtils.clamp((-this.calRollDeg * 0.22 - this.calYawDeg * 0.15) * dirSign, -10, 10)
-    );
-    angleRad = Math.atan2(
-      Math.sin(angleRad + faceCorrectionRad),
-      Math.cos(angleRad + faceCorrectionRad)
-    );
-
-    return angleRad;
+    // Map screen-right angle into 3D world yaw using dirSign (-1 in Broadcast TV view, +1 in Pro view)
+    const worldYawRad = THREE.MathUtils.degToRad(combinedRightDeg * dirSign);
+    return Math.atan2(Math.sin(worldYawRad), Math.cos(worldYawRad));
   }
 
   /**
    * Maps any 360-degree angle (-PI to +PI) to authentic cricket shots & fielding zones,
    * automatically mirroring Off-Side and Leg-Side for Left-Handed batsmen.
    */
-  classifyShot(yawRad, isLofted, speedDeg, isShortBall = false, isFullBall = false) {
+  classifyShot(yawRad, isLofted, speedDeg, isShortBall = false, isFullBall = false, isSpinOrSlow = false) {
     if (speedDeg < 165) return SHOT_TYPES.DEFENCE;
 
     // For a Right-Handed batter, +yawRad (right) is Off-Side, -yawRad (left) is Leg-Side.
@@ -334,48 +550,74 @@ export class BattingSystem {
     const tacticalDeg = THREE.MathUtils.radToDeg(yawRad) * handSign; // + = Off Side, - = Leg Side
     const absDeg = Math.abs(tacticalDeg);
 
-    // 1. Straight Zone (~0° to 26°)
-    if (absDeg <= 26) {
-      return isLofted ? SHOT_TYPES.LOFTED_DRIVE : SHOT_TYPES.STRAIGHT_DRIVE;
-    }
-
-    // 2. Forward Off / Leg Drives & Flicks (~26° to 62°)
-    if (absDeg <= 62) {
-      if (tacticalDeg > 0) {
-        return SHOT_TYPES.COVER_DRIVE;
+    // 1. Straight Zone (~0° to 24°)
+    if (absDeg <= 24) {
+      if (isLofted) {
+        return tacticalDeg < -10 && isFullBall ? SHOT_TYPES.HELICOPTER_LOFT : SHOT_TYPES.LOFTED_DRIVE;
       }
-      return absDeg <= 44 ? SHOT_TYPES.ON_DRIVE : SHOT_TYPES.LEG_FLICK;
+      return SHOT_TYPES.STRAIGHT_DRIVE;
     }
 
-    // 3. Square Off / Leg Cuts, Pulls & Sweeps (~62° to 120°)
+    // 2. Forward Off / Leg Drives, Inside-Out Lofts, On-Whip & Knee-Drop Slog-Sweeps (~24° to 64°)
+    if (absDeg <= 64) {
+      if (tacticalDeg > 0) {
+        return isLofted ? SHOT_TYPES.INSIDE_OUT_LOFT : SHOT_TYPES.COVER_DRIVE;
+      }
+      if (isLofted) {
+        return absDeg >= 36 ? SHOT_TYPES.SLOG_SWEEP : (isFullBall ? SHOT_TYPES.HELICOPTER_LOFT : SHOT_TYPES.LOFTED_DRIVE);
+      }
+      if (isShortBall && absDeg >= 34) {
+        return SHOT_TYPES.PULL_SHOT;
+      }
+      return absDeg <= 48 ? SHOT_TYPES.ON_DRIVE : SHOT_TYPES.LEG_FLICK;
+    }
+
+    // 3. Square Off / Leg Cuts, Lofted Cuts, Pulls, Hooks & Sweeps (~64° to 120°)
     if (absDeg <= 120) {
       if (tacticalDeg > 0) {
+        if (isLofted) {
+          return isShortBall ? SHOT_TYPES.UPPER_CUT : SHOT_TYPES.LOFTED_CUT;
+        }
         return SHOT_TYPES.SQUARE_CUT;
       }
-      // Leg side 62°..120°: Sweep on fuller balls in ground mode, Pull on short/good or lofted
-      if (isFullBall && !isLofted && absDeg >= 75) {
+      if (isLofted) {
+        return isShortBall || absDeg >= 82 ? SHOT_TYPES.HOOK_SHOT : SHOT_TYPES.SLOG_SWEEP;
+      }
+      if (isShortBall) {
+        return SHOT_TYPES.PULL_SHOT;
+      }
+      if (isSpinOrSlow) {
         return SHOT_TYPES.SWEEP_SHOT;
       }
-      return isShortBall || isLofted ? SHOT_TYPES.PULL_SHOT : SHOT_TYPES.SWEEP_SHOT;
+      return SHOT_TYPES.LEG_FLICK;
     }
 
-    // 4. Behind the Wicket (~120° to 180°): Late Cut, Reverse Sweep, Fine Glance, Scoop, Ramp
+    // 4. Behind the Wicket (~120° to 154°): Late Cut, Upper Cut, Reverse Sweep, Paddle Flick, Helicopter Whip, Hook
     if (absDeg <= 154) {
       if (tacticalDeg > 0) {
-        return isLofted ? SHOT_TYPES.REVERSE_SWEEP : SHOT_TYPES.LATE_CUT;
+        if (isLofted) {
+          return isSpinOrSlow ? SHOT_TYPES.REVERSE_SWEEP : SHOT_TYPES.UPPER_CUT;
+        }
+        return SHOT_TYPES.LATE_CUT;
       }
-      return SHOT_TYPES.FINE_GLANCE;
+      if (isLofted) {
+        return isShortBall ? SHOT_TYPES.HOOK_SHOT : SHOT_TYPES.HELICOPTER_LOFT;
+      }
+      return isShortBall ? SHOT_TYPES.PULL_SHOT : SHOT_TYPES.PADDLE_SWEEP;
     }
 
-    // 154° to 180° directly behind the keeper/slips
+    // 5. 154° to 180° directly behind the keeper/slips
+    if (!isLofted) {
+      return tacticalDeg >= 0 ? SHOT_TYPES.LATE_CUT : SHOT_TYPES.FINE_GLANCE;
+    }
     return tacticalDeg >= 0 ? SHOT_TYPES.RAMP_SHOT : SHOT_TYPES.SCOOP_SHOT;
   }
 
   /**
    * Processes 60-100Hz phone sensor packets with:
-   * - Proper q_current * inverse(q_stance) calibration
-   * - 360° swing velocity projection
-   * - High-pass accelerometer step detection during the Run Window (Requirement C.1 & C.6)
+   * - Gimbal-free stance calibration (q_stance^-1 * q_current + direct wrapped Euler deltas)
+   * - Consistent Left/Right mapping in both TV Broadcast and Batsman camera views
+   * - Non-destructive crease offset so STEP L / STEP R buttons are never overwritten
    */
   ingestSensorPacket(data, dt = 0.014, hooks = {}) {
     this.rawAlpha = Number(data.alpha) || 0;
@@ -384,9 +626,17 @@ export class BattingSystem {
 
     this.buildDeviceQuaternion(this.rawAlpha, this.rawBeta, this.rawGamma);
 
-    if (!this.hasAutoStance && !this.isCalibrating) {
+    const isDefaultSyntheticPacket =
+      this.rawAlpha === 0 && this.rawBeta === 75 && this.rawGamma === 0;
+    if ((!this.hasAutoStance || (!this.hasHardwareStance && !isDefaultSyntheticPacket)) && !this.isCalibrating) {
       this.qStance.copy(_qCurrent);
+      this.stanceAlpha = this.rawAlpha;
+      this.stanceBeta = this.rawBeta;
+      this.stanceGamma = this.rawGamma;
       this.hasAutoStance = true;
+      if (!isDefaultSyntheticPacket) {
+        this.hasHardwareStance = true;
+      }
       this.isCalibrated = true;
     }
 
@@ -415,7 +665,14 @@ export class BattingSystem {
         this.calibProgress = Math.min(1.0, this.calibProgress + dt / 3.0);
         if (this.calibProgress >= 1.0) {
           this.qStance.copy(_qCurrent);
+          this.stanceAlpha = this.rawAlpha;
+          this.stanceBeta = this.rawBeta;
+          this.stanceGamma = this.rawGamma;
+          this.manualCreaseOffsetX = 0;
+          this.sensorCreaseOffsetX = 0;
+          this.creaseX = 0;
           this.hasAutoStance = true;
+          this.hasHardwareStance = true;
           this.isCalibrating = false;
           this.isCalibrated = true;
           if (hooks.onCalibrationComplete) hooks.onCalibrationComplete();
@@ -426,22 +683,27 @@ export class BattingSystem {
       return;
     }
 
-    // Apply calibration properly: q_rel = q_current * inverse(q_stance)
+    // Apply calibration in local stance frame: q_rel = inverse(q_stance) * q_current
     _qStanceInv.copy(this.qStance).invert();
-    _qRel.copy(_qCurrent).multiply(_qStanceInv).normalize();
+    _qRel.copy(_qStanceInv).multiply(_qCurrent).normalize();
+
+    // True 3D World-space angular velocity (device axes: X=betaRate, Y=gammaRate, Z=alphaRate)
+    _omegaDevice.set(this.filteredOmega.x, this.filteredOmega.z, this.filteredOmega.y);
+    _omegaWorld.copy(_omegaDevice).applyQuaternion(_qCurrent);
+    this.worldGyroRightRate = -_omegaWorld.z;
 
     const predictionSec = 0.022;
     const omegaRadMag = THREE.MathUtils.degToRad(omegaMag);
     if (omegaRadMag > 0.05) {
       _omegaAxis
         .set(
-          THREE.MathUtils.degToRad(this.filteredOmega.x),
-          THREE.MathUtils.degToRad(this.filteredOmega.y),
-          THREE.MathUtils.degToRad(-this.filteredOmega.z)
+          THREE.MathUtils.degToRad(_omegaDevice.x),
+          THREE.MathUtils.degToRad(_omegaDevice.y),
+          THREE.MathUtils.degToRad(_omegaDevice.z)
         )
         .normalize();
       _qPredDelta.setFromAxisAngle(_omegaAxis, omegaRadMag * predictionSec);
-      _qPredicted.copy(_qPredDelta).multiply(_qRel).normalize();
+      _qPredicted.copy(_qRel).multiply(_qPredDelta).normalize();
     } else {
       _qPredicted.copy(_qRel);
     }
@@ -449,39 +711,80 @@ export class BattingSystem {
     this.currentQuat.slerp(_qPredicted, 0.85);
     _relEuler.setFromQuaternion(this.currentQuat, 'YXZ');
 
-    this.calPitchDeg = THREE.MathUtils.radToDeg(_relEuler.x);
-    this.calYawDeg = THREE.MathUtils.radToDeg(_relEuler.y);
-    this.calRollDeg = THREE.MathUtils.radToDeg(_relEuler.z);
+    // Compute 3D World-Up Horizontal Twist Angle from calibrated stance: q_worldDelta = q_current * inverse(q_stance)
+    _qWorldDelta.copy(_qCurrent).multiply(_qStanceInv).normalize();
+    const rawTwistZ = 2 * Math.atan2(_qWorldDelta.z, _qWorldDelta.w);
+    const twistZRad = Math.atan2(Math.sin(rawTwistZ), Math.cos(rawTwistZ));
+    let worldPoseRightDeg = THREE.MathUtils.clamp(-THREE.MathUtils.radToDeg(twistZRad), -170, 170);
+
+    // Wrapped Euler deltas for pitch telemetry & backlift display
+    let dAlpha = ((((this.rawAlpha - this.stanceAlpha) + 180) % 360) + 360) % 360 - 180;
+    const dBeta = THREE.MathUtils.clamp(this.rawBeta - this.stanceBeta, -90, 90);
+    let dGamma = ((((this.rawGamma - this.stanceGamma) + 180) % 360) + 360) % 360 - 180;
+
+    // Gentle drift cleanup ONLY when batter is holding steady near their forward 0° stance (< 16° off-center)
+    // Never erases a deliberate Cover / Leg-side bat aim!
+    if (!this.isSwinging && !isDefaultSyntheticPacket && omegaMag < 24 && Math.abs(worldPoseRightDeg) < 16) {
+      if (this.needsSoftStanceRecenter && !hooks.canSwing) {
+        this.steadyStanceTimer = (this.steadyStanceTimer || 0) + dt;
+        if (this.steadyStanceTimer >= 0.35) {
+          this.stanceAlpha = this.rawAlpha;
+          this.stanceBeta = this.rawBeta;
+          this.stanceGamma = this.rawGamma;
+          this.qStance.copy(_qCurrent);
+          this.needsSoftStanceRecenter = false;
+          this.steadyStanceTimer = 0;
+          worldPoseRightDeg = 0;
+          dAlpha = 0;
+          dGamma = 0;
+        }
+      } else if (Math.abs(worldPoseRightDeg) < 7) {
+        this.qStance.slerp(_qCurrent, Math.min(1, dt * 0.35));
+      }
+    } else {
+      this.steadyStanceTimer = 0;
+    }
+
+    this.calPitchDeg = dBeta;
+    this.calYawDeg = -worldPoseRightDeg;
+    this.calRollDeg = dGamma;
+    this.phoneRightDeg = worldPoseRightDeg;
 
     const nowSec = performance.now() * 0.001;
 
-    // ==================== PART C: REAL RUNNING STEP DETECTION ====================
-    // Requirement C.6: Ignore batting swing motion while runWindowActive is true,
-    // and ignore step detection while a bat swing or bowling swing is in progress.
+    // ==================== PART C: RUNNING WINDOW (BUTTON-DRIVEN ONLY) ====================
     if (this.runWindowActive) {
-      const accelMag = Math.hypot(ax, ay, az);
-      this.gravityEst = THREE.MathUtils.lerp(this.gravityEst, accelMag, 0.14);
-      this.highPassAccel = accelMag - this.gravityEst;
-
-      // Also support explicit step packet or accelerometer peak > 1.55 m/s^2
-      if (data.stepPeak || (this.highPassAccel > 1.55 && !this.stepAboveThreshold)) {
-        this.stepAboveThreshold = true;
-        if (this.registerStep(nowSec)) {
-          if (hooks.onRunStep) hooks.onRunStep(this.cadenceSps, this.accumulatedStepsThisRun);
-          if (hooks.onStepDetected) hooks.onStepDetected(0.16, this.cadenceSps);
-        }
-      } else if (this.highPassAccel < 0.65) {
-        this.stepAboveThreshold = false;
-      }
       return;
     }
 
-    // Map calibrated orientation to 3D bat visual pose & crease footwork
+    // Map calibrated orientation to 3D bat visual pose & Smart Auto-Footwork
     const dirSign = this.screenRightSign || -1;
-    this.backliftAngle = THREE.MathUtils.clamp(_relEuler.x + 0.22, -0.95, 1.45);
-    this.creaseZOffset = THREE.MathUtils.clamp(-_relEuler.x * 0.36, -0.42, 0.52);
-    this.footwork = this.creaseZOffset > 0.16 ? 'front' : this.creaseZOffset < -0.14 ? 'back' : 'neutral';
-    this.creaseX = THREE.MathUtils.clamp((-_relEuler.y * 0.38 - _relEuler.z * 0.28) * dirSign, -0.45, 0.45);
+    const pitchRad = THREE.MathUtils.degToRad(this.calPitchDeg);
+    this.backliftAngle = THREE.MathUtils.clamp(pitchRad + 0.22, -0.95, 1.45);
+
+    // Live Bat Aim Preview in Stance: smoothly point 3D bat & radar cone wherever the phone is turned as a bat!
+    const hasPendingEarlySwing = Boolean(this.manualSwingArmed && !this.shotExecutedThisBall);
+    if (
+      !this.isSwinging &&
+      !hasPendingEarlySwing &&
+      !this.wheelAimLockedThisBall &&
+      this.hasHardwareStance &&
+      nowSec > (this.manualSwingAimLockUntil || 0)
+    ) {
+      const stanceAimDeg = Math.abs(this.phoneRightDeg) <= 6 ? 0 : this.phoneRightDeg;
+      const targetWorldYaw = THREE.MathUtils.degToRad(THREE.MathUtils.clamp(stanceAimDeg, -165, 165) * dirSign);
+      this.swingPlaneYaw = THREE.MathUtils.lerp(this.swingPlaneYaw, Math.atan2(Math.sin(targetWorldYaw), Math.cos(targetWorldYaw)), Math.min(1, dt * 15));
+      this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+      this.custom360AimDeg = Math.round(this.swingDirectionDeg * dirSign);
+    }
+
+    if (!this.keys.up && !this.keys.down) {
+      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, null);
+      this.creaseZOffset = this.stepOutCharge ? 0.42 : this.footwork === 'front' ? 0.16 : -0.16;
+    }
+
+    // Phone tilt NEVER drifts batsman left/right creaseX — autoTrackBallPosition aligns batter to the ball!
+    this.sensorCreaseOffsetX = 0;
 
     // Subtle pre-delivery bat-tap ("knocking the crease") when batter lightly taps phone downward in stance
     if (
@@ -497,23 +800,45 @@ export class BattingSystem {
     }
 
     // ==================== PART B: INSTANT 360-DEGREE SWING DETECTION ====================
-    if (omegaMag > 105 && !this.isSwinging && nowSec - this.lastSwingTime > 0.16) {
+    // Filter out slow/moderate upward backlift preparation so cocking the wrists back doesn't misfire the downswing!
+    const lateralOmega = Math.hypot(this.filteredOmega.y, this.filteredOmega.z);
+    const isPureBackliftPrep =
+      this.filteredOmega.x > 42 &&
+      lateralOmega < this.filteredOmega.x * 0.82 &&
+      omegaMag < 215;
+
+    const canTriggerGyroSwing = hooks.canSwing !== false;
+    if (
+      canTriggerGyroSwing &&
+      !isPureBackliftPrep &&
+      omegaMag > 138 &&
+      !this.isSwinging &&
+      nowSec - this.lastSwingTime > 0.18
+    ) {
       this.isSwinging = true;
       this.swingDispatched = false;
+      this.wheelAimLockedThisBall = false; // Physical mobile swing always takes over from wheel!
       this.swingStartTime = nowSec;
       this.swingStartPitchDeg = this.calPitchDeg;
-      this.peakSwingSpeedDeg = Math.max(omegaMag, 340);
+      // Track TRUE measured omegaMag as peak (never artificially clamp to 340 before peak check!)
+      this.peakSwingSpeedDeg = omegaMag;
       this.swingPeakTime = nowSec;
+      this.manualSwingAimLockUntil = nowSec + 1.45;
+      this.swingPlaneYaw = this.compute360SwingDirection(true);
+      this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+      this.custom360AimDeg = Math.round(this.swingDirectionDeg * dirSign);
     }
 
     if (this.isSwinging) {
       if (omegaMag >= this.peakSwingSpeedDeg * 0.85) {
         this.peakSwingSpeedDeg = Math.max(this.peakSwingSpeedDeg, omegaMag);
         this.swingPeakTime = nowSec;
+        this.manualSwingAimLockUntil = nowSec + 1.45;
 
-        // Compute full 360-degree horizontal swing travel angle (-PI to +PI)
-        this.swingPlaneYaw = this.compute360SwingDirection();
+        // Compute full 360-degree horizontal swing travel angle (-PI to +PI) from 3D quaternion + sweep velocity
+        this.swingPlaneYaw = this.compute360SwingDirection(true);
         this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+        this.custom360AimDeg = Math.round(this.swingDirectionDeg * dirSign);
 
         // Vertical swing plane: flat vs rising (low-to-high)
         const pitchRiseDeg = (this.calPitchDeg - this.swingStartPitchDeg) + Math.abs(this.filteredOmega.x) * 0.08;
@@ -524,15 +849,18 @@ export class BattingSystem {
         );
         this.isRisingSwing = this.shotMode === 'fly' || this.swingPlanePitchDeg > 10 || Math.abs(this.filteredOmega.x) > 120;
 
+        const effectiveBatSpeed = Math.max(this.peakSwingSpeedDeg, 335);
         this.activeShotType = this.classifyShot(
           this.swingPlaneYaw,
-          this.shotMode === 'fly' && this.isRisingSwing,
-          this.peakSwingSpeedDeg
+          this.shotMode === 'fly',
+          effectiveBatSpeed
         );
 
-        // Fire instant swing callback as soon as swing reaches active threshold (zero arm-stop lag on TV/Phone!)
-        if (!this.swingDispatched && omegaMag > 135 && hooks.onSwingPeak) {
+        // Capture true peak downswing arc (~42ms window or immediate on high-speed snap >= 310°/s)
+        const elapsedSwingSec = nowSec - this.swingStartTime;
+        if (!this.swingDispatched && (elapsedSwingSec >= 0.042 || omegaMag >= 310) && hooks.onSwingPeak) {
           this.swingDispatched = true;
+          this.peakSwingSpeedDeg = effectiveBatSpeed;
           hooks.onSwingPeak({
             speedDeg: this.peakSwingSpeedDeg,
             yaw: this.swingPlaneYaw,
@@ -548,6 +876,8 @@ export class BattingSystem {
       if (omegaMag < this.peakSwingSpeedDeg * 0.55 || nowSec - this.swingStartTime > 0.24) {
         this.isSwinging = false;
         this.lastSwingTime = nowSec;
+        this.manualSwingAimLockUntil = nowSec + 1.45;
+        this.peakSwingSpeedDeg = Math.max(this.peakSwingSpeedDeg, 335);
         if (!this.swingDispatched && hooks.onSwingPeak) {
           this.swingDispatched = true;
           hooks.onSwingPeak({
@@ -580,8 +910,11 @@ export class BattingSystem {
     if (this.runWindowActive) return; // Ignore swings while running between wickets!
 
     const nowSec = performance.now() * 0.001;
+    const dirSign = this.screenRightSign || -1;
     this.lastSwingTime = nowSec;
     this.swingPeakTime = nowSec;
+    this.manualSwingArmed = true;
+    this.manualSwingAimLockUntil = nowSec + 0.95;
     this.peakSwingSpeedDeg = isDefensive ? 150 : speedDeg;
 
     if (typeof shotAngleDeg === 'number') {
@@ -595,6 +928,7 @@ export class BattingSystem {
       this.swingPlaneYaw = THREE.MathUtils.clamp(dirX * 1.15, -Math.PI, Math.PI);
     }
     this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+    this.custom360AimDeg = Math.round(this.swingDirectionDeg * dirSign);
 
     if (planePitchDeg !== null) {
       this.swingPlanePitchDeg = planePitchDeg;
@@ -606,10 +940,30 @@ export class BattingSystem {
       ? SHOT_TYPES.DEFENCE
       : this.classifyShot(
           this.swingPlaneYaw,
-          this.shotMode === 'fly' && this.isRisingSwing,
+          this.shotMode === 'fly',
           this.peakSwingSpeedDeg
         );
     this.backliftAngle = -0.68;
+  }
+
+  /**
+   * Executes a 360-degree swipe/drag shot from the Real Cricket on-screen action buttons
+   */
+  triggerTouchSwipeShot({ angleRad = 0, power = 1.0, shotMode = 'ground' } = {}) {
+    if (this.runWindowActive) return;
+    this.setShotMode(shotMode, true);
+    const dirSign = this.screenRightSign || -1;
+    const worldAngleRad = angleRad * dirSign;
+    const speedDeg = Math.round(
+      THREE.MathUtils.clamp((shotMode === 'fly' ? 495 : 445) * power, 280, 560)
+    );
+    const planePitchDeg = shotMode === 'fly' ? 32 : 4;
+    this.triggerManualSwing({
+      speedDeg,
+      angleRad: worldAngleRad,
+      planePitchDeg,
+      isDefensive: false
+    });
   }
 
   /**
@@ -626,84 +980,174 @@ export class BattingSystem {
     const distZ = Math.abs(ball.pos.z - batZ);
 
     const timeSinceSwing = nowSec - this.swingPeakTime;
-    const swungWithinWindow = Math.abs(timeSinceSwing) < 0.56 || this.isSwinging;
+    const swungWithinWindow =
+      this.manualSwingArmed ||
+      (this.swingPeakTime > 0 && Math.abs(timeSinceSwing) < 0.95) ||
+      this.isSwinging;
 
     if (!swungWithinWindow) return null;
-    // Wait until the ball enters the realistic 3D hitting zone in front of the bat before evaluating contact
-    if (ball.pos.z < batZ - 1.35) return null;
+    // Wait until the ball enters the 3D bat-contact zone (batZ - 0.88m) so pre-timed button/phone swings
+    // connect right at the bat face without premature distZ penalties!
+    if (ball.pos.z < batZ - 0.88) return null;
 
     this.shotExecutedThisBall = true;
+    this.manualSwingArmed = false;
 
-    // 1. Classify Ball Length
+    // 1. Classify Ball Length & Bowler Pace/Spin Context
     const isFullToss = !ball.bouncedOnPitch;
     const bounceZ = ball.pitchBouncePos.z;
     const isYorker = ball.bouncedOnPitch && bounceZ >= 7.5;
-    const isFullBall = isFullToss || (ball.bouncedOnPitch && bounceZ >= 5.2);
+    const isFullBall = isFullToss || (ball.bouncedOnPitch && bounceZ >= 5.0 && bounceZ < 7.5);
     const isShortBall = ball.bouncedOnPitch && bounceZ < 3.2;
-    const isGoodLength = ball.bouncedOnPitch && bounceZ >= 3.2 && bounceZ < 7.5;
+    const isGoodLength = ball.bouncedOnPitch && bounceZ >= 3.2 && bounceZ < 5.0;
+    const isSpinOrSlow = ball.bowlerType === 'spin' || (Number(ball.speedKmh) || 130) < 114;
 
     const diffProfile = getDifficultyProfile(difficulty);
     const assist = diffProfile ? diffProfile.battingAssist : 'light';
+    const handSign = this.handedness === 'left' ? -1 : 1; // In world X & yaw: +handSign = Off side, -handSign = Leg side
 
-    // Difficulty-Scaled Footwork Reach Assist:
-    // Easy ('full'): 68% auto-reach, Medium ('light'): 38% auto-reach, Hard ('off'): 14% micro-step
-    const reachMaxBallX = assist === 'full' ? 0.68 : assist === 'light' ? 0.48 : 0.28;
-    const reachLerp = assist === 'full' ? 0.68 : assist === 'light' ? 0.38 : 0.14;
-    if (Math.abs(ball.pos.x) <= reachMaxBallX && !this.keys.left && !this.keys.right) {
-      this.creaseX = THREE.MathUtils.lerp(
-        this.creaseX,
-        THREE.MathUtils.clamp(ball.pos.x, -0.44, 0.44),
-        reachLerp
-      );
+    // Bug #1 Fix: Check true lateral distance from batsman's creaseX stance BEFORE applying batting assist magnet!
+    // If a ball is bowled Wide (outside Off-Side Wide Guideline 0.55m or Leg-Side Wide -0.34m) and the batter hasn't
+    // moved across to cover it (|ball.pos.x - this.creaseX| > 0.36m), OR if any ball is > 0.46m away from the batter,
+    // swinging at it produces an authentic Play & Miss so the ball goes to the keeper and is called WIDE!
+    const signedBallX = ball.pos.x * handSign;
+    const signedCreaseX = this.creaseX * handSign;
+    const distFromBatterX = Math.abs(ball.pos.x - this.creaseX);
+    const isWideDeliveryLine =
+      signedBallX > Math.max(0.55, signedCreaseX + 0.40) ||
+      signedBallX < Math.min(-0.34, signedCreaseX - 0.24);
+
+    if (distFromBatterX > 0.46 || (isWideDeliveryLine && distFromBatterX > 0.36)) {
+      if (!this.keys.up && !this.keys.down) {
+        this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, ball);
+        const isLoftSpinCharge = this.footwork === 'front' && this.shotMode === 'fly' && isSpinOrSlow;
+        this.creaseZOffset = this.stepOutCharge || isLoftSpinCharge ? 0.42 : this.footwork === 'front' ? 0.18 : -0.18;
+      }
+      this.lastLaunchAngleDeg = 0;
+      this.lastContact = {
+        ...this.lastContact,
+        timingLabelEn: isWideDeliveryLine ? 'WIDE · OUT OF REACH!' : 'PLAY & MISS (WIDE OF BAT)',
+        timingLabelHi: isWideDeliveryLine ? 'वाइड · बल्ले की पहुँच से बाहर!' : 'बल्ले से चूकी गेंद!',
+        timingOffsetMs: 0,
+        timingQuality: 0,
+        batSpeedDeg: Math.round(this.peakSwingSpeedDeg),
+        exitSpeedKmh: 0,
+        launchAngleDeg: 0,
+        shotDirectionDeg: this.swingDirectionDeg,
+        shotMode: this.shotMode,
+        contactType: 'Play & Miss (Out of Reach)',
+        shotKey: this.activeShotType.shotKey,
+        shotAnim: this.activeShotType.anim,
+        shotNameEn: this.activeShotType.nameEn,
+        shotNameHi: this.activeShotType.nameHi,
+        didHit: false,
+        outcome: 'miss'
+      };
+      if (hooks.onSwingMiss) hooks.onSwingMiss(this.lastContact);
+      return this.lastContact;
     }
 
-    // Re-classify 360° shot with ball length context
+    // Bat reach assist within legal playable corridor (<= 0.52m) without moving batsman's creaseX position:
+    const reachMaxBallX = assist === 'full' ? 0.52 : assist === 'light' ? 0.48 : 0.42;
+    const reachLerp = assist === 'full' ? 0.82 : assist === 'light' ? 0.70 : 0.55;
+    const effectiveReachX =
+      Math.abs(ball.pos.x) <= reachMaxBallX
+        ? THREE.MathUtils.lerp(this.creaseX, THREE.MathUtils.clamp(ball.pos.x, -0.46, 0.46), reachLerp)
+        : this.creaseX;
+
+    // Apply Shot Assist (Difficulty-scaled gap snap: 10.5° on Easy, 7.5° on Medium, 4.5° on Hard)
+    const maxGapSnapDeg = assist === 'full' ? 10.5 : assist === 'light' ? 7.5 : 4.5;
+    if (this.shotAssistGapSnap && maxGapSnapDeg > 0 && Array.isArray(hooks.fielders) && this.activeShotType.id !== 'defence') {
+      this.swingPlaneYaw = this.computeGapSnappedYaw(this.swingPlaneYaw, hooks.fielders, maxGapSnapDeg);
+    }
+
+    // Behind-the-keeper strokes (~152°..180°): allow Scoop & Ramp cleanly on loft + non-short balls,
+    // and redirect grounded >152° into behind-square Fine Glance / Late Cut without artificial mistime penalty on full balls.
+    const rawAbsDeg = Math.abs(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
+    let invalidBehindKeeperAttempt = false;
+    if (rawAbsDeg > 152 && this.activeShotType.id !== 'defence') {
+      const canPlayScoopOrRamp = this.shotMode === 'fly' && !isShortBall;
+      if (!canPlayScoopOrRamp) {
+        invalidBehindKeeperAttempt = isShortBall;
+        const signYaw = this.swingPlaneYaw >= 0 ? 1 : -1;
+        this.swingPlaneYaw = signYaw * THREE.MathUtils.degToRad(138);
+      }
+    }
+
+    // Re-classify 360° shot with ball length & spin/slow context
     if (this.activeShotType.id !== 'defence') {
       this.activeShotType = this.classifyShot(
         this.swingPlaneYaw,
-        this.shotMode === 'fly' && this.isRisingSwing,
+        this.shotMode === 'fly',
         this.peakSwingSpeedDeg,
         isShortBall,
-        isFullBall
+        isFullBall || isYorker,
+        isSpinOrSlow
       );
     }
 
     const absAngleDeg = Math.abs(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
     const isBehindWicketShot = absAngleDeg > 118;
-    const isWideSquareShot = absAngleDeg > 82 && absAngleDeg <= 118;
 
-    // 2. Skill-Based Temporal + 3D Spatial Timing Window Calculation (with ON FIRE Surge boost!)
+    // Solution 1 + Solution 2 Combo: Deterministic Smart Auto-Footwork on ball contact (zero RNG penalty!)
+    // Normal front-foot stride (0.18m) keeps back foot grounded inside the Popping Crease;
+    // holding W/Up-Arrow, toggling Step-Out Charge, or charging down the track in LOFT mode against spin advances out of the crease (0.42m) -> Stumping risk if missed!
+    if (!this.keys.up && !this.keys.down) {
+      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, ball);
+      const isLoftSpinCharge = this.footwork === 'front' && this.shotMode === 'fly' && isSpinOrSlow && absAngleDeg <= 55;
+      this.creaseZOffset = this.stepOutCharge || isLoftSpinCharge ? 0.42 : this.footwork === 'front' ? 0.18 : -0.18;
+    }
+
+    // 2. Skill-Based Temporal Timing Window Calculation (Consistent across Touch Button & Phone Swing, no duplicate loft penalty!)
     const onFireActive = this.isOnFire();
-    const surgeSweetBoost = onFireActive ? 1.22 : 1.0;
-    const surgePowerBoost = onFireActive ? 1.12 : 1.0;
+    const surgeSweetBoost = onFireActive
+      ? (assist === 'full' ? 1.14 : assist === 'light' ? 1.08 : 1.04)
+      : 1.0;
+    const chargeBoost = this.stepOutCharge || this.creaseZOffset >= 0.24 ? 1.06 : 1.0;
+    const surgePowerBoost = (onFireActive
+      ? (assist === 'full' ? 1.08 : assist === 'light' ? 1.05 : 1.03)
+      : 1.0) * chargeBoost;
 
-    const baseWin = (diffProfile && diffProfile.timingWindowMs) || TIMING_WINDOWS_MS[difficulty] || TIMING_WINDOWS_MS.pro;
-    const angleDifficultyScale = (isBehindWicketShot ? 0.84 : isWideSquareShot ? 0.93 : 1.0) * surgeSweetBoost;
+    const baseWin = (diffProfile && diffProfile.timingWindowMs) || TIMING_WINDOWS_MS[difficulty] || TIMING_WINDOWS_MS.medium;
+    const angleDifficultyScale = (isBehindWicketShot ? 0.92 : 1.0) * surgeSweetBoost;
     const win = {
-      perfect: baseWin.perfect * angleDifficultyScale,
-      good: baseWin.good * angleDifficultyScale,
-      mistime: baseWin.mistime * Math.min(1.15, surgeSweetBoost)
+      perfect: Math.round(baseWin.perfect * angleDifficultyScale),
+      good: Math.round(baseWin.good * angleDifficultyScale),
+      mistime: Math.round(baseWin.mistime * Math.min(1.12, surgeSweetBoost))
     };
 
-    const timingGapSec = this.swingPeakTime - (ball.idealContactTime || nowSec);
+    // Ideal swing/button press is slightly before the ball reaches the batter's true batZ (adjusted for back-foot/charge creaseZOffset!)
+    // Compensate for live Wi-Fi controller round-trip / one-way latency stored in window.networkLatencyMs
+    const networkLatencyMs = (typeof window !== 'undefined' && window.networkLatencyMs) ? window.networkLatencyMs : 15;
+    const latencyOffsetSec = Math.min(0.08, Math.max(0, networkLatencyMs - 20) * 0.00125);
+    const batZShift = -this.creaseZOffset; // +0.18m on back-foot short ball, -0.42m on step-out charge
+    const incomingVz = Math.max(10, Math.abs(ball.vel?.z || 28));
+    const batPlaneTimeOffset = batZShift / incomingVz;
+    const idealTapTime = (ball.idealContactTime || nowSec) + batPlaneTimeOffset - (0.085 - latencyOffsetSec);
+    const rawTimingGapSec = this.swingPeakTime - idealTapTime;
+    // If the user pressed LOFT/STROKE early during ball flight or run-up (rawTimingGapSec < 0),
+    // cap the early timing penalty to a playable window so pre-timed button taps still connect cleanly!
+    const maxEarlyPenaltySec = (win.good + 28) * 0.001;
+    const timingGapSec =
+      rawTimingGapSec < -maxEarlyPenaltySec
+        ? - THREE.MathUtils.lerp(win.good * 0.85 * 0.001, maxEarlyPenaltySec, 0.5)
+        : rawTimingGapSec;
     const clockGapMs = Math.abs(Math.round(timingGapSec * 1000));
-    const ballSpeedZ = Math.max(15, ball.vel.z);
-    const spatialGapMs = Math.round((distZ / ballSpeedZ) * 1000);
-    // Blend clock timing (75%) and 3D spatial distance (25%) — no automatic free-pass for early swings!
-    const absGapMs = Math.round(clockGapMs * 0.75 + spatialGapMs * 0.25);
+    const absGapMs = clockGapMs;
     const timingGapMs = timingGapSec < 0 ? -absGapMs : absGapMs;
 
-    const isPerfectTiming = absGapMs <= win.perfect && distZ <= 0.85;
-    const isGoodTiming = !isPerfectTiming && absGapMs <= win.good && distZ <= 1.25;
-    const isCompleteMiss = !isPerfectTiming && !isGoodTiming && (absGapMs > win.mistime || distZ > 1.55);
+    const isPerfectTiming = absGapMs <= win.perfect && distZ <= 1.65;
+    const isGoodTiming = !isPerfectTiming && absGapMs <= win.good && distZ <= 1.88;
+    const isCompleteMiss = !isPerfectTiming && !isGoodTiming && (absGapMs > win.mistime + 90 || distZ > 2.05);
 
-    // 3. Contact Point & Sweet Spot vs Bat Edge (scaled by difficulty battingAssist + ON FIRE Surge)
-    const assistTolerance = (assist === 'full' ? 0.86 : assist === 'light' ? 0.62 : 0.46) * surgeSweetBoost;
-    const batSweetSpotX = this.creaseX + Math.sin(this.swingPlaneYaw) * 0.20;
-    const lateralError = Math.abs(ball.pos.x - batSweetSpotX);
+    // 3. Contact Point & Sweet Spot vs Bat Edge
+    const assistTolerance = (assist === 'full' ? 0.94 : assist === 'light' ? 0.80 : 0.64) * surgeSweetBoost;
+    const batSweetSpotX = effectiveReachX;
+    const lateralError = Math.abs(ball.pos.x - batSweetSpotX) * 0.42;
 
     const unorthodoxLengthPenalty =
-      isBehindWicketShot && !isFullBall && !isShortBall && !isPerfectTiming && assist !== 'full';
+      invalidBehindKeeperAttempt ||
+      (isBehindWicketShot && isShortBall && !isPerfectTiming && !isGoodTiming && assist !== 'full');
 
     if (isCompleteMiss || lateralError > assistTolerance) {
       this.lastLaunchAngleDeg = 0;
@@ -738,122 +1182,221 @@ export class BattingSystem {
     let contactType = 'Sweet Spot';
 
     if (isPerfectTiming) {
-      timingQuality = lateralError > 0.34 ? 0.90 : 1.0;
+      timingQuality = lateralError > 0.34 ? 0.94 : 1.0;
       timingLabelEn = onFireActive ? '🔥 ON FIRE · PERFECT!' : 'PERFECT TIMING';
       timingLabelHi = onFireActive ? '🔥 ऑन फायर · परफेक्ट!' : 'सटीक टाइमिंग!';
       contactType = lateralError > 0.34 ? 'Outer Sweet Spot' : 'Sweet Spot';
     } else if (isGoodTiming) {
-      timingQuality = lateralError > 0.32 ? 0.72 : 0.82;
+      timingQuality = lateralError > 0.32 ? 0.82 : 0.89;
       timingLabelEn = timingGapMs < 0 ? 'GOOD (EARLY)' : 'GOOD (LATE)';
       timingLabelHi = timingGapMs < 0 ? 'अच्छा (थोड़ा जल्दी)' : 'अच्छा (थोड़ा देर)';
-      contactType = lateralError > 0.30 ? 'Outer Sweet Spot' : 'Sweet Spot';
+      contactType = lateralError > 0.32 ? 'Outer Sweet Spot' : 'Sweet Spot';
     } else {
-      timingQuality = 0.50;
+      timingQuality = 0.56;
       timingLabelEn = timingGapMs < 0 ? 'MISTIMED (EARLY)' : 'MISTIMED (LATE)';
       timingLabelHi = timingGapMs < 0 ? 'मिसटाइम (जल्दी)' : 'मिसटाइम (देर)';
     }
 
-    // 4. Compute 360° Direction & Launch Angle
-    const normBatSpeed = THREE.MathUtils.clamp(this.peakSwingSpeedDeg / 465, 0.28, 1.24);
-    const timingYawBias = isPerfectTiming ? 0 : THREE.MathUtils.clamp(timingGapSec * 0.55, -0.24, 0.24);
+    // 4. Point 6: Compute 360° Direction with Realistic Early/Late Timing Offset:
+    // - Perfect timing = exact wheel angle (0° shift)
+    // - Good timing = slight 0°–5° drift so ball still goes accurately where aimed
+    // - Mistimed Early (<0) = shifts toward Leg side by 15°–28°
+    // - Mistimed Late (>0) = shifts toward Off side by 15°–28°
+    const normBatSpeed = THREE.MathUtils.clamp(this.peakSwingSpeedDeg / 465, 0.30, 1.22);
+    let timingYawBias = 0;
+    if (!isPerfectTiming && this.activeShotType.id !== 'defence') {
+      const sideSign = timingGapMs < 0 ? -handSign : handSign;
+      if (isGoodTiming) {
+        const goodNorm = THREE.MathUtils.clamp((absGapMs - win.perfect) / Math.max(20, win.good - win.perfect), 0, 1);
+        const subtleShiftDeg = THREE.MathUtils.lerp(0, 5, goodNorm);
+        timingYawBias = sideSign * THREE.MathUtils.degToRad(subtleShiftDeg);
+      } else {
+        const errSpan = Math.max(30, win.mistime - win.good);
+        const errNorm = THREE.MathUtils.clamp((absGapMs - win.good) / errSpan, 0, 1);
+        const shiftDeg = THREE.MathUtils.lerp(14, 28, errNorm);
+        timingYawBias = sideSign * THREE.MathUtils.degToRad(shiftDeg);
+      }
+    }
+
     let finalYaw = Math.atan2(
       Math.sin(this.swingPlaneYaw + timingYawBias),
       Math.cos(this.swingPlaneYaw + timingYawBias)
     );
 
     // Pivot batsman body toward the 360° shot direction
-    this.bodyPivotYaw = THREE.MathUtils.clamp(finalYaw * 0.45, -1.05, 1.05);
+    this.bodyPivotYaw = THREE.MathUtils.clamp(finalYaw * 0.54, -1.15, 1.15);
+
+    // Realistic physics: factor incoming ball pace (145 km/h fast ball vs 75 km/h spin) into batted exit speed!
+    const incomingBallSpeedMs = THREE.MathUtils.clamp(ball.vel.length(), 14.0, 42.0);
+    const paceBonusMs = (incomingBallSpeedMs - 24.0) * 0.19;
 
     let launchAngleDeg = 0;
-    let launchSpeedMs = (11.5 + normBatSpeed * 24.5) * surgePowerBoost;
+    let launchSpeedMs = (14.2 + normBatSpeed * 26.8 + paceBonusMs) * surgePowerBoost;
 
     ball.state = 'hit';
     ball.bouncedAfterHit = false;
     ball.edged = false;
+    ball.edgeType = 'none';
+    // Preserve chest/waist contact height on short-ball Pull / Hook / Cut / Upper-Cut so shots launch authentically off the bounce!
+    const isCrossBatShortStroke = isShortBall && absAngleDeg >= 30;
+    const minContactHeight = isCrossBatShortStroke ? 0.82 : this.shotMode === 'fly' ? 0.54 : 0.24;
+    ball.pos.y = Math.max(ball.pos.y, minContactHeight);
+
+    // Signed lateral offset from bat sweet spot:
+    // For RHB (handSign = +1): signedOffsetX > 0 is toward the OUTSIDE edge (off side), < 0 is toward INSIDE edge (leg side)
+    const signedOffsetX = (ball.pos.x - batSweetSpotX) * handSign;
 
     if (this.shotMode === 'ground') {
-      // ==================== GROUND MODE (0° - 8° Safe Carpet Shots) ====================
+      // ==================== GROUND MODE (0° - 8° Fast Carpet Rockets) ====================
       const flatFactor = THREE.MathUtils.clamp(this.swingPlanePitchDeg / 20, 0, 1);
-      launchAngleDeg = THREE.MathUtils.lerp(1.5, 7.2, flatFactor);
+      launchAngleDeg = THREE.MathUtils.lerp(1.8, 7.0, flatFactor);
       launchSpeedMs *= timingQuality;
 
-      if (isGoodLength && !isBehindWicketShot && isPerfectTiming) {
-        launchSpeedMs *= 1.08;
+      if (isShortBall && absAngleDeg >= 30 && (isPerfectTiming || isGoodTiming)) {
+        // Rolled-wrist Pull / Cut / Hook hammers downward into turf and races to the rope!
+        launchSpeedMs *= isPerfectTiming ? 1.16 : 1.09;
+        launchAngleDeg = THREE.MathUtils.clamp(launchAngleDeg + 1.8, 3.0, 8.8);
+      } else if ((isGoodLength || isFullBall) && !isBehindWicketShot && (isPerfectTiming || isGoodTiming)) {
+        launchSpeedMs *= isPerfectTiming ? 1.14 : 1.07;
       }
 
-      const edgeThreshold = (assist === 'full' ? 0.48 : assist === 'light' ? 0.36 : 0.28) * surgeSweetBoost;
+      const edgeThreshold = (assist === 'full' ? 0.56 : assist === 'light' ? 0.46 : 0.36) * surgeSweetBoost;
       const isGroundEdge =
-        (!isPerfectTiming && !isGoodTiming) ||
-        (!isPerfectTiming && lateralError > edgeThreshold) ||
+        (!isPerfectTiming && !isGoodTiming && Math.random() < 0.52) ||
+        (!isPerfectTiming && !isGoodTiming && lateralError > edgeThreshold) ||
         unorthodoxLengthPenalty;
 
       if (isGroundEdge) {
         ball.edged = true;
-        const roll = Math.random();
-        if (roll < 0.24 && Math.abs(ball.pos.x) < 0.28) {
+        const isInsideHalf = signedOffsetX < -0.03 || (timingGapMs < -95 && signedOffsetX < 0.08);
+        if (isInsideHalf && Math.abs(ball.pos.x) < 0.28 && Math.random() < 0.36) {
+          ball.edgeType = 'played_on';
           contactType = 'Played-On (Inside Edge)';
           timingLabelEn = 'INSIDE EDGE · PLAYED ON!';
+          timingLabelHi = 'अंदरूनी किनारा · बोल्ड!';
           launchAngleDeg = 2.0;
           launchSpeedMs = 9.5;
           finalYaw = Math.PI;
           ball.isPlayedOn = true;
           ball.pos.set(0, 0.36, CREASE_Z + 0.35);
           ball.vel.set(0, 0.22, 13.5);
-        } else if (roll < 0.62) {
-          contactType = 'Inside Edge (Ground)';
-          timingLabelEn = 'INSIDE EDGE (SAFE ON GROUND)';
-          launchAngleDeg = 2.5;
-          launchSpeedMs *= 0.56;
+        } else if (isInsideHalf) {
+          ball.edgeType = 'inside_edge';
+          contactType = 'Inside Edge (Past Leg Stump)';
+          timingLabelEn = 'INSIDE EDGE (PAST STUMPS)';
+          timingLabelHi = 'अंदरूनी किनारा (स्टंप के पास से)';
+          launchAngleDeg = THREE.MathUtils.randFloat(2.0, 5.5);
+          launchSpeedMs = Math.max(11.5, incomingBallSpeedMs * THREE.MathUtils.randFloat(0.52, 0.68));
+          finalYaw = -handSign * THREE.MathUtils.randFloat(2.25, 2.72);
+        } else if (lateralError <= edgeThreshold + 0.14) {
+          // Thin Outside Edge -> Fine nick carrying at catchable height (0.48m..1.35m) to Wicketkeeper or First Slip!
+          ball.edgeType = 'thin_edge';
+          contactType = 'Thin Outside Edge';
+          timingLabelEn = 'THIN OUTSIDE EDGE!';
+          timingLabelHi = 'बारीक बाहरी किनारा!';
+          launchAngleDeg = THREE.MathUtils.randFloat(8.5, 14.2);
+          launchSpeedMs = Math.max(14.8, incomingBallSpeedMs * THREE.MathUtils.randFloat(0.62, 0.76));
+          finalYaw = handSign * THREE.MathUtils.randFloat(2.74, 2.98);
         } else {
-          contactType = 'Outside Edge (Low)';
-          timingLabelEn = 'OUTSIDE EDGE!';
-          launchAngleDeg = THREE.MathUtils.randFloat(6.5, 14.5);
-          launchSpeedMs *= 0.62;
-          finalYaw = (this.handedness === 'left' ? -1 : 1) * THREE.MathUtils.randFloat(2.35, 2.75);
+          // Thick Outside Edge -> Flies wider toward Second Slip / Gully / Third Man!
+          ball.edgeType = 'thick_edge';
+          contactType = 'Thick Outside Edge';
+          timingLabelEn = 'THICK OUTSIDE EDGE!';
+          timingLabelHi = 'मोटा बाहरी किनारा!';
+          launchAngleDeg = THREE.MathUtils.randFloat(7.0, 15.5);
+          launchSpeedMs = Math.max(15.5, incomingBallSpeedMs * THREE.MathUtils.randFloat(0.66, 0.82));
+          finalYaw = handSign * THREE.MathUtils.randFloat(2.22, 2.64);
         }
       }
     } else {
       // ==================== FLY MODE (High Risk / High Reward Lofted Shots) ====================
+      // All delivery lengths are playable with appropriate shot selection & timing:
+      // - Full balls: reward drives and lofted shots (+6% power).
+      // - Good-length balls: allow clean drives and lofts on both neutral (Touch/Phone) and front footwork.
+      // - Short balls: reward pull, hook, cut & upper-cut shots; straight lofts require sweet timing.
+      // - Yorkers: harder to get under for a straight six (0.89x), while 360° Scoop/Ramp uses the pace (1.03x).
       let lengthPowerMod = 1.0;
       let lengthAngleBias = 0;
-      if (isFullBall || isShortBall) {
-        lengthPowerMod = isBehindWicketShot ? 1.14 : 1.10;
-        lengthAngleBias = 2.0;
-      } else if (isYorker) {
-        lengthPowerMod = isBehindWicketShot ? 1.02 : 0.72;
-        lengthAngleBias = isBehindWicketShot ? 4.0 : -9.0;
+
+      if (isYorker) {
+        if (isBehindWicketShot) {
+          lengthPowerMod = 1.03;
+          lengthAngleBias = 4.0;
+        } else {
+          lengthPowerMod = 0.89;
+          lengthAngleBias = -4.5;
+        }
+      } else if (isFullBall) {
+        lengthPowerMod = isBehindWicketShot ? 1.07 : 1.06;
+        lengthAngleBias = 1.5;
+      } else if (isShortBall) {
+        const isPullHookOrCut = absAngleDeg >= 30;
+        if (isPullHookOrCut) {
+          // Short-ball Pull, Hook & Upper-Cut ride the pace & bounce for crisp sixes over square leg / third man!
+          lengthPowerMod = absAngleDeg >= 90 ? 1.12 : 1.08;
+          lengthAngleBias = this.activeShotType.id === 'uppercut' ? 4.5 : 1.5;
+        } else {
+          lengthPowerMod = 0.96;
+          lengthAngleBias = 3.2;
+        }
       } else if (isGoodLength) {
-        lengthPowerMod = isBehindWicketShot ? 0.80 : 0.92;
+        // Solution 1 + 2: Smart Footwork gives full front-foot drive/loft bonus (1.04x) on forward shots
+        // and clean back-foot power (1.02x) on square cuts/pulls — zero random RNG footwork penalty!
+        lengthPowerMod = this.footwork === 'front' ? 1.04 : 1.02;
+        lengthAngleBias = 1.4;
       }
 
-      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.46 : 0.34) * surgeSweetBoost;
+      // Subtle off-center contact scaling (rewards hitting near the middle of the bat without killing good shots)
+      const sweetCenterMod = THREE.MathUtils.clamp(1.0 - Math.max(0, lateralError - 0.16) * 0.32, 0.84, 1.0);
+      const flyOuterEdgeRisk = lateralError > (assist === 'full' ? 0.48 : assist === 'light' ? 0.38 : 0.30) * surgeSweetBoost;
 
       if (isPerfectTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty) {
-        // PERFECT TIMING IN FLY MODE => Clean Booming SIX / Boundary!
+        // PERFECT TIMING IN FLY MODE => Clean high trajectory calibrated to clear the 52m boundary (60.8m from striker crease)!
         const riseNorm = THREE.MathUtils.clamp((this.swingPlanePitchDeg - 10) / 35, 0, 1);
         launchAngleDeg = THREE.MathUtils.clamp(
-          THREE.MathUtils.lerp(27, 38, riseNorm) + lengthAngleBias,
-          24,
-          44
+          THREE.MathUtils.lerp(28.5, 36.5, riseNorm) + lengthAngleBias,
+          25,
+          40
         );
-        launchSpeedMs = (15.0 + normBatSpeed * 25.0) * timingQuality * lengthPowerMod * surgePowerBoost;
-        if (normBatSpeed >= 0.80 && !isYorker) {
-          launchSpeedMs = Math.max(launchSpeedMs, 28.2 * surgePowerBoost);
-          launchAngleDeg = THREE.MathUtils.clamp(launchAngleDeg, 28, 38);
-        }
-      } else if (isGoodTiming && !flyOuterEdgeRisk && !isYorker && !unorthodoxLengthPenalty) {
-        // GOOD TIMING IN FLY MODE => Lofted chip over infield (2s / 4s, or deep catch if hit straight to boundary rider)
-        launchAngleDeg = THREE.MathUtils.randFloat(23, 34);
-        launchSpeedMs = (13.2 + normBatSpeed * 20.5) * timingQuality * lengthPowerMod * surgePowerBoost;
+        launchSpeedMs =
+          (16.8 + normBatSpeed * 17.5 + paceBonusMs * 0.60) *
+          timingQuality *
+          lengthPowerMod *
+          sweetCenterMod *
+          surgePowerBoost;
+      } else if (isGoodTiming && !flyOuterEdgeRisk && !unorthodoxLengthPenalty) {
+        // GOOD TIMING IN FLY MODE => Powerful lofted drive (carries 55m-68m for SIX/FOUR in open gaps!)
+        launchAngleDeg = THREE.MathUtils.clamp(
+          THREE.MathUtils.randFloat(26.0, 35.5) + lengthAngleBias * 0.7,
+          23,
+          41
+        );
+        launchSpeedMs =
+          (15.0 + normBatSpeed * 16.0 + paceBonusMs * 0.50) *
+          timingQuality *
+          lengthPowerMod *
+          sweetCenterMod *
+          surgePowerBoost;
       } else {
-        // MISTIMED / OUTER EDGE / YORKER SPLICED IN FLY MODE => High Skyer / Top-Edge Catch Chance!
+        // MISTIMED (EARLY/LATE) OR WIDE OUTER EDGE SLASH IN FLY MODE => Thick Edge Slash or High Top-Edge Skyer!
         ball.edged = true;
-        contactType = flyOuterEdgeRisk ? 'Outside Edge (Skyer)' : 'Top Edge (Mistimed FLY)';
-        timingLabelEn = 'MISTIMED LOFT · IN THE AIR!';
-        timingLabelHi = 'हवा में गेंद · कैच का खतरा!';
-        launchAngleDeg = THREE.MathUtils.randFloat(42, 56);
-        launchSpeedMs = THREE.MathUtils.randFloat(14.5, 20.5);
-        finalYaw += (Math.random() - 0.5) * 0.42;
+        if (flyOuterEdgeRisk && signedOffsetX >= 0) {
+          ball.edgeType = 'thick_edge';
+          contactType = 'Thick Outside Edge (Slash)';
+          timingLabelEn = 'OUTSIDE EDGE · SLASHED IN THE AIR!';
+          timingLabelHi = 'बाहरी किनारा · स्लिप/गली की तरफ हवा में!';
+          launchAngleDeg = THREE.MathUtils.randFloat(16, 28);
+          launchSpeedMs = THREE.MathUtils.randFloat(16.5, 22.5);
+          finalYaw = handSign * THREE.MathUtils.randFloat(2.10, 2.65);
+        } else {
+          ball.edgeType = 'top_edge';
+          contactType = 'Top Edge (Mistimed FLY)';
+          timingLabelEn = 'TOP EDGE · IN THE AIR!';
+          timingLabelHi = 'टॉप एज · हवा में कैच का खतरा!';
+          launchAngleDeg = THREE.MathUtils.randFloat(44, 58);
+          launchSpeedMs = THREE.MathUtils.randFloat(13.8, 19.5);
+          finalYaw += (Math.random() - 0.5) * 0.35;
+        }
       }
     }
 
@@ -917,21 +1460,25 @@ export class BattingSystem {
     if (ball.state !== 'bowled' || this.shotExecutedThisBall) return;
 
     const skillMap = {
+      rookie: { trackSpeed: 0.05, timingJitterMs: 75, powerMin: 320, powerMax: 450, flyChance: 0.25 },
       easy: { trackSpeed: 0.05, timingJitterMs: 75, powerMin: 320, powerMax: 450, flyChance: 0.25 },
+      medium: { trackSpeed: 0.10, timingJitterMs: 42, powerMin: 380, powerMax: 510, flyChance: 0.35 },
       pro: { trackSpeed: 0.10, timingJitterMs: 42, powerMin: 380, powerMax: 510, flyChance: 0.35 },
+      hard: { trackSpeed: 0.16, timingJitterMs: 22, powerMin: 430, powerMax: 560, flyChance: 0.45 },
       legend: { trackSpeed: 0.16, timingJitterMs: 22, powerMin: 430, powerMax: 560, flyChance: 0.45 }
     };
     const skill = skillMap[difficulty] || skillMap.pro;
 
     this.creaseX = THREE.MathUtils.lerp(this.creaseX, THREE.MathUtils.clamp(ball.pos.x, -0.42, 0.42), skill.trackSpeed);
+    this.manualCreaseOffsetX = this.creaseX;
 
     if (ball.pos.z >= CREASE_Z - 1.55) {
       const jitterSec = ((Math.random() - 0.5) * 2 * skill.timingJitterMs) / 1000;
       const nowSec = performance.now() * 0.001;
-      this.swingPeakTime = (ball.idealContactTime || nowSec) + jitterSec;
+      this.swingPeakTime = ((ball.idealContactTime || nowSec) - 0.085) + jitterSec;
       this.peakSwingSpeedDeg = THREE.MathUtils.randFloat(skill.powerMin, skill.powerMax);
 
-      const isGoodForFly = !ball.bouncedOnPitch || ball.pitchBouncePos.z < 3.5;
+      const isGoodForFly = !ball.bouncedOnPitch || ball.pitchBouncePos.z >= 4.8;
       this.shotMode = isGoodForFly || Math.random() < skill.flyChance ? 'fly' : 'ground';
       this.swingPlanePitchDeg = this.shotMode === 'fly' ? 28 : 4;
       this.isRisingSwing = this.shotMode === 'fly';
@@ -959,16 +1506,44 @@ export class BattingSystem {
    * Updates keyboard 360° aim vector and step-cadence decay every frame
    */
   updateFrame(dt) {
+    const nowSec = performance.now() * 0.001;
     const moveSpeed = 1.6 * dt;
-    const dirSign = this.screenRightSign || -1;
+    const dirSign = this.screenRightSign || 1;
     if (this.keys.left) {
-      this.aimDirectionX = Math.max(-1, this.aimDirectionX - moveSpeed * 1.8);
-      this.creaseX = THREE.MathUtils.clamp(this.creaseX - moveSpeed * 0.45 * dirSign, -0.48, 0.48);
+      this.manualCreaseOverrideThisBall = true;
+      this.manualCreaseOffsetX = THREE.MathUtils.clamp(
+        this.manualCreaseOffsetX - moveSpeed * 0.55 * dirSign,
+        -0.62,
+        0.62
+      );
     } else if (this.keys.right) {
-      this.aimDirectionX = Math.min(1, this.aimDirectionX + moveSpeed * 1.8);
-      this.creaseX = THREE.MathUtils.clamp(this.creaseX + moveSpeed * 0.45 * dirSign, -0.48, 0.48);
-    } else {
-      this.aimDirectionX = THREE.MathUtils.damp(this.aimDirectionX, 0, 4, dt);
+      this.manualCreaseOverrideThisBall = true;
+      this.manualCreaseOffsetX = THREE.MathUtils.clamp(
+        this.manualCreaseOffsetX + moveSpeed * 0.55 * dirSign,
+        -0.62,
+        0.62
+      );
+    }
+    // Smoothly interpolate creaseX toward manualCreaseOffsetX every frame for butter-smooth touch & keyboard movement
+    if (typeof this.manualCreaseOffsetX === 'number') {
+      const targetX = THREE.MathUtils.clamp(
+        this.manualCreaseOffsetX + (this.sensorCreaseOffsetX || 0),
+        -0.62,
+        0.62
+      );
+      this.creaseX = THREE.MathUtils.damp(this.creaseX, targetX, 32, dt);
+    }
+
+    // Keep swingPlaneYaw synced to Angle Wheel when not actively swinging and not in post-swing aim lock
+    if (
+      !this.isSwinging &&
+      nowSec > (this.manualSwingAimLockUntil || 0) &&
+      typeof this.custom360AimDeg === 'number' &&
+      (!this.hasHardwareStance || this.wheelAimLockedThisBall)
+    ) {
+      const targetYaw = THREE.MathUtils.degToRad(this.custom360AimDeg * dirSign);
+      this.swingPlaneYaw = Math.atan2(Math.sin(targetYaw), Math.cos(targetYaw));
+      this.swingDirectionDeg = Math.round(THREE.MathUtils.radToDeg(this.swingPlaneYaw));
     }
 
     if (this.keys.up) {
@@ -977,13 +1552,17 @@ export class BattingSystem {
       this.footwork = 'front';
     } else if (this.keys.down) {
       this.aimDirectionZ = Math.max(-1, this.aimDirectionZ - moveSpeed * 2.2);
-      this.creaseZOffset = Math.max(-0.42, this.creaseZOffset - moveSpeed);
+      this.creaseZOffset = Math.max(-0.46, this.creaseZOffset - moveSpeed);
       this.footwork = 'back';
     } else {
-      this.aimDirectionZ = THREE.MathUtils.damp(this.aimDirectionZ, 1.0, 3.5, dt);
+      // Solution 2: Automatically sync footwork with 360° Angle Wheel hemisphere when W/S keys are not held
+      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, null);
+      const targetZOff = this.stepOutCharge ? 0.42 : this.footwork === 'front' ? 0.16 : -0.16;
+      this.creaseZOffset = THREE.MathUtils.damp(this.creaseZOffset, targetZOff, 8, dt);
+      if (!this.virtualStickActive) {
+        this.aimDirectionZ = THREE.MathUtils.damp(this.aimDirectionZ, 1.0, 3.5, dt);
+      }
     }
-
-    const nowSec = performance.now() * 0.001;
 
     // Step cadence update & keyboard/button hold-to-run fallback during Run Window
     if (this.runWindowActive) {
@@ -1009,7 +1588,11 @@ export class BattingSystem {
       }
     }
 
-    if (!this.isSwinging && nowSec - this.lastSwingTime > 0.42) {
+    if (!this.isSwinging && !this.shotExecutedThisBall) {
+      this.backliftAngle = THREE.MathUtils.damp(this.backliftAngle, 0.25, 8, dt);
+      const aimPivotTarget = THREE.MathUtils.clamp((this.swingPlaneYaw || 0) * 0.22, -0.45, 0.45);
+      this.bodyPivotYaw = THREE.MathUtils.damp(this.bodyPivotYaw, aimPivotTarget, 7, dt);
+    } else if (!this.isSwinging && nowSec - this.lastSwingTime > 0.65) {
       this.backliftAngle = THREE.MathUtils.damp(this.backliftAngle, 0.25, 8, dt);
       this.bodyPivotYaw = THREE.MathUtils.damp(this.bodyPivotYaw, 0, 5, dt);
     }

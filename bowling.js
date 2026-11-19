@@ -478,12 +478,14 @@ export class BowlingSystem {
     this.armAngle = 0;
 
     // Phone overarm sensor tracking
+    this.screenRightSign = -1;
     this.holdingRunupBtn = false;
     this.peakOmegaDeg = 0;
     this.releaseYawDeg = 0;
     this.releasePitchDeg = 0;
     this.releaseRollRate = 0;
     this.refYawDeg = null;
+    this.refGammaDeg = null;
 
     // Pitch target marker (for overhead/broadcast aim & Light/Full assist target)
     this.aimTargetX = 0.05;       // -0.85m to +0.85m
@@ -524,6 +526,10 @@ export class BowlingSystem {
     }
   }
 
+  selectVariation(variationId) {
+    this.setVariation(variationId);
+  }
+
   cycleVariation(step = 1) {
     const list = this.getVariationsForBowler(this.bowlerType);
     if (list.length === 0) return null;
@@ -545,6 +551,7 @@ export class BowlingSystem {
   resetForNextBall() {
     this.state = 'ready';
     this.runupProgress = 0;
+    this.runupFastForward = false;
     this.runupZ = -CREASE_Z - 6.5;
     this.jumpY = 0;
     this.followThroughProgress = 0;
@@ -552,6 +559,7 @@ export class BowlingSystem {
     this.armAngle = 0;
     this.peakOmegaDeg = 0;
     this.refYawDeg = null;
+    this.refGammaDeg = null;
   }
 
   /**
@@ -563,6 +571,7 @@ export class BowlingSystem {
       this.state = 'runup';
       this.peakOmegaDeg = 0;
       this.refYawDeg = null;
+      this.refGammaDeg = null;
     } else if (!isHeld) {
       this.holdingRunupBtn = false;
     }
@@ -582,20 +591,29 @@ export class BowlingSystem {
 
     if (this.refYawDeg === null && typeof data.alpha === 'number') {
       this.refYawDeg = data.alpha;
+      this.refGammaDeg = data.gamma || 0;
     }
 
-    // Track peak angular speed during overarm swing
-    if (omegaMag > 160) {
+    // Track peak angular speed during overarm swing & fire instant release on active overarm threshold!
+    if (omegaMag > 155) {
       this.state = 'arm_swing';
       if (omegaMag >= this.peakOmegaDeg) {
-        this.peakOmegaDeg = omegaMag;
+        this.peakOmegaDeg = Math.max(omegaMag, 320);
         let deltaYaw = (data.alpha || 0) - (this.refYawDeg || 0);
         if (deltaYaw > 180) deltaYaw -= 360;
         if (deltaYaw < -180) deltaYaw += 360;
-        this.releaseYawDeg = deltaYaw + (data.gamma || 0) * 0.35;
+        const deltaGamma = (data.gamma || 0) - (this.refGammaDeg || 0);
+        // Positive = Phone tilted/turned RIGHT; Negative = Phone tilted/turned LEFT
+        this.releaseYawDeg = deltaGamma * 0.65 - deltaYaw * 0.75;
         this.releasePitchDeg = data.beta || 45;
         this.releaseRollRate = THREE.MathUtils.clamp(gz / 320, -1, 1);
-      } else if (this.peakOmegaDeg > 190 && omegaMag < this.peakOmegaDeg * 0.68) {
+      }
+      if (omegaMag > 195 && (this.runupProgress >= 0.58 || omegaMag > 260)) {
+        if (this.runupProgress < 0.85) this.runupProgress = 0.88;
+        this.state = 'released';
+        const delivery = this.computeDeliveryFromPhone();
+        if (onReleaseCallback) onReleaseCallback(delivery);
+      } else if (this.peakOmegaDeg > 175 && omegaMag < this.peakOmegaDeg * 0.72) {
         this.state = 'released';
         const delivery = this.computeDeliveryFromPhone();
         if (onReleaseCallback) onReleaseCallback(delivery);
@@ -614,9 +632,10 @@ export class BowlingSystem {
     const rawSpeed = THREE.MathUtils.lerp(profile.minKmh, profile.maxKmh, normSpeed);
     const speedKmh = rawSpeed * (variation.speedScale || 1.0);
 
-    let rawTargetX = THREE.MathUtils.clamp((this.releaseYawDeg / 28) * 0.85, -1.05, 1.05);
+    const dirSign = this.screenRightSign || -1;
+    const rawTargetX = THREE.MathUtils.clamp(((this.releaseYawDeg / 28) * 0.85) * dirSign, -1.05, 1.05);
     const normPitch = THREE.MathUtils.clamp((this.releasePitchDeg - 15) / 75, 0, 1);
-    let rawBounceZ = THREE.MathUtils.lerp(8.6, 0.5, normPitch);
+    const rawBounceZ = THREE.MathUtils.lerp(8.6, 0.5, normPitch);
 
     let assistBlend = 0.0;
     if (this.assistMode === 'light') assistBlend = 0.38;
@@ -626,7 +645,7 @@ export class BowlingSystem {
     const finalBounceZ = THREE.MathUtils.lerp(rawBounceZ, this.aimBounceZ, assistBlend);
     const wristRoll = this.releaseRollRate || variation.wristRoll || this.wristSpinInput;
 
-    const overstepped = this.assistMode === 'off' && this.runupProgress > 1.03;
+    const overstepped = this.assistMode !== 'full' && this.runupProgress > 1.01;
 
     return this.buildDeliveryPayload(
       speedKmh,
@@ -658,13 +677,14 @@ export class BowlingSystem {
     const targetX = this.aimTargetX + (Math.random() - 0.5) * jitter;
     const bounceZ = this.aimBounceZ + (Math.random() - 0.5) * jitter * 4;
     const wristRoll = variation.wristRoll ?? this.wristSpinInput;
+    const overstepped = this.assistMode !== 'full' && this.runupProgress > 1.01;
 
     return this.buildDeliveryPayload(
       speedKmh,
       targetX,
       bounceZ,
       wristRoll,
-      false,
+      overstepped,
       variation,
       getDifficultyProfile(gameConfig.difficulty)
     );
@@ -674,7 +694,12 @@ export class BowlingSystem {
    * AI Bowler generator scaled by 4 difficulty profiles ('rookie' | 'club' | 'pro' | 'legend')
    * Supports all 22 variations, tactical set-ups, accuracy scatter, and loose balls per over.
    */
-  generateAIDelivery(difficulty = gameConfig.difficulty, ballCount = 0, batterHand = gameConfig.handedness) {
+  generateAIDelivery(
+    difficulty = gameConfig.difficulty,
+    ballCount = 0,
+    batterHand = gameConfig.handedness,
+    matchContext = {}
+  ) {
     const diffProfile = getDifficultyProfile(difficulty);
     const ballInOver = ballCount % 6;
     if (ballInOver === 0) {
@@ -683,17 +708,29 @@ export class BowlingSystem {
       this.planStep = 0;
     }
 
-    // Rotate bowler style every over
-    const types = ['fast', 'medium', 'spin'];
-    this.bowlerType = types[Math.floor(ballCount / 6) % types.length];
+    const modeId = matchContext.modeId || 'run_chase';
+    const isOneOver = modeId === 'last_over' || modeId === 'super_over' || (matchContext.totalOvers || 5) <= 1;
+    const ballsRem = typeof matchContext.ballsRemaining === 'number' ? matchContext.ballsRemaining : 30;
+    const isDeathPhase = isOneOver || ballsRem <= 12;
+    const isPowerplay = Boolean(matchContext.isPowerplay);
+
+    // Rotate bowler style every over (in 1-Over / Death phase, prefer Fast/Medium pace specialists 85% of the time)
+    if (isOneOver) {
+      this.bowlerType = ballInOver >= 4 ? 'fast' : 'fast';
+    } else {
+      const types = isDeathPhase ? ['fast', 'medium', 'fast'] : ['fast', 'medium', 'spin'];
+      this.bowlerType = types[Math.floor(ballCount / 6) % types.length];
+    }
 
     // Filter eligible variations by bowler type and difficulty tier
-    const maxTier =
+    // In Death Overs / 1-Over Finisher, unlock at least Tier 3/4 yorkers & slower balls so the climax feels authentic!
+    const baseTier =
       diffProfile.id === 'easy' || diffProfile.id === 'rookie'
         ? 2
         : diffProfile.id === 'medium' || diffProfile.id === 'club'
           ? 3
           : 4;
+    const maxTier = isDeathPhase ? Math.max(3, baseTier) : baseTier;
 
     const eligible = VARIATION_LIST.filter(
       (v) => v.bowlerTypes.includes(this.bowlerType) && v.tier <= maxTier
@@ -702,8 +739,26 @@ export class BowlingSystem {
 
     let chosenVar = pool[0];
 
-    // Tactical set-ups in Hard (and Pro/Legend)
-    if ((diffProfile.id === 'hard' || diffProfile.id === 'legend' || diffProfile.id === 'pro') && Math.random() < 0.72) {
+    // Phase-Specific Priority Pool (inspired by Last Over & The Final Overs)
+    const deathSpecialistIds =
+      this.bowlerType === 'spin'
+        ? ['quicker_one', 'wrong_un', 'arm_ball', 'yorker', 'carrom_ball']
+        : ['yorker', 'slower_ball', 'wide_yorker', 'in_swinging_yorker', 'slower_bouncer', 'off_cutter', 'knuckleball'];
+    const powerplaySpecialistIds =
+      this.bowlerType === 'spin'
+        ? ['off_break', 'leg_break', 'top_spinner', 'arm_ball']
+        : ['outswinger', 'inswinger', 'bouncer', 'leg_cutter'];
+
+    const pickFromIds = (idList) => {
+      const matches = pool.filter((v) => idList.includes(v.id));
+      return matches.length > 0 ? matches[Math.floor(Math.random() * matches.length)] : null;
+    };
+
+    if (isDeathPhase && Math.random() < 0.68) {
+      chosenVar = pickFromIds(deathSpecialistIds) || pool[Math.floor(Math.random() * pool.length)];
+    } else if (isPowerplay && Math.random() < 0.60) {
+      chosenVar = pickFromIds(powerplaySpecialistIds) || pool[Math.floor(Math.random() * pool.length)];
+    } else if ((diffProfile.id === 'hard' || diffProfile.id === 'legend' || diffProfile.id === 'pro') && Math.random() < 0.72) {
       const planCategory = this.bowlerType === 'spin' ? TACTICAL_PLANS.spin : TACTICAL_PLANS.pace;
       if (!this.activePlan || this.planStep >= this.activePlan.length) {
         this.activePlan = planCategory[Math.floor(Math.random() * planCategory.length)];
@@ -724,6 +779,17 @@ export class BowlingSystem {
       } else {
         chosenVar = pool[Math.floor(Math.random() * pool.length)];
       }
+    }
+
+    // Counter a batter who just hit a boundary: change pace / length rather than serve the same ball again
+    const lastShot = Array.isArray(matchContext.recentShots) ? matchContext.recentShots[matchContext.recentShots.length - 1] : null;
+    if (lastShot && (lastShot.runs || 0) >= 4 && ballInOver > 0 && Math.random() < 0.45) {
+      const counter = pickFromIds(
+        this.bowlerType === 'spin'
+          ? ['quicker_one', 'arm_ball', 'wrong_un', 'top_spinner']
+          : ['slower_ball', 'bouncer', 'yorker', 'off_cutter']
+      );
+      if (counter) chosenVar = counter;
     }
 
     this.lastVariationId = chosenVar.id;
@@ -759,8 +825,36 @@ export class BowlingSystem {
     let targetX = chosenVar.targetX * handMirror;
     let bounceZ = chosenVar.bounceZ;
 
+    // Adaptive Line/Length Countering:
+    // 1. Track batter pre-delivery crease shuffle (batterCreaseX)
+    const batterCreaseX = Number(matchContext.batterCreaseX) || 0;
+    if (Math.abs(batterCreaseX) > 0.16) {
+      if (Math.random() < 0.55) {
+        // Aim straight at exposed middle stump when batter shuffles too far across!
+        targetX = THREE.MathUtils.lerp(targetX, 0.0, 0.75);
+        bounceZ = Math.max(bounceZ, 7.6);
+      } else {
+        // Follow the batter wide outside their reach
+        targetX = THREE.MathUtils.clamp(batterCreaseX + 0.18 * Math.sign(batterCreaseX), -0.40, 0.40);
+      }
+    }
+
+    // 2. Counter repeated boundary direction from recent wagonWheel shots
+    const recentShots = Array.isArray(matchContext.recentShots) ? matchContext.recentShots : [];
+    if (recentShots.length >= 2) {
+      const lastTwo = recentShots.slice(-2);
+      const bothBoundaries = lastTwo.every((s) => (s.runs || 0) >= 4);
+      if (bothBoundaries) {
+        const avgX = (Math.sin(lastTwo[0].angleRad || 0) + Math.sin(lastTwo[1].angleRad || 0)) * 0.5;
+        // Shift line away from the batter's hot boundary zone
+        if (Math.abs(avgX) > 0.2) {
+          targetX = THREE.MathUtils.clamp(targetX - Math.sign(avgX) * 0.14, -0.38, 0.38);
+        }
+      }
+    }
+
     // Check if this ball is a loose ball (half-volley or juicy width on Rookie/Club)
-    const looseProb = diffProfile.looseBallsPerOver / 6;
+    const looseProb = isDeathPhase ? (diffProfile.looseBallsPerOver / 6) * 0.65 : diffProfile.looseBallsPerOver / 6;
     const isLooseBall = !this.overLooseBallUsed && Math.random() < looseProb;
     if (isLooseBall) {
       this.overLooseBallUsed = true;
@@ -771,20 +865,34 @@ export class BowlingSystem {
       bounceZ += (Math.random() - 0.5) * 1.6 * diffProfile.accuracyScatterZ;
     }
 
-    targetX = THREE.MathUtils.clamp(targetX, -0.42, 0.42);
+    targetX = THREE.MathUtils.clamp(targetX, -0.34, 0.54);
     bounceZ = THREE.MathUtils.clamp(bounceZ, 1.1, 8.65);
+
+    // Authentic T20 cricket chance of an AI No-Ball (Front-Foot Overstep or Waist-High Full Toss Beamer)
+    // or a wayward Wide delivery (outside Off-Side Wide Guideline +0.56m or down the Leg Side -0.30m)
+    let aiOverstepped = false;
+    const extraRoll = Math.random();
+    if (this.bowlerType !== 'spin' && extraRoll < 0.032) {
+      aiOverstepped = true;
+    } else if (this.bowlerType !== 'spin' && extraRoll < 0.045) {
+      // High full-toss (Beamer) reaching popping crease above waist height -> No-Ball!
+      bounceZ = 9.45;
+    } else if (extraRoll < (chosenVar.id === 'wide_yorker' || isDeathPhase ? 0.115 : 0.095)) {
+      // Wayward Wide ball: 65% outside Off-Side Wide Guideline (+X * handMirror), 35% down Leg Side (-X * handMirror)
+      targetX = (Math.random() < 0.65 ? 0.62 : -0.34) * handMirror;
+    }
 
     const wristRoll = chosenVar.wristRoll * diffProfile.swingTurnScale * handMirror;
 
     this.aimTargetX = targetX;
-    this.aimBounceZ = bounceZ;
+    this.aimBounceZ = Math.min(8.65, bounceZ);
 
     return this.buildDeliveryPayload(
       speedKmh,
       targetX,
       bounceZ,
       wristRoll,
-      false,
+      aiOverstepped,
       chosenVar,
       diffProfile,
       handMirror
@@ -823,7 +931,7 @@ export class BowlingSystem {
     }
 
     const scale = diffProfile ? diffProfile.swingTurnScale : 1.0;
-    const releaseX = this.bowlerSide === 'over' ? 0.36 : -0.36;
+    const releaseX = this.bowlerSide === 'over' ? 0.54 : -0.54;
     const delivery = {
       speedKmh: Math.round(speedKmh * 10) / 10,
       targetX,
@@ -855,10 +963,11 @@ export class BowlingSystem {
 
   updateRunup(dt, onReachCreaseCallback, onFootstepCallback) {
     if (this.state === 'runup' || this.state === 'arm_swing') {
-      // Spinners have a brisk 6-step approach; fast bowlers build momentum from top of mark
-      const baseRate = this.bowlerType === 'spin' ? 1.15 : this.bowlerType === 'medium' ? 0.98 : 0.92;
-      const accelFactor = 0.78 + 0.45 * this.runupProgress;
-      this.runupProgress += dt * baseRate * accelFactor;
+      // Natural readable bowler approach (~1.05s-1.25s) so batter can read arm angle & pitch line
+      const baseRate = this.bowlerType === 'spin' ? 1.05 : this.bowlerType === 'medium' ? 0.92 : 0.82;
+      const accelFactor = 0.85 + 0.35 * this.runupProgress;
+      const boostMult = this.runupFastForward ? 2.0 : 1.0;
+      this.runupProgress += dt * baseRate * accelFactor * boostMult;
 
       const startZ = this.bowlerType === 'spin' ? -CREASE_Z - 3.8 : -CREASE_Z - 6.5;
       this.runupZ = THREE.MathUtils.lerp(startZ, -CREASE_Z, Math.min(1.04, this.runupProgress));
@@ -890,7 +999,7 @@ export class BowlingSystem {
       // Natural post-release follow-through deceleration down the side of the pitch
       this.jumpY = 0;
       if (this.followThroughProgress < 1.0) {
-        this.followThroughProgress = Math.min(1.0, this.followThroughProgress + dt * 1.45);
+        this.followThroughProgress = Math.min(1.0, this.followThroughProgress + dt * 2.15);
         const easeOut = 1 - Math.pow(1 - this.followThroughProgress, 2);
         const followDist = this.bowlerType === 'spin' ? 0.75 : 1.85;
         this.runupZ = -CREASE_Z + easeOut * followDist;
