@@ -4,7 +4,7 @@ plugins {
 }
 
 val hostedGameUrl: String = (project.findProperty("appUrl") as String?)?.trim()?.takeIf { it.isNotEmpty() }
-    ?: "https://ais-pre-zvp4v3wgakmcnnxwlzmq5a-611650499151.asia-east1.run.app"
+    ?: "local"
 
 android {
     namespace = "com.boxcricket3d.tv"
@@ -14,8 +14,8 @@ android {
         applicationId = "com.boxcricket3d.tv"
         minSdk = 23
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         buildConfigField("String", "GAME_URL", "\"${hostedGameUrl.replace("\"", "\\\"")}\"")
     }
@@ -51,4 +51,28 @@ dependencies {
     implementation("androidx.core:core-ktx:1.13.1")
     implementation("androidx.appcompat:appcompat:1.7.0")
     implementation("androidx.webkit:webkit:1.11.0")
+}
+
+val appApkName = "BoxCricket3D.apk"
+val repoRootDir = rootProject.projectDir.parentFile ?: rootProject.projectDir
+val apksOutputDir = repoRootDir.resolve("apks")
+val rootApkTarget = repoRootDir.resolve(appApkName)
+val debugApkFile = layout.buildDirectory.file("outputs/apk/debug/app-debug.apk")
+
+val copyApkToApksFolder by tasks.registering(Copy::class) {
+    description = "Copies compiled debug APK to /apks/$appApkName and /$appApkName"
+    group = "build"
+    from(debugApkFile)
+    into(apksOutputDir)
+    rename { appApkName }
+    doLast {
+        val copiedApk = apksOutputDir.resolve(appApkName)
+        if (copiedApk.exists()) {
+            copiedApk.copyTo(rootApkTarget, overwrite = true)
+        }
+    }
+}
+
+tasks.matching { it.name == "assembleDebug" }.configureEach {
+    finalizedBy(copyApkToApksFolder)
 }

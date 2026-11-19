@@ -19,8 +19,13 @@ export function initPwaInstall(app, ui) {
 
   const isIOS = () => /iphone|ipad|ipod/i.test(window.navigator?.userAgent || '');
 
-  // 1. Register lightweight network-first service worker
-  if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost')) {
+  // 1. Register lightweight network-first service worker (skip inside bundled local Android APK origin)
+  const isBundledApkOrigin = window.location.hostname === 'appassets.androidplatform.net';
+  if (
+    !isBundledApkOrigin &&
+    'serviceWorker' in navigator &&
+    (window.location.protocol === 'https:' || window.location.hostname === 'localhost')
+  ) {
     navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
       // Ignore SW errors in restricted preview iframes
     });

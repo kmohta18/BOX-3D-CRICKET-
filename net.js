@@ -125,9 +125,9 @@ export class NetworkManager {
     }
     this.slot = slot;
 
-    // Wavedash hosts static game files and does not run this project's custom /ws relay.
+    // Static hosts & bundled offline Android TV APK do not run a local /ws relay.
     // Keep local BroadcastChannel controls available without retrying a missing socket forever.
-    if (window.Wavedash) {
+    if (window.Wavedash || window.location.hostname === 'appassets.androidplatform.net') {
       this.connected = false;
       return;
     }

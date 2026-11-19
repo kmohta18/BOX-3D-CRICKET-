@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.app.AlertDialog
 import android.content.Context
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
@@ -14,6 +15,7 @@ import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -28,12 +30,15 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.webkit.WebViewAssetLoader
+import java.io.IOException
 
 /**
- * Box Cricket 3D — Hosted Android TV Wrapper Activity
- * - Zero virtual mouse cursor: forwards TV Remote D-Pad (▲ ▼ ◀ ▶), OK/Enter, and Back
- *   directly into the web game's spatial D-Pad & live batting engine.
- * - Fullscreen immersive mode + keep-screen-on + hardware-accelerated WebGL & autoplay audio.
+ * Box Cricket 3D — Android TV Native WebView Wrapper Activity (Hybrid Local + Hosted)
+ * - Serves bundled game files via WebViewAssetLoader (https://appassets.androidplatform.net/index.html)
+ *   so it works 100% instantly with ZERO 404 errors and even OFFLINE!
+ * - Also supports optional hosted server URL with automatic fallback to bundled local game on 404/offline.
+ * - Zero virtual mouse cursor: forwards TV Remote D-Pad (▲ ▼ ◀ ▶), OK/Enter, and Back directly into JS.
  */
 class MainActivity : AppCompatActivity() {
 
@@ -42,21 +47,41 @@ class MainActivity : AppCompatActivity() {
     private lateinit var loadingOverlay: LinearLayout
     private lateinit var errorOverlay: LinearLayout
     private lateinit var errorSubtitle: TextView
+    private lateinit var assetLoader: WebViewAssetLoader
     private var lastHomeBackPressMs: Long = 0L
     private var isErrorShowing: Boolean = false
+    private var fellBackToLocalThisSession: Boolean = false
 
     companion object {
         private const val PREFS_NAME = "box_cricket_tv_prefs"
         private const val KEY_CUSTOM_URL = "custom_game_url"
+        private const val LOCAL_INDEX_URL = "https://appassets.androidplatform.net/index.html"
     }
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Keep TV screen awake during matches & enter true fullscreen immersive mode
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enableImmersiveFullscreen()
+
+        // Custom MIME-safe asset loader so ES Modules (.js/.mjs), CSS, fonts, icons load on Android TV 6-14
+        assetLoader = WebViewAssetLoader.Builder()
+            .addPathHandler("/") { rawPath ->
+                val cleanPath = rawPath.trimStart('/').ifEmpty { "index.html" }
+                try {
+                    val stream = assets.open(cleanPath)
+                    val mime = guessMimeType(cleanPath)
+                    val headers = mapOf(
+                        "Access-Control-Allow-Origin" to "*",
+                        "Cache-Control" to "no-cache"
+                    )
+                    WebResourceResponse(mime, "UTF-8", 200, "OK", headers, stream)
+                } catch (_: IOException) {
+                    null
+                }
+            }
+            .build()
 
         rootLayout = FrameLayout(this).apply {
             setBackgroundColor(Color.parseColor("#090F1D"))
@@ -90,6 +115,35 @@ class MainActivity : AppCompatActivity() {
         loadGameUrl()
     }
 
+    private fun guessMimeType(path: String): String {
+        val lower = path.lowercase()
+        return when {
+            lower.endsWith(".html") || lower.endsWith(".htm") -> "text/html"
+            lower.endsWith(".js") || lower.endsWith(".mjs") -> "application/javascript"
+            lower.endsWith(".css") -> "text/css"
+            lower.endsWith(".json") -> "application/json"
+            lower.endsWith(".webmanifest") -> "application/manifest+json"
+            lower.endsWith(".svg") -> "image/svg+xml"
+            lower.endsWith(".png") -> "image/png"
+            lower.endsWith(".jpg") || lower.endsWith(".jpeg") -> "image/jpeg"
+            lower.endsWith(".webp") -> "image/webp"
+            lower.endsWith(".woff2") -> "font/woff2"
+            lower.endsWith(".woff") -> "font/woff"
+            lower.endsWith(".wasm") -> "application/wasm"
+            lower.endsWith(".glb") -> "model/gltf-binary"
+            else -> "application/octet-stream"
+        }
+    }
+
+    private fun hasBundledLocalGame(): Boolean {
+        return try {
+            assets.open("index.html").close()
+            true
+        } catch (_: IOException) {
+            false
+        }
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     private fun configureWebView(wv: WebView) {
         wv.settings.apply {
@@ -105,17 +159,22 @@ class MainActivity : AppCompatActivity() {
             cacheMode = WebSettings.LOAD_DEFAULT
             mixedContentMode = WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
             javaScriptCanOpenWindowsAutomatically = false
-            // Clean Chrome-compatible UA with SmartTV marker so game auto-enables TV D-Pad mode
-            userAgentString = "$userAgentString BoxCricketAndroidTV/1.0 SmartTV"
+            userAgentString = "$userAgentString BoxCricketAndroidTV/1.1 SmartTV"
         }
 
         wv.addJavascriptInterface(AndroidTvBridge(), "AndroidTvBridge")
-
         wv.webChromeClient = object : WebChromeClient() {}
 
         wv.webViewClient = object : WebViewClient() {
+            override fun shouldInterceptRequest(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): WebResourceResponse? {
+                val uri: Uri = request?.url ?: return null
+                return assetLoader.shouldInterceptRequest(uri)
+            }
+
             override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
-                // Keep in-app navigation inside WebView
                 return false
             }
 
@@ -139,6 +198,20 @@ class MainActivity : AppCompatActivity() {
                 }
             }
 
+            override fun onReceivedHttpError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                errorResponse: WebResourceResponse?
+            ) {
+                super.onReceivedHttpError(view, request, errorResponse)
+                if (request?.isForMainFrame == true) {
+                    val code = errorResponse?.statusCode ?: 404
+                    if (code >= 400) {
+                        handleMainFrameFailure("Server returned HTTP $code for ${request.url}")
+                    }
+                }
+            }
+
             override fun onReceivedError(
                 view: WebView?,
                 request: WebResourceRequest?,
@@ -147,8 +220,27 @@ class MainActivity : AppCompatActivity() {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
                     val desc = error?.description?.toString() ?: "Unable to connect to game server"
-                    showErrorOverlay("Connection failed: $desc\nURL: ${getConfiguredGameUrl()}")
+                    handleMainFrameFailure("Connection failed: $desc")
                 }
+            }
+        }
+    }
+
+    private fun handleMainFrameFailure(reason: String) {
+        runOnUiThread {
+            if (!fellBackToLocalThisSession && hasBundledLocalGame()) {
+                fellBackToLocalThisSession = true
+                Toast.makeText(
+                    this,
+                    "Hosted server unavailable — launching built-in stadium!",
+                    Toast.LENGTH_SHORT
+                ).show()
+                isErrorShowing = false
+                errorOverlay.visibility = View.GONE
+                loadingOverlay.visibility = View.VISIBLE
+                webView.loadUrl(LOCAL_INDEX_URL)
+            } else {
+                showErrorOverlay("$reason\nURL: ${getConfiguredGameUrl()}")
             }
         }
     }
@@ -185,7 +277,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun buildErrorOverlay(): LinearLayout {
         errorSubtitle = TextView(this).apply {
-            text = "Please check your TV Wi-Fi connection and press Retry."
+            text = "Please check your URL or launch the built-in offline game."
             textSize = 15f
             setTextColor(Color.parseColor("#CBD5E1"))
             gravity = Gravity.CENTER
@@ -193,13 +285,16 @@ class MainActivity : AppCompatActivity() {
         }
 
         val retryBtn = Button(this).apply {
-            text = "RETRY CONNECTION"
+            text = "RETRY / LOAD BUILT-IN GAME"
             isFocusable = true
             isFocusableInTouchMode = true
             setBackgroundColor(Color.parseColor("#22C55E"))
             setTextColor(Color.parseColor("#022C22"))
             setPadding(44, 22, 44, 22)
-            setOnClickListener { loadGameUrl() }
+            setOnClickListener {
+                fellBackToLocalThisSession = false
+                loadGameUrl()
+            }
         }
 
         val urlBtn = Button(this).apply {
@@ -251,14 +346,22 @@ class MainActivity : AppCompatActivity() {
     private fun getConfiguredGameUrl(): String {
         val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val custom = prefs.getString(KEY_CUSTOM_URL, null)?.trim()
-        return if (!custom.isNullOrEmpty()) custom else BuildConfig.GAME_URL
+        val chosen = if (!custom.isNullOrEmpty()) custom else BuildConfig.GAME_URL.trim()
+        if (chosen.equals("local", ignoreCase = true) || chosen.isEmpty()) {
+            return LOCAL_INDEX_URL
+        }
+        return chosen
     }
 
     private fun loadGameUrl() {
         isErrorShowing = false
         errorOverlay.visibility = View.GONE
         loadingOverlay.visibility = View.VISIBLE
-        webView.loadUrl(getConfiguredGameUrl())
+        val target = getConfiguredGameUrl()
+        if (target == LOCAL_INDEX_URL) {
+            fellBackToLocalThisSession = true
+        }
+        webView.loadUrl(target)
     }
 
     private fun openServerUrlDialog() {
@@ -267,37 +370,37 @@ class MainActivity : AppCompatActivity() {
             setSingleLine(true)
         }
         AlertDialog.Builder(this)
-            .setTitle("Hosted Game URL")
-            .setMessage("Enter your deployed Box Cricket 3D URL (https://... or http://192.168.x.x:3000)")
+            .setTitle("Game URL (or type 'local')")
+            .setMessage("Enter your deployed URL (https://...) or type local to play built-in offline APK.")
             .setView(input)
             .setPositiveButton("Save & Load") { _, _ ->
                 val entered = input.text?.toString()?.trim().orEmpty()
-                if (entered.startsWith("http://") || entered.startsWith("https://")) {
+                if (entered.equals("local", ignoreCase = true) ||
+                    entered.startsWith("http://") ||
+                    entered.startsWith("https://")
+                ) {
                     getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                         .edit()
                         .putString(KEY_CUSTOM_URL, entered)
                         .apply()
+                    fellBackToLocalThisSession = false
                     loadGameUrl()
                 } else {
-                    Toast.makeText(this, "URL must start with http:// or https://", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Enter 'local' or an http(s):// URL", Toast.LENGTH_SHORT).show()
                 }
             }
-            .setNeutralButton("Reset Default") { _, _ ->
+            .setNeutralButton("Use Built-In Game") { _, _ ->
                 getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                     .edit()
-                    .remove(KEY_CUSTOM_URL)
+                    .putString(KEY_CUSTOM_URL, "local")
                     .apply()
+                fellBackToLocalThisSession = true
                 loadGameUrl()
             }
             .setNegativeButton("Cancel", null)
             .show()
     }
 
-    /**
-     * Native Android TV Remote Bridge:
-     * Forwards D-Pad ▲▼◀▶, OK/Select, and Back directly into JS so Android TV WebView
-     * never triggers virtual mouse pointer mode and responds with zero lag.
-     */
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (isErrorShowing) {
             return super.dispatchKeyEvent(event)
