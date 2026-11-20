@@ -1,5 +1,5 @@
 // Box Cricket 3D — Lightweight Network-First Service Worker (Zero-Lag for Hosted Android TV APK & PWA)
-const CACHE_NAME = 'box-cricket-3d-v2';
+const CACHE_NAME = 'box-cricket-3d-v3';
 const STATIC_ASSETS = [
   './',
   './index.html',

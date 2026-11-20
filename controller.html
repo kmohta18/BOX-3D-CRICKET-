@@ -332,6 +332,8 @@
     </div>
 
     <script type="module">
+      import { MqttRelayClient } from './src/mqtt_relay.js';
+
       const params = new URLSearchParams(window.location.search);
       let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
       const slot = params.get('slot') || 'p1';
@@ -596,12 +598,15 @@
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' }
       ];
+      let mqttRelay = null;
+      let tvPaired = false;
+      let joinBeaconTimer = null;
       let peer = null;
       let peerConn = null;
       let peerRetryTimer = null;
       let wsRetryTimer = null;
 
-      function isP2PPreferredHost() {
+      function isCloudRelayHost() {
         const h = window.location.hostname || '';
         return (
           params.get('p2p') === '1' ||
@@ -610,6 +615,66 @@
           h.endsWith('.netlify.app') ||
           h.endsWith('.pages.dev')
         );
+      }
+
+      function markTvPaired(labelPrefix = 'Connected') {
+        tvPaired = true;
+        if (joinBeaconTimer) {
+          clearInterval(joinBeaconTimer);
+          joinBeaconTimer = null;
+        }
+        statusEl.textContent = `${labelPrefix} · Room ${roomCode}`;
+        statusEl.className = 'text-[11px] font-mono text-emerald-400';
+      }
+
+      function startJoinBeacon() {
+        if (joinBeaconTimer) clearInterval(joinBeaconTimer);
+        const sendJoinNow = () => {
+          sendPacket({ type: 'join', role: 'controller', slot });
+          sendPacket({ type: 'shot_mode', mode: selectedShotMode });
+          sendPacket({ type: 'ping', clientTs: Date.now() });
+        };
+        sendJoinNow();
+        joinBeaconTimer = setInterval(() => {
+          if (tvPaired) {
+            clearInterval(joinBeaconTimer);
+            joinBeaconTimer = null;
+            return;
+          }
+          sendJoinNow();
+        }, 1600);
+      }
+
+      function connectMqttRelay() {
+        tvPaired = false;
+        if (mqttRelay) {
+          mqttRelay.destroy();
+          mqttRelay = null;
+        }
+        statusEl.textContent = `Connecting · ${roomCode}...`;
+        statusEl.className = 'text-[11px] font-mono text-amber-400';
+
+        mqttRelay = new MqttRelayClient({
+          role: 'controller',
+          roomCode,
+          onStatus: (st) => {
+            if (st === 'connected') {
+              if (!tvPaired) {
+                statusEl.textContent = `Waiting for TV · ${roomCode}...`;
+                statusEl.className = 'text-[11px] font-mono text-amber-400';
+              }
+              startJoinBeacon();
+            } else if (st === 'reconnecting') {
+              tvPaired = false;
+              statusEl.textContent = `Reconnecting · ${roomCode}...`;
+              statusEl.className = 'text-[11px] font-mono text-amber-400';
+            }
+          },
+          onMessage: (msg) => {
+            handleIncoming(msg);
+          }
+        });
+        mqttRelay.connect(roomCode);
       }
 
       let peerJsPromise = null;
@@ -654,15 +719,8 @@
 
       async function connectPeerJS() {
         cleanupPeer();
-        statusEl.textContent = `Pairing P2P · ${roomCode}...`;
-        statusEl.className = 'text-[11px] font-mono text-amber-400';
-
         const PeerCtor = await loadPeerJs();
-        if (!PeerCtor) {
-          statusEl.textContent = 'P2P SDK offline · Check Internet';
-          statusEl.className = 'text-[11px] font-mono text-red-400';
-          return;
-        }
+        if (!PeerCtor) return;
 
         const targetHostId = `boxcricket3d-host-${roomCode}`;
         try {
@@ -677,8 +735,7 @@
             peerConn = conn;
 
             conn.on('open', () => {
-              statusEl.textContent = `P2P Connected · Room ${roomCode}`;
-              statusEl.className = 'text-[11px] font-mono text-emerald-400';
+              markTvPaired('P2P Connected');
               sendPacket({ type: 'join', role: 'controller', slot });
               sendPacket({ type: 'shot_mode', mode: selectedShotMode });
             });
@@ -690,32 +747,22 @@
             });
 
             conn.on('close', () => {
-              statusEl.textContent = `Reconnecting · ${roomCode}...`;
-              statusEl.className = 'text-[11px] font-mono text-amber-400';
-              peerRetryTimer = setTimeout(() => connectPeerJS(), 1400);
+              peerConn = null;
             });
 
             conn.on('error', () => {
-              statusEl.textContent = `Waiting for TV · ${roomCode}...`;
-              statusEl.className = 'text-[11px] font-mono text-amber-400';
-              peerRetryTimer = setTimeout(() => connectPeerJS(), 1800);
+              peerConn = null;
             });
           });
 
-          peer.on('error', (err) => {
-            const t = err?.type || '';
-            statusEl.textContent = t === 'peer-unavailable'
-              ? `Waiting for TV Room ${roomCode}...`
-              : `Retrying P2P · ${roomCode}...`;
-            statusEl.className = 'text-[11px] font-mono text-amber-400';
-            peerRetryTimer = setTimeout(() => connectPeerJS(), 1800);
+          peer.on('error', () => {
+            // MQTT-over-WSS relay stays active as guaranteed primary transport!
           });
-        } catch {
-          peerRetryTimer = setTimeout(() => connectPeerJS(), 2000);
-        }
+        } catch {}
       }
 
       function connectWS() {
+        tvPaired = false;
         if (wsRetryTimer) {
           clearTimeout(wsRetryTimer);
           wsRetryTimer = null;
@@ -727,8 +774,9 @@
           ws = null;
         }
 
-        // On GitHub Pages / Vercel / static HTTPS hosts (or when ?p2p=1), connect directly via WebRTC PeerJS!
-        if (isP2PPreferredHost()) {
+        // On GitHub Pages / Vercel / static HTTPS hosts (or when ?p2p=1), use guaranteed MQTT-over-WSS Relay + optional PeerJS LAN boost!
+        if (isCloudRelayHost()) {
+          connectMqttRelay();
           connectPeerJS();
           return;
         }
@@ -742,8 +790,11 @@
           ws.onopen = () => {
             openedOnce = true;
             cleanupPeer();
-            statusEl.textContent = `Connected · Room ${roomCode}`;
-            statusEl.className = 'text-[11px] font-mono text-emerald-400';
+            if (mqttRelay) {
+              mqttRelay.destroy();
+              mqttRelay = null;
+            }
+            markTvPaired('Connected');
             sendPacket({ type: 'join', role: 'controller', slot });
             sendPacket({ type: 'shot_mode', mode: selectedShotMode });
           };
@@ -756,10 +807,12 @@
 
           ws.onclose = () => {
             if (!openedOnce) {
-              // No Express WebSocket server available -> seamlessly switch to WebRTC PeerJS!
+              // No Express WebSocket server available -> seamlessly switch to guaranteed MQTT-over-WSS Relay!
+              connectMqttRelay();
               connectPeerJS();
               return;
             }
+            tvPaired = false;
             statusEl.textContent = 'Reconnecting...';
             statusEl.className = 'text-[11px] font-mono text-amber-400';
             wsRetryTimer = setTimeout(connectWS, 1000);
@@ -767,6 +820,7 @@
 
           ws.onerror = () => {};
         } catch {
+          connectMqttRelay();
           connectPeerJS();
         }
       }
@@ -788,6 +842,10 @@
           try {
             peerConn.send(msg);
           } catch {}
+        }
+        // Send over MQTT-over-WSS relay whenever connected (if P2P isn't already open, or for critical control events)
+        if (mqttRelay && mqttRelay.connected && (!peerConn || !peerConn.open || payload?.type !== 'sensor')) {
+          mqttRelay.send(msg);
         }
       }
 
@@ -937,6 +995,7 @@
         if (msg.type === 'pong' && msg.clientTs) {
           rttMs = Math.max(2, Math.round((Date.now() - msg.clientTs) * 0.5));
           roomPingEl.textContent = `${roomCode} · ${rttMs}ms`;
+          if (!tvPaired) markTvPaired(peerConn && peerConn.open ? 'P2P Connected' : 'Connected');
         } else if (msg.type === 'vibrate') {
           if (navigator.vibrate) {
             navigator.vibrate(msg.pattern || [70]);
@@ -947,9 +1006,11 @@
           if (msg.mode) selectedShotMode = msg.mode;
           updateShotModeUI();
         } else if (msg.type === 'role_sync' || msg.type === 'joined_ack') {
+          markTvPaired(peerConn && peerConn.open ? 'P2P Connected' : 'Connected');
           const myRole = slot === 'p2' ? msg.p2Role : msg.p1Role;
           if (myRole) applyRoleUI(myRole);
         } else if (msg.type === 'match_hud') {
+          if (!tvPaired) markTvPaired(peerConn && peerConn.open ? 'P2P Connected' : 'Connected');
           const camBadge = document.getElementById('ctrl-cam-mode');
           if (camBadge) {
             const camName = msg.cameraMode || 'pro';
@@ -1151,7 +1212,9 @@
         const nowPerf = performance.now();
         const hasLiveGyro = lastHardwareMotionMs > 0 && nowPerf - lastHardwareMotionMs < 4000;
         const isTouchingPad = Boolean(startPt) || isDraggingWheel;
-        const minSendIntervalMs = hasLiveGyro || isTouchingPad ? 12 : 500;
+        const isCloudMqttOnly = Boolean(mqttRelay && mqttRelay.connected && (!ws || ws.readyState !== 1) && (!peerConn || !peerConn.open));
+        const activeIntervalMs = isCloudMqttOnly ? 32 : 12;
+        const minSendIntervalMs = hasLiveGyro || isTouchingPad ? activeIntervalMs : 600;
         if (nowPerf - lastSensorSendMs < minSendIntervalMs) {
           return;
         }

@@ -6,6 +6,8 @@
  * haptic vibration, and 30s reconnect pause.
  */
 
+import { MqttRelayClient } from './src/mqtt_relay.js';
+
 const PUBLIC_GITHUB_PAGES_BASE = 'https://kmohta18.github.io/BOX-3D-CRICKET-';
 const PEERJS_ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -73,6 +75,8 @@ export class NetworkManager {
     this.role = role; // 'host' | 'controller' | 'online_peer'
     this.roomCode = this.generateRoomCode();
     this.ws = null;
+    this.mqttRelay = null;
+    this.mqttConnected = false;
     this.peer = null;
     this.peerConns = new Set();
     this.p2pReady = false;
@@ -214,7 +218,10 @@ export class NetworkManager {
     }
     this.slot = slot;
 
-    // Always start WebRTC PeerJS P2P channel so Mobile-as-Controller works on GitHub Pages, Vercel, AND Android TV APK!
+    // 1. Primary Universal Cloud Relay (MQTT-over-WSS): works 100% through Android TV WebView, GitHub Pages, Wi-Fi & 4G/5G CGNAT!
+    this.connectMqttRelay(this.roomCode, slot);
+
+    // 2. Optional PeerJS WebRTC P2P lane for direct same-LAN acceleration
     this.connectPeerJS(this.roomCode, slot);
 
     // Static hosts & bundled offline Android TV APK do not run a local /ws Express relay.
@@ -253,12 +260,48 @@ export class NetworkManager {
       };
 
       this.ws.onclose = () => {
-        this.connected = this.p2pReady;
+        this.connected = this.mqttConnected || this.p2pReady;
         setTimeout(() => this.connect(this.roomCode, this.slot), 1200);
       };
 
       this.ws.onerror = () => {};
     } catch {}
+  }
+
+  connectMqttRelay(roomCode = this.roomCode, slot = 'p1') {
+    if (this.mqttRelay && this.mqttRelay.roomCode === roomCode && this.mqttRelay.role === this.role && !this.mqttRelay.destroyed) {
+      if (!this.mqttRelay.connected && !this.mqttRelay.ws) {
+        this.mqttRelay.connect(roomCode);
+      }
+      return;
+    }
+    if (this.mqttRelay) {
+      this.mqttRelay.destroy();
+      this.mqttRelay = null;
+    }
+    this.mqttRelay = new MqttRelayClient({
+      role: this.role,
+      roomCode,
+      onStatus: (status) => {
+        this.mqttConnected = status === 'connected';
+        if (this.mqttConnected) {
+          this.connected = true;
+          if (this.role !== 'host') {
+            this.send({
+              type: 'join',
+              room: this.roomCode,
+              role: this.role,
+              slot: slot || this.slot || 'p1',
+              ts: Date.now()
+            });
+          }
+        }
+      },
+      onMessage: (msg) => {
+        this.handleMessage(msg);
+      }
+    });
+    this.mqttRelay.connect(roomCode);
   }
 
   async connectPeerJS(roomCode = this.roomCode, slot = 'p1') {
@@ -348,15 +391,9 @@ export class NetworkManager {
 
       peer.on('error', (err) => {
         const errType = err?.type || '';
-        if (errType === 'unavailable-id' && this.role === 'host') {
-          // Room ID collision on global PeerJS broker: seamlessly pick a fresh room code and re-bind!
-          this.roomCode = this.generateRoomCode();
-          this.destroyPeerJS();
-          this._p2pRetryTimer = setTimeout(() => this.connectPeerJS(this.roomCode, slot), 400);
-          return;
-        }
+        // Never mutate this.roomCode on PeerJS errors so the displayed TV QR code stays 100% locked to the MQTT relay!
         if (errType === 'peer-unavailable' && this.role !== 'host') {
-          this._p2pRetryTimer = setTimeout(() => this.connectPeerJS(this.roomCode, slot), 2000);
+          this._p2pRetryTimer = setTimeout(() => this.connectPeerJS(this.roomCode, slot), 3500);
           return;
         }
         this.p2pReady = false;
@@ -390,6 +427,9 @@ export class NetworkManager {
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+    }
+    if (this.mqttRelay && this.mqttRelay.connected) {
+      this.mqttRelay.send(msg);
     }
     if (this.peerConns.size > 0) {
       this.peerConns.forEach((conn) => {
@@ -502,6 +542,25 @@ export class NetworkManager {
 
     if (msg.slot === 'p1' || msg.slot === 'p2') {
       ctrl.lastSeen = performance.now();
+      // Auto-mark controller connected if any valid controller packet arrives (recovers cleanly if join fired before TV subscribed!)
+      if (
+        this.role === 'host' &&
+        !ctrl.connected &&
+        msg.type !== 'controller_disconnect' &&
+        msg.type !== 'joined_ack' &&
+        msg.type !== 'pong' &&
+        msg.type !== 'match_hud'
+      ) {
+        ctrl.connected = true;
+        if (this.disconnectPaused) {
+          this.disconnectPaused = false;
+          if (this.callbacks.onPauseChange) this.callbacks.onPauseChange(false, 0);
+        }
+        if (this.callbacks.onControllerStatus) {
+          this.callbacks.onControllerStatus(this.controllers);
+        }
+        this.send({ type: 'joined_ack', slot, p1Role: this.controllers.p1.role, p2Role: this.controllers.p2.role });
+      }
     }
 
     if (msg.type === 'ping') {
