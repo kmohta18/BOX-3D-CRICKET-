@@ -73,6 +73,8 @@ export class BattingSystem {
     this.sensorCreaseOffsetX = 0.0; // Live phone tilt lateral offset
     this.creaseZOffset = 0.0; // Forward (+0.55m) or Back (-0.45m)
     this.footwork = 'neutral';
+    this.phoneFootworkOverride = null;
+    this.phoneFootworkUntil = 0;
     this.bodyPivotYaw = 0.0;  // Visual pivot of batsman feet & shoulders toward 360° shot direction
 
     // Calibration State
@@ -912,18 +914,28 @@ export class BattingSystem {
     angleRad = null,
     shotAngleDeg = null,
     planePitchDeg = null,
-    isDefensive = false
+    isDefensive = false,
+    footwork = null
   }) {
     if (this.runWindowActive) return; // Ignore swings while running between wickets!
 
-    const nowSec = performance.now() * 0.001;
+    const nowMs = performance.now();
+    const nowSec = nowMs * 0.001;
     const dirSign = this.screenRightSign || -1;
     this.lastSwingTime = nowSec;
     this.swingPeakTime = nowSec;
     this.manualSwingArmed = true;
     this.manualSwingAimLockUntil = nowSec + 0.95;
     const effectiveDefend = Boolean(isDefensive || this.shotMode === 'defend');
-    this.peakSwingSpeedDeg = effectiveDefend ? 150 : speedDeg;
+    this.peakSwingSpeedDeg = effectiveDefend ? Math.min(185, Math.max(120, speedDeg)) : speedDeg;
+    if (footwork === 'front' || footwork === 'back') {
+      this.footwork = footwork;
+      this.phoneFootworkOverride = footwork;
+      this.phoneFootworkUntil = nowMs + 950;
+      this.creaseZOffset = this.stepOutCharge ? 0.42 : footwork === 'front' ? 0.18 : -0.18;
+    } else {
+      this.phoneFootworkOverride = null;
+    }
 
     if (typeof shotAngleDeg === 'number') {
       const r = THREE.MathUtils.degToRad(shotAngleDeg);
@@ -1100,7 +1112,10 @@ export class BattingSystem {
     // Normal front-foot stride (0.18m) keeps back foot grounded inside the Popping Crease;
     // holding W/Up-Arrow, toggling Step-Out Charge, or charging down the track in LOFT mode against spin advances out of the crease (0.42m) -> Stumping risk if missed!
     if (!this.keys.up && !this.keys.down) {
-      this.footwork = this.computeSmartFootwork(this.swingPlaneYaw, ball);
+      const hasPhoneFootwork = Boolean(this.phoneFootworkOverride && performance.now() < this.phoneFootworkUntil);
+      this.footwork = hasPhoneFootwork
+        ? this.phoneFootworkOverride
+        : this.computeSmartFootwork(this.swingPlaneYaw, ball);
       const isLoftSpinCharge = this.footwork === 'front' && this.shotMode === 'fly' && isSpinOrSlow && absAngleDeg <= 55;
       this.creaseZOffset = this.stepOutCharge || isLoftSpinCharge ? 0.42 : this.footwork === 'front' ? 0.18 : -0.18;
     }
@@ -1111,16 +1126,20 @@ export class BattingSystem {
       ? (assist === 'full' ? 1.14 : assist === 'light' ? 1.08 : 1.04)
       : 1.0;
     const chargeBoost = this.stepOutCharge || this.creaseZOffset >= 0.24 ? 1.06 : 1.0;
+    const footworkMatchBonus =
+      (this.footwork === 'front' && (isFullBall || isYorker)) ? 1.06
+        : (this.footwork === 'back' && isShortBall) ? 1.08
+          : 1.0;
     const surgePowerBoost = (onFireActive
       ? (assist === 'full' ? 1.08 : assist === 'light' ? 1.05 : 1.03)
-      : 1.0) * chargeBoost;
+      : 1.0) * chargeBoost * (footworkMatchBonus > 1.0 ? 1.03 : 1.0);
 
     const baseWin = (diffProfile && diffProfile.timingWindowMs) || TIMING_WINDOWS_MS[difficulty] || TIMING_WINDOWS_MS.medium;
-    const angleDifficultyScale = (isBehindWicketShot ? 0.92 : 1.0) * surgeSweetBoost;
+    const angleDifficultyScale = (isBehindWicketShot ? 0.92 : 1.0) * surgeSweetBoost * footworkMatchBonus;
     const win = {
       perfect: Math.round(baseWin.perfect * angleDifficultyScale),
       good: Math.round(baseWin.good * angleDifficultyScale),
-      mistime: Math.round(baseWin.mistime * Math.min(1.12, surgeSweetBoost))
+      mistime: Math.round(baseWin.mistime * Math.min(1.14, surgeSweetBoost * footworkMatchBonus))
     };
 
     // Ideal swing/button press is slightly before the ball reaches the batter's true batZ (adjusted for back-foot/charge creaseZOffset!)

@@ -38,6 +38,14 @@
         </div>
         <div class="flex items-center gap-1.5 shrink-0">
           <button
+            id="btn-ctrl-grip-lock"
+            type="button"
+            title="Real Bat Grip Lock (Prevents accidental touches)"
+            class="px-2 py-0.5 bg-amber-400 active:bg-amber-300 border border-amber-200 rounded text-[10px] font-display font-extrabold text-slate-950 cursor-pointer shadow"
+          >
+            🔒 BAT GRIP
+          </button>
+          <button
             id="btn-ctrl-fullscreen"
             type="button"
             title="Toggle Fullscreen"
@@ -120,21 +128,29 @@
           </div>
         </div>
 
-        <div class="grid grid-cols-2 gap-1.5">
+        <div class="grid grid-cols-3 gap-1.5">
+          <button
+            id="btn-mode-auto"
+            class="min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-sky-400 text-slate-950 border-sky-200 shadow"
+          >
+            <span class="leading-tight">🏏 AUTO BAT</span>
+            <span class="text-[8px] font-sans font-semibold opacity-90 leading-tight">Arc = 4 / 6 / Def</span>
+          </button>
+
           <button
             id="btn-mode-ground"
-            class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-emerald-500 text-slate-950 border-emerald-300 shadow"
+            class="min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
           >
             <span class="leading-tight">GROUND</span>
-            <span class="text-[9px] font-sans font-semibold opacity-85 leading-tight">0–8° · Safe Carpet</span>
+            <span class="text-[8px] font-sans font-semibold opacity-80 leading-tight">Lock Carpet 4</span>
           </button>
 
           <button
             id="btn-mode-fly"
-            class="min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
+            class="min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer bg-slate-950 text-slate-300 border-slate-700"
           >
             <span class="leading-tight">LOFT</span>
-            <span class="text-[9px] font-sans font-semibold opacity-80 leading-tight">24–44° · Big Six</span>
+            <span class="text-[8px] font-sans font-semibold opacity-80 leading-tight">Lock Big 6</span>
           </button>
         </div>
 
@@ -331,8 +347,52 @@
       </div>
     </div>
 
+    <!-- OLED-Dark Hands-Free REAL BAT GRIP LOCK Overlay (Zero Accidental Touches!) -->
+    <div id="bat-grip-lock-overlay" class="hidden fixed inset-0 z-50 bg-black text-slate-200 flex flex-col justify-between p-4 select-none touch-none">
+      <div class="flex items-center justify-between gap-2 pt-1">
+        <div class="text-left min-w-0">
+          <div class="font-display text-xs font-black tracking-wider text-amber-400">🏏 REAL BAT GRIP LOCKED</div>
+          <div id="grip-lock-score" class="font-mono text-[11px] text-slate-400 truncate">IND v AUS 0/0 (0.0)</div>
+        </div>
+        <button
+          id="btn-grip-rezero"
+          type="button"
+          class="px-3 py-1.5 rounded-lg bg-slate-900 active:bg-emerald-500 active:text-slate-950 border border-emerald-500/50 text-emerald-300 font-display font-bold text-[11px] cursor-pointer shrink-0"
+        >
+          🎯 RE-ZERO
+        </button>
+      </div>
+
+      <!-- Center Dead-Zone (100% Touch-Ignored so gripping phone like a real bat handle never misfires!) -->
+      <div class="pointer-events-none flex-1 flex flex-col items-center justify-center text-center space-y-3 px-4">
+        <div class="w-24 h-24 rounded-full border border-emerald-500/30 bg-emerald-500/5 flex flex-col items-center justify-center">
+          <span class="text-3xl">🏏</span>
+          <span id="grip-lock-speed" class="font-mono text-xs font-bold text-emerald-400 mt-0.5">0°/s</span>
+        </div>
+        <div id="grip-lock-last-swing" class="font-display text-sm font-bold text-amber-300 leading-snug">
+          Hold like a real bat · Swing 360°!
+        </div>
+        <p class="text-[11px] text-slate-500 max-w-xs leading-relaxed">
+          Screen touch is locked so your grip never hits buttons.<br />
+          Flat swing = <span class="text-emerald-400 font-semibold">GROUND 4</span> · Rising swing = <span class="text-amber-400 font-semibold">LOFT 6</span> · Soft tap = <span class="text-sky-400 font-semibold">DEFEND</span>
+        </p>
+      </div>
+
+      <!-- Bottom Hold-1s-to-Unlock Bar (Accidental tap proof!) -->
+      <div class="pb-[max(8px,env(safe-area-inset-bottom,8px))]">
+        <button
+          id="btn-grip-unlock-hold"
+          type="button"
+          class="relative w-full py-3.5 rounded-2xl bg-slate-950 border border-slate-700 overflow-hidden font-display font-bold text-xs tracking-wider text-slate-300 cursor-pointer"
+        >
+          <span id="grip-unlock-fill" class="pointer-events-none absolute inset-y-0 left-0 bg-amber-400/30 w-0"></span>
+          <span id="grip-unlock-label" class="relative z-10">🔓 HOLD 1 SEC TO UNLOCK PAD</span>
+        </button>
+      </div>
+    </div>
+
     <script type="module">
-      import { MqttRelayClient } from './src/mqtt_relay.js?v=5';
+      import { MqttRelayClient } from './src/mqtt_relay.js?v=6';
 
       const params = new URLSearchParams(window.location.search);
       let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
@@ -345,6 +405,7 @@
       const yawEl = document.getElementById('tel-yaw');
       const pitchEl = document.getElementById('tel-pitch');
       const padFeedback = document.getElementById('pad-feedback');
+      const btnAutoBat = document.getElementById('btn-mode-auto');
       const btnGround = document.getElementById('btn-mode-ground');
       const btnFly = document.getElementById('btn-mode-fly');
       const lockBadge = document.getElementById('shot-lock-badge');
@@ -379,7 +440,9 @@
       const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('box_cricket_3d_bus') : null;
       let rttMs = 11;
 
-      let selectedShotMode = 'ground'; // Default GROUND
+      let selectedShotMode = 'ground'; // 'ground' | 'fly' | 'defend'
+      let autoBatPathMode = true;      // True = Auto Ground / Loft / Defend directly from real bat swing arc!
+      let isGripLocked = false;
       let isModeLocked = false;
       let currentWheelAimDeg = 0;
       let lastWheelEditMs = 0;
@@ -479,40 +542,131 @@
       }
 
       function updateShotModeUI() {
-        const isGround = selectedShotMode === 'ground';
-        btnGround.className = `min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+        const isAuto = Boolean(autoBatPathMode);
+        const isGround = !isAuto && selectedShotMode === 'ground';
+        const isFly = !isAuto && selectedShotMode === 'fly';
+
+        if (btnAutoBat) {
+          btnAutoBat.className = `min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+            isAuto
+              ? 'bg-sky-400 text-slate-950 border-sky-200 shadow'
+              : 'bg-slate-950 text-slate-400 border-slate-800'
+          }`;
+        }
+
+        btnGround.className = `min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
           isGround
             ? 'bg-emerald-500 text-slate-950 border-emerald-300 shadow'
             : 'bg-slate-950 text-slate-400 border-slate-800'
         }`;
 
-        btnFly.className = `min-h-[42px] py-1 px-2 rounded-lg font-display font-bold text-sm flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
-          !isGround
+        btnFly.className = `min-h-[42px] py-1 px-1.5 rounded-lg font-display font-bold text-xs flex flex-col items-center justify-center border-2 transition-all cursor-pointer ${
+          isFly
             ? 'bg-amber-400 text-slate-950 border-amber-200 shadow'
             : 'bg-slate-950 text-slate-400 border-slate-800'
         }`;
 
-        const modeDisplay = selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
+        const modeDisplay = isAuto ? 'AUTO BAT ARC' : selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
         lockBadge.textContent = `READY · ${modeDisplay}`;
         lockBadge.className = `font-mono font-bold truncate ${
-          selectedShotMode === 'fly' ? 'text-amber-400' : 'text-emerald-400'
+          isAuto ? 'text-sky-400' : selectedShotMode === 'fly' ? 'text-amber-400' : 'text-emerald-400'
         }`;
         renderPhoneWheelUI();
       }
 
-      // Bug #4 Fix: Allow switching between GROUND and LOFT anytime before bat-ball contact
+      // Allow switching between AUTO BAT ARC, GROUND, and LOFT anytime before bat-ball contact
       function selectShotMode(mode) {
+        if (mode === 'auto') {
+          autoBatPathMode = true;
+          selectedShotMode = 'ground';
+          if (navigator.vibrate) navigator.vibrate(25);
+          updateShotModeUI();
+          sendPacket({ type: 'shot_mode', mode: 'ground' });
+          padFeedback.textContent = '🏏 AUTO BAT ON · Flat = 4 · Rising = 6 · Soft = Defend!';
+          return;
+        }
+        autoBatPathMode = false;
         selectedShotMode = mode;
         if (navigator.vibrate) navigator.vibrate(30);
         updateShotModeUI();
         sendPacket({ type: 'shot_mode', mode: selectedShotMode });
         padFeedback.textContent = mode === 'ground'
-          ? 'GROUND Selected (0–8° flat carpet drive)'
-          : 'LOFT Selected (24–40° aerial six shot)';
+          ? 'GROUND Locked (0–8° flat carpet drive)'
+          : 'LOFT Locked (24–40° aerial six shot)';
       }
 
+      btnAutoBat?.addEventListener('click', () => selectShotMode('auto'));
       btnGround.addEventListener('click', () => selectShotMode('ground'));
       btnFly.addEventListener('click', () => selectShotMode('fly'));
+
+      // 🔒 REAL BAT GRIP LOCK Overlay Controller (Zero Accidental Touches + Auto WakeLock + Auto Re-Zero)
+      const gripOverlayEl = document.getElementById('bat-grip-lock-overlay');
+      const gripScoreEl = document.getElementById('grip-lock-score');
+      const gripSpeedEl = document.getElementById('grip-lock-speed');
+      const gripLastSwingEl = document.getElementById('grip-lock-last-swing');
+      const gripUnlockBtn = document.getElementById('btn-grip-unlock-hold');
+      const gripUnlockFill = document.getElementById('grip-unlock-fill');
+      const gripUnlockLbl = document.getElementById('grip-unlock-label');
+
+      function setGripLockActive(active) {
+        isGripLocked = Boolean(active);
+        if (gripOverlayEl) gripOverlayEl.classList.toggle('hidden', !isGripLocked);
+        if (isGripLocked) {
+          requestScreenWakeLock();
+          ensureMotionSensorsPermission(false);
+          autoBatPathMode = true;
+          updateShotModeUI();
+          // Zero current stance automatically on entering Bat Grip Lock!
+          zeroAlpha = sensor.alpha;
+          zeroBeta = sensor.beta;
+          wheelUserDraggedThisBall = false;
+          sendPacket({ type: 'calibrate_zero' });
+          if (gripScoreEl && liveScoreEl) gripScoreEl.textContent = liveScoreEl.textContent;
+          if (gripLastSwingEl) gripLastSwingEl.textContent = '🎯 Stance Zeroed! Swing 360° like a real bat!';
+          if (navigator.vibrate) navigator.vibrate([30, 25, 45]);
+        }
+      }
+
+      document.getElementById('btn-ctrl-grip-lock')?.addEventListener('click', () => setGripLockActive(true));
+      document.getElementById('btn-grip-rezero')?.addEventListener('click', () => {
+        zeroAlpha = sensor.alpha;
+        zeroBeta = sensor.beta;
+        wheelUserDraggedThisBall = false;
+        sendPacket({ type: 'calibrate_zero' });
+        if (gripLastSwingEl) gripLastSwingEl.textContent = '🎯 0° Straight Re-Zeroed to Your Grip!';
+        if (navigator.vibrate) navigator.vibrate([28, 20, 40]);
+      });
+
+      let unlockHoldRaf = null;
+      let unlockHoldStart = 0;
+      const cancelUnlockHold = () => {
+        if (unlockHoldRaf) cancelAnimationFrame(unlockHoldRaf);
+        unlockHoldRaf = null;
+        unlockHoldStart = 0;
+        if (gripUnlockFill) gripUnlockFill.style.width = '0%';
+        if (gripUnlockLbl) gripUnlockLbl.textContent = '🔓 HOLD 1 SEC TO UNLOCK PAD';
+      };
+      gripUnlockBtn?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        unlockHoldStart = performance.now();
+        if (gripUnlockLbl) gripUnlockLbl.textContent = 'UNLOCKING... KEEP HOLDING';
+        const step = () => {
+          if (!unlockHoldStart) return;
+          const pct = Math.min(100, ((performance.now() - unlockHoldStart) / 950) * 100);
+          if (gripUnlockFill) gripUnlockFill.style.width = `${pct.toFixed(1)}%`;
+          if (pct >= 100) {
+            cancelUnlockHold();
+            setGripLockActive(false);
+            if (navigator.vibrate) navigator.vibrate(35);
+            return;
+          }
+          unlockHoldRaf = requestAnimationFrame(step);
+        };
+        unlockHoldRaf = requestAnimationFrame(step);
+      });
+      gripUnlockBtn?.addEventListener('pointerup', cancelUnlockHold);
+      gripUnlockBtn?.addEventListener('pointercancel', cancelUnlockHold);
+      gripUnlockBtn?.addEventListener('pointerleave', cancelUnlockHold);
 
       function switchRoom(newRoom) {
         const cleaned = (newRoom || '').trim().toUpperCase().slice(0, 4);
@@ -998,12 +1152,14 @@
           if (!tvPaired) markTvPaired(peerConn && peerConn.open ? 'P2P Connected' : 'Connected');
         } else if (msg.type === 'vibrate') {
           if (navigator.vibrate) {
-            navigator.vibrate(msg.pattern || [70]);
+            navigator.vibrate(msg.pattern || [55]);
           }
-          padFeedback.textContent = msg.label || '🏏 BAT-BALL IMPACT!';
+          const vibLabel = msg.label || '🏏 BAT-BALL IMPACT!';
+          padFeedback.textContent = vibLabel;
+          if (gripLastSwingEl) gripLastSwingEl.textContent = vibLabel;
         } else if (msg.type === 'shot_mode_lock') {
           isModeLocked = Boolean(msg.locked);
-          if (msg.mode) selectedShotMode = msg.mode;
+          if (msg.mode && !autoBatPathMode) selectedShotMode = msg.mode;
           updateShotModeUI();
         } else if (msg.type === 'role_sync' || msg.type === 'joined_ack') {
           markTvPaired(peerConn && peerConn.open ? 'P2P Connected' : 'Connected');
@@ -1018,6 +1174,7 @@
             camBadge.className = `px-1 rounded font-mono text-[9px] font-bold ${camName === 'broadcast' ? 'bg-amber-500/20 text-amber-300' : 'bg-emerald-500/20 text-emerald-300'}`;
           }
           if (liveScoreEl && msg.scoreText) liveScoreEl.textContent = msg.scoreText;
+          if (gripScoreEl && msg.scoreText) gripScoreEl.textContent = msg.scoreText;
           if (liveNeedEl && msg.needText) liveNeedEl.textContent = msg.needText;
           if (msg.userRole) applyRoleUI(msg.userRole);
           if (typeof msg.dirSign === 'number') hostDirSign = msg.dirSign;
@@ -1156,6 +1313,8 @@
       let peakLinearAccelTs = 0;
       let lastAirSwingFiredMs = 0;
       let lastSweepDirSign = 0;
+      // Rolling 150ms motion arc buffer for True 360° Swing-Arc Vector + Vertical Trajectory (Ground vs Loft vs Defend) + Footwork!
+      const motionArcBuffer = [];
 
       const wrap180 = (deg) => ((((deg + 180) % 360) + 360) % 360) - 180;
 
@@ -1163,36 +1322,77 @@
       const markHardwareSensorsLive = (modeText = null) => {
         lastHardwareMotionMs = performance.now();
         if (sensorBadgeEl) {
-          sensorBadgeEl.textContent = modeText || (hasHardwareGyro ? '🏏 Air-Swing Bat Active (Gyro+Accel)' : '🏏 Air-Swing Bat Active (Motion)');
+          sensorBadgeEl.textContent = modeText || (hasHardwareGyro ? '🏏 Real Bat 360° Active (Gyro+Accel)' : '🏏 Real Bat Active (Motion)');
           sensorBadgeEl.className =
             'px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono text-[9px] truncate';
         }
       };
 
+      function pushMotionArcSample(nowMs, accX = 0) {
+        motionArcBuffer.push({
+          ts: nowMs,
+          alpha: sensor.alpha,
+          beta: sensor.beta,
+          gamma: sensor.gamma,
+          gx: sensor.gx,
+          gy: sensor.gy,
+          gz: sensor.gz,
+          linAcc: linearAccelMag,
+          accX
+        });
+        while (motionArcBuffer.length > 2 && nowMs - motionArcBuffer[0].ts > 155) {
+          motionArcBuffer.shift();
+        }
+      }
+
       function triggerPhoneAirSwing(fusedSpeedDeg, triggerSource) {
         const nowMs = performance.now();
-        if (nowMs - lastAirSwingFiredMs < 400) return;
+        if (nowMs - lastAirSwingFiredMs < 380) return;
         lastAirSwingFiredMs = nowMs;
 
-        // Determine 360° shot direction: respect explicit wheel drag, otherwise compute natural bat swing yaw!
+        // Analyze 120ms pre-impact swing arc for True 360° Direction + Vertical Trajectory + Footwork!
+        const startSample = motionArcBuffer.length > 0 ? motionArcBuffer[0] : { alpha: sensor.alpha, beta: sensor.beta, gx: 0, gy: 0, accX: 0 };
+        const peakAlpha = sensor.alpha;
+        const peakBeta = sensor.beta;
+        const arcSweepYaw = wrap180(peakAlpha - startSample.alpha);
+        const pitchRiseDeg = peakBeta - startSample.beta;
+        const relBeta = zeroBeta !== null ? (peakBeta - zeroBeta) : 0;
+
+        // 1) True 360° Shot Direction (respect explicit 360° wheel drag only when user intentionally touched wheel this ball)
         let shotAngleDeg = 0;
-        if (wheelUserDraggedThisBall) {
+        if (wheelUserDraggedThisBall && !isGripLocked) {
           shotAngleDeg = currentWheelAimDeg;
         } else {
-          const relAlpha = zeroAlpha !== null ? wrap180(sensor.alpha - zeroAlpha) : 0;
-          // Combine stance turn (relAlpha) with whip direction so swinging right/left aims naturally
-          const whipBias = lastSweepDirSign * 22;
-          shotAngleDeg = Math.round(Math.max(-165, Math.min(165, -relAlpha * 1.15 + whipBias)));
-          if (Math.abs(shotAngleDeg) < 14) shotAngleDeg = 0;
+          const relAlpha = zeroAlpha !== null ? wrap180(peakAlpha - zeroAlpha) : 0;
+          // Combine calibrated stance aim + active 120ms bat-arc travel + horizontal whip bias
+          const raw360 = -relAlpha * 1.12 - arcSweepYaw * 0.45 + lastSweepDirSign * 16;
+          shotAngleDeg = Math.round(Math.max(-175, Math.min(175, raw360)));
+          if (Math.abs(shotAngleDeg) < 12) shotAngleDeg = 0;
           currentWheelAimDeg = shotAngleDeg;
           renderPhoneWheelUI();
         }
 
-        const speedDeg = Math.round(Math.max(290, Math.min(590, fusedSpeedDeg)));
+        // 2) True Physical Swing Speed Power (soft hands ~165-220°/s -> crisp drive ~340°/s -> full whip 500-590°/s!)
+        const speedDeg = Math.round(Math.max(165, Math.min(590, fusedSpeedDeg)));
+
+        // 3) Auto Ground vs Loft vs Defence from REAL Bat Swing Arc (when AUTO BAT mode is active!)
+        let resolvedShotMode = selectedShotMode;
+        if (autoBatPathMode) {
+          const isSoftPush = speedDeg < 225 && peakLinearAccel < 13.5;
+          const isRisingLoftArc = (pitchRiseDeg >= 12 || (sensor.gx > 68 && speedDeg >= 295)) && !isSoftPush;
+          resolvedShotMode = isSoftPush ? 'defend' : isRisingLoftArc ? 'fly' : 'ground';
+        }
+
+        // 4) Automatic Front-Foot vs Back-Foot from Bat Height & Cross-Bat Angle
+        const absAngle = Math.abs(shotAngleDeg);
+        const footwork = (relBeta >= 11 || absAngle >= 72) ? 'back' : 'front';
+
         const dirX = Math.max(-1, Math.min(1, Math.sin((shotAngleDeg * Math.PI) / 180)));
-        const planePitchDeg = selectedShotMode === 'fly'
-          ? Math.max(26, Math.min(42, 24 + (speedDeg - 280) * 0.05))
-          : 4;
+        const planePitchDeg = resolvedShotMode === 'fly'
+          ? Math.round(Math.max(25, Math.min(43, 24 + Math.max(0, pitchRiseDeg) * 0.45 + (speedDeg - 260) * 0.03)))
+          : resolvedShotMode === 'defend'
+            ? 2
+            : 4;
 
         sendPacket({
           type: 'air_swing',
@@ -1200,14 +1400,19 @@
           shotAngleDeg,
           dirX,
           planePitchDeg,
-          shotMode: selectedShotMode,
+          shotMode: resolvedShotMode,
+          footwork,
           triggerSource,
           clientTs: Date.now()
         });
 
-        if (navigator.vibrate) navigator.vibrate([32]);
-        const modeTxt = selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
-        padFeedback.textContent = `🏏 AIR SWING (${modeTxt}) · ${getSectorLabel(shotAngleDeg)} · ${speedDeg}°/s`;
+        // Subtle tactile confirmation of swing launch (real wood-on-leather impact thump arrives from TV on bat-ball contact!)
+        if (navigator.vibrate) navigator.vibrate([16]);
+        const modeTxt = resolvedShotMode === 'fly' ? 'LOFT 6' : resolvedShotMode === 'defend' ? 'DEFEND' : 'GROUND 4';
+        const fwTxt = footwork === 'back' ? 'BACK-FT' : 'FRONT-FT';
+        const fbMsg = `🏏 ${modeTxt} · ${getSectorLabel(shotAngleDeg)} · ${fwTxt} (${speedDeg}°/s)`;
+        padFeedback.textContent = fbMsg;
+        if (gripLastSwingEl) gripLastSwingEl.textContent = fbMsg;
       }
 
       // Cross-platform DeviceOrientation (handles both Android alpha and iOS webkitCompassHeading + computes angular velocity fallback)
@@ -1234,12 +1439,13 @@
               const dG = wrap180(sensor.gamma - prevOrient.gamma) / dtSec;
               orientRateDeg = Math.hypot(dA, dB, dG);
               if (Math.abs(dA) > 45) lastSweepDirSign = dA > 0 ? -1 : 1;
-              // Gently re-center zeroAlpha when holding phone steady in stance
+              // Gently re-center zeroAlpha/zeroBeta when holding phone steady in stance
               if (orientRateDeg < 18 && linearAccelMag < 1.8 && Math.abs(wrap180(sensor.alpha - zeroAlpha)) < 18) {
                 zeroAlpha = zeroAlpha + wrap180(sensor.alpha - zeroAlpha) * 0.03;
+                zeroBeta = zeroBeta + (sensor.beta - zeroBeta) * 0.02;
               }
               if (orientRateDeg >= 185 && linearAccelMag >= 4.2) {
-                triggerPhoneAirSwing(Math.max(orientRateDeg * 1.4, 330), 'orient');
+                triggerPhoneAirSwing(Math.max(orientRateDeg * 1.35, 290), 'orient');
               }
             }
           }
@@ -1247,6 +1453,7 @@
           prevOrient.beta = sensor.beta;
           prevOrient.gamma = sensor.gamma;
           prevOrient.ts = nowMs;
+          pushMotionArcSample(nowMs, 0);
           markHardwareSensorsLive();
         }
       });
@@ -1260,15 +1467,15 @@
           rawGz = e.rotationRate.gamma || 0;
           if (Math.abs(rawGx) > 0.01 || Math.abs(rawGy) > 0.01 || Math.abs(rawGz) > 0.01) {
             hasHardwareGyro = true;
-            // Some Android WebViews report rotationRate in rad/s (values ~2-9) instead of deg/s (~150-500)
             sensor.gx = rawGx;
             sensor.gy = rawGy;
             sensor.gz = rawGz;
-            if (Math.abs(rawGy) > 30) lastSweepDirSign = rawGy > 0 ? -1 : 1;
+            if (Math.abs(rawGy) > 28) lastSweepDirSign = rawGy > 0 ? -1 : 1;
             markHardwareSensorsLive();
           }
         }
 
+        let accXVal = 0;
         const accNoG = e.acceleration;
         const accWithG = e.accelerationIncludingGravity;
         const acc = accWithG || accNoG;
@@ -1280,8 +1487,9 @@
 
           // Compute linear acceleration (bat-whip G-force) works on 100% of Android/iOS phones EVEN WITHOUT GYRO!
           if (accNoG && (accNoG.x !== null || accNoG.y !== null || accNoG.z !== null)) {
-            linearAccelMag = Math.hypot(accNoG.x || 0, accNoG.y || 0, accNoG.z || 0);
-            if (Math.abs(accNoG.x || 0) > 4.5) lastSweepDirSign = (accNoG.x || 0) > 0 ? 1 : -1;
+            accXVal = accNoG.x || 0;
+            linearAccelMag = Math.hypot(accXVal, accNoG.y || 0, accNoG.z || 0);
+            if (Math.abs(accXVal) > 4.2) lastSweepDirSign = accXVal > 0 ? 1 : -1;
           } else if (accWithG) {
             const totalG = Math.hypot(sensor.ax, sensor.ay, sensor.az);
             gravityEst = gravityEst * 0.92 + totalG * 0.08;
@@ -1295,15 +1503,18 @@
           markHardwareSensorsLive();
         }
 
-        // Native 60-100Hz Air-Swing Trigger (Triple-Sensor Fusion: Gyro OR Linear Bat-Whip Accel OR Combined!)
+        pushMotionArcSample(nowMs, accXVal);
+
+        // Native 60-100Hz Air-Swing Trigger (Soft Push -> Timed Drive -> Full Power Whip!)
         const omegaMag = Math.hypot(sensor.gx, sensor.gy, sensor.gz);
-        const isPureSlowBacklift = sensor.gx > 35 && Math.hypot(sensor.gy, sensor.gz) < sensor.gx * 0.78 && omegaMag < 185 && linearAccelMag < 9.5;
+        const isPureSlowBacklift = sensor.gx > 35 && Math.hypot(sensor.gy, sensor.gz) < sensor.gx * 0.78 && omegaMag < 180 && linearAccelMag < 9.0;
         if (!isPureSlowBacklift) {
-          const gyroTriggered = omegaMag >= 132;
-          const accelTriggered = linearAccelMag >= 11.2;
-          const comboTriggered = omegaMag >= 85 && linearAccelMag >= 6.8;
+          const gyroTriggered = omegaMag >= 118;
+          const accelTriggered = linearAccelMag >= 10.2;
+          const comboTriggered = omegaMag >= 78 && linearAccelMag >= 6.2;
           if (gyroTriggered || accelTriggered || comboTriggered) {
-            const fusedSpeed = Math.max(omegaMag * 1.15, linearAccelMag * 28, orientRateDeg * 1.25, 325);
+            // Preserve true real-world speed dynamic range: soft tap (~170-220) vs crisp drive (~340) vs hard smash (~540)
+            const fusedSpeed = Math.max(omegaMag * 1.12, linearAccelMag * 24, orientRateDeg * 1.15);
             const src = gyroTriggered ? 'gyro' : accelTriggered ? 'accel' : 'combo';
             triggerPhoneAirSwing(fusedSpeed, src);
           }
@@ -1335,7 +1546,11 @@
         const spdTxt = `${omegaMag}°/s`;
         const yawTxt = `${Math.round(sensor.alpha)}°`;
         const pitTxt = `${Math.round(sensor.beta)}°`;
-        if (lastTelText.spd !== spdTxt) { lastTelText.spd = spdTxt; speedEl.textContent = spdTxt; }
+        if (lastTelText.spd !== spdTxt) {
+          lastTelText.spd = spdTxt;
+          speedEl.textContent = spdTxt;
+          if (gripSpeedEl) gripSpeedEl.textContent = spdTxt;
+        }
         if (lastTelText.yaw !== yawTxt) { lastTelText.yaw = yawTxt; yawEl.textContent = yawTxt; }
         if (lastTelText.pit !== pitTxt) { lastTelText.pit = pitTxt; pitchEl.textContent = pitTxt; }
 

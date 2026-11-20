@@ -6,7 +6,7 @@
  * haptic vibration, and 30s reconnect pause.
  */
 
-import { MqttRelayClient } from './src/mqtt_relay.js?v=5';
+import { MqttRelayClient } from './src/mqtt_relay.js?v=6';
 
 const PUBLIC_GITHUB_PAGES_BASE = 'https://kmohta18.github.io/BOX-3D-CRICKET-';
 const PEERJS_ICE_SERVERS = [

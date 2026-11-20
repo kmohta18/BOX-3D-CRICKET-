@@ -872,6 +872,39 @@ export class BoxCricketApp {
     this.aimRing.position.set(0.05, 0.035, 4.6);
     this.scene.add(this.aimRing);
 
+    // 3D Live Bat-Aim Ground Guide (subtle glowing pitch shadow arrow showing real-time 360° phone bat direction)
+    this.batAimGuide = new THREE.Group();
+    this.batAimShaftMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.34,
+      depthWrite: false
+    });
+    this.batAimTipMat = new THREE.MeshBasicMaterial({
+      color: 0x34d399,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.62,
+      depthWrite: false
+    });
+    const aimShaftGeo = new THREE.PlaneGeometry(0.18, 2.35).rotateX(-Math.PI / 2);
+    aimShaftGeo.translate(0, 0, -1.45);
+    const aimTipShape = new THREE.Shape();
+    aimTipShape.moveTo(0, 0.42);
+    aimTipShape.lineTo(-0.34, -0.22);
+    aimTipShape.lineTo(0.34, -0.22);
+    aimTipShape.closePath();
+    const aimTipGeo = new THREE.ShapeGeometry(aimTipShape).rotateX(-Math.PI / 2);
+    aimTipGeo.translate(0, 0, -2.78);
+    this.batAimGuide.add(
+      new THREE.Mesh(aimShaftGeo, this.batAimShaftMat),
+      new THREE.Mesh(aimTipGeo, this.batAimTipMat)
+    );
+    this.batAimGuide.position.set(0, 0.033, CREASE_Z);
+    this.batAimGuide.visible = false;
+    this.scene.add(this.batAimGuide);
+
     this.bounceMarker = new THREE.Mesh(
       new THREE.CircleGeometry(0.14, 24).rotateX(-Math.PI / 2),
       new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
@@ -2370,7 +2403,7 @@ export class BoxCricketApp {
       this.checkAndExecuteBattingContact();
     };
 
-    // Instant Phone-Side Native 60-100Hz Air-Swing Handler (works over WSS, Mosquitto, AND Port-443 + Gyro/Accelerometer phones!)
+    // Instant Phone-Side Native 60-100Hz Air-Swing Handler (True 360° Bat Arc + Auto Ground/Loft/Defend + Front/Back Footwork + Real Speed Power!)
     this.net.callbacks.onAirSwing = (msg, slot) => {
       sound.init();
       if (this.ui.cornerMenuOpen || this.ui.isAnyModalOpen()) return;
@@ -2380,12 +2413,12 @@ export class BoxCricketApp {
       this._lastAirSwingEventMs = nowMs;
 
       const dirSign = this.batting.screenRightSign || -1;
-      const speedDeg = THREE.MathUtils.clamp(Number(msg.speedDeg) || 410, 250, 620);
+      const speedDeg = THREE.MathUtils.clamp(Number(msg.speedDeg) || 380, 155, 620);
 
       // Overarm bowling release when user is bowling!
       if (this.match.userRole === 'bowl') {
         if (this.physics.state === 'runup') {
-          const normSpd = THREE.MathUtils.clamp((speedDeg - 220) / 360, 0.78, 1.06);
+          const normSpd = THREE.MathUtils.clamp((speedDeg - 180) / 380, 0.76, 1.08);
           const manualDelivery = this.bowling.triggerManualDelivery(normSpd);
           this.releaseBowledBall(manualDelivery);
         }
@@ -2396,22 +2429,26 @@ export class BoxCricketApp {
         this.batting.setShotMode(msg.shotMode);
       }
 
+      const isDef = msg.shotMode === 'defend' || speedDeg < 215;
+      const footwork = msg.footwork === 'front' || msg.footwork === 'back' ? msg.footwork : null;
       const shotAngleDeg = typeof msg.shotAngleDeg === 'number' ? msg.shotAngleDeg * dirSign : undefined;
       const planePitchDeg = typeof msg.planePitchDeg === 'number'
         ? msg.planePitchDeg
-        : (this.batting.shotMode === 'fly' ? 28 : 4);
+        : (this.batting.shotMode === 'fly' ? 28 : isDef ? 2 : 4);
 
       if (this.physics.state === 'bowled') {
         this.batting.triggerManualSwing({
           speedDeg,
           dirX: (Number(msg.dirX) || 0) * dirSign,
           shotAngleDeg,
-          planePitchDeg
+          planePitchDeg,
+          isDefensive: isDef,
+          footwork
         });
-        const shotKey = this.batting.activeShotType?.shotKey || (this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
+        const shotKey = this.batting.activeShotType?.shotKey || (isDef ? 'defence' : this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
         this.triggerStrikerMocapShot(shotKey, {
-          isSweet: true,
-          isOnFire: typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
+          isSweet: !isDef,
+          isOnFire: !isDef && typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
         });
         this.checkAndExecuteBattingContact();
       } else if (this.physics.state === 'runup') {
@@ -2421,17 +2458,27 @@ export class BoxCricketApp {
           speedDeg,
           dirX: (Number(msg.dirX) || 0) * dirSign,
           shotAngleDeg,
-          planePitchDeg
+          planePitchDeg,
+          isDefensive: isDef,
+          footwork
         });
-        const shotKey = this.batting.activeShotType?.shotKey || (this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
+        const shotKey = this.batting.activeShotType?.shotKey || (isDef ? 'defence' : this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
         this.triggerStrikerMocapShot(shotKey, {
           isSweet: false,
           isOnFire: false
         });
         sound.playBatWhoosh?.(speedDeg);
       } else if (this.physics.state === 'idle' && !this.batting.runWindowActive) {
-        // Live visual practice swing in the crease so swinging phone immediately moves the 3D batsman!
-        const previewKey = this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive';
+        // Live visual practice swing in the crease so swinging phone immediately moves the 3D batsman in the swung direction!
+        this.batting.triggerManualSwing({
+          speedDeg,
+          dirX: (Number(msg.dirX) || 0) * dirSign,
+          shotAngleDeg,
+          planePitchDeg,
+          isDefensive: isDef,
+          footwork
+        });
+        const previewKey = this.batting.activeShotType?.shotKey || (isDef ? 'defence' : this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
         this.triggerStrikerMocapShot(previewKey, { isSweet: false, isOnFire: false });
         sound.playBatWhoosh?.(speedDeg);
       }
@@ -4045,7 +4092,7 @@ export class BoxCricketApp {
           const isThick = info.contactType.toLowerCase().includes('thick') || info.timingQuality > 0.55;
           sound.playBatHit(batPower, false, isThick ? 'thick_edge' : 'thin_edge', pan);
           // 3-stage wooden handle rattle vibration on edge!
-          this.net.vibratePhone('p1', [16, 22, 32], '⚠️ EDGE CONTACT!');
+          this.net.vibratePhone('p1', [18, 26, 18, 26, 22], '⚠️ EDGE CONTACT!');
           this.cameraShakeIntensity = 0.04;
           this.batting.startRunWindow();
           this.registerReplayHighlight({
@@ -4062,16 +4109,17 @@ export class BoxCricketApp {
           );
         } else {
           sound.playBatHit(batPower, isSweet, isSweet ? 'sweet' : 'thick_edge', pan);
-          // Crisp willow feedback with subtle 24ms micro-hit-stop & clean camera shake
+          // Distinct wood-on-leather haptic feedback: monster six thump vs crisp willow middle knock vs soft push
           if (isSweet) {
-            this.net.vibratePhone('p1', [65, 22, 95], `💥 ${info.shotNameEn} · ${info.exitSpeedKmh} KM/H!`);
+            const willowPattern = info.exitSpeedKmh >= 100 ? [75, 18, 115] : [55];
+            this.net.vibratePhone('p1', willowPattern, `💥 ${info.shotNameEn} · ${info.exitSpeedKmh} KM/H!`);
             this.hitStopTimer = 0.024;
             this.cameraShakeIntensity = info.exitSpeedKmh >= 95 ? 0.09 : 0.05;
             if (info.exitSpeedKmh >= 105 && this.crowdAnimator) {
               this.crowdAnimator.triggerCheerSurge(0.75);
             }
           } else {
-            this.net.vibratePhone('p1', [40, 28, 45], `🏏 ${info.shotNameEn} · ${info.exitSpeedKmh} KM/H`);
+            this.net.vibratePhone('p1', [32], `🏏 ${info.shotNameEn} · ${info.exitSpeedKmh} KM/H`);
             this.hitStopTimer = 0;
             this.cameraShakeIntensity = 0.03;
           }
@@ -5824,6 +5872,28 @@ export class BoxCricketApp {
     if (this.aimRing.visible) {
       const pulse = 1.0 + Math.sin(performance.now() * 0.01) * 0.08;
       this.aimRing.scale.setScalar(pulse);
+    }
+
+    // Update Live 3D Bat-Aim Ground Guide on Pitch when batting with Phone Controller
+    if (this.batAimGuide) {
+      const showAimGuide =
+        this.match.userRole === 'bat' &&
+        Boolean(this.net.controllers.p1.connected) &&
+        !this.isReplaying &&
+        !this.ui.isAnyModalOpen() &&
+        (this.physics.state === 'idle' || this.physics.state === 'runup' || this.physics.state === 'bowled');
+      this.batAimGuide.visible = showAimGuide;
+      if (showAimGuide) {
+        this.batAimGuide.position.x = THREE.MathUtils.damp(this.batAimGuide.position.x, this.batting.creaseX, 16, dt);
+        this.batAimGuide.position.z = CREASE_Z - this.batting.creaseZOffset * 0.35;
+        const targetRotY = -(this.batting.swingPlaneYaw || 0);
+        const curY = this.batAimGuide.rotation.y;
+        const deltaY = Math.atan2(Math.sin(targetRotY - curY), Math.cos(targetRotY - curY));
+        this.batAimGuide.rotation.y = curY + deltaY * Math.min(1, dt * 16);
+        const guideHex = this.batting.shotMode === 'fly' ? 0xfbbf24 : this.batting.shotMode === 'defend' ? 0x38bdf8 : 0x34d399;
+        this.batAimShaftMat.color.setHex(guideHex);
+        this.batAimTipMat.color.setHex(guideHex);
+      }
     }
 
     // 1.5 Aerial Ball Landing Target Ring & Interactive Fielding Reflex QTE
