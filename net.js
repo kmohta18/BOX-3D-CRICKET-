@@ -6,7 +6,7 @@
  * haptic vibration, and 30s reconnect pause.
  */
 
-import { MqttRelayClient } from './src/mqtt_relay.js';
+import { MqttRelayClient } from './src/mqtt_relay.js?v=4';
 
 const PUBLIC_GITHUB_PAGES_BASE = 'https://kmohta18.github.io/BOX-3D-CRICKET-';
 const PEERJS_ICE_SERVERS = [
@@ -77,6 +77,7 @@ export class NetworkManager {
     this.ws = null;
     this.mqttRelay = null;
     this.mqttConnected = false;
+    this.relayLabel = '...';
     this.peer = null;
     this.peerConns = new Set();
     this.p2pReady = false;
@@ -282,8 +283,9 @@ export class NetworkManager {
     this.mqttRelay = new MqttRelayClient({
       role: this.role,
       roomCode,
-      onStatus: (status) => {
+      onStatus: (status, label) => {
         this.mqttConnected = status === 'connected';
+        this.relayLabel = label || (this.mqttConnected ? 'WSS' : '...');
         if (this.mqttConnected) {
           this.connected = true;
           if (this.role !== 'host') {
@@ -745,7 +747,7 @@ export class NetworkManager {
     const now = performance.now();
     ['p1', 'p2'].forEach((slot) => {
       const ctrl = this.controllers[slot];
-      if (ctrl.connected && now - ctrl.lastSeen > 8500) {
+      if (ctrl.connected && now - ctrl.lastSeen > 14500) {
         this.triggerDisconnectPause(slot);
       }
     });

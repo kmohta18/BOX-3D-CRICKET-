@@ -3150,8 +3150,11 @@ export class UIManager {
       if (p1Connected) {
         qrLiveStatus.textContent = `Connected (${latencyMs}ms)`;
         qrLiveStatus.className = 'text-[11px] font-mono font-bold text-emerald-400';
+      } else if (this.app.net.mqttConnected) {
+        qrLiveStatus.textContent = `Room ${this.app.net.roomCode} · Relay OK (${this.app.net.relayLabel || 'WSS'}) · Waiting...`;
+        qrLiveStatus.className = 'text-[11px] font-mono font-bold text-amber-400';
       } else {
-        qrLiveStatus.textContent = `Room ${this.app.net.roomCode} · Waiting...`;
+        qrLiveStatus.textContent = `Room ${this.app.net.roomCode} · Connecting Relay...`;
         qrLiveStatus.className = 'text-[11px] font-mono font-bold text-amber-400';
       }
     }

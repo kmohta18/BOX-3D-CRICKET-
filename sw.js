@@ -1,5 +1,5 @@
 // Box Cricket 3D — Lightweight Network-First Service Worker (Zero-Lag for Hosted Android TV APK & PWA)
-const CACHE_NAME = 'box-cricket-3d-v3';
+const CACHE_NAME = 'box-cricket-3d-v4';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -61,7 +61,7 @@ self.addEventListener('fetch', (event) => {
 
   // Network-first for HTML/JS/CSS so Hosted Android TV APK & GitHub Pages receive live updates
   event.respondWith(
-    fetch(req)
+    fetch(req, { cache: 'no-cache' })
       .then((res) => {
         if (res && res.status === 200 && res.type === 'basic') {
           const copy = res.clone();

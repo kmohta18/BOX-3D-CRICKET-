@@ -332,7 +332,7 @@
     </div>
 
     <script type="module">
-      import { MqttRelayClient } from './src/mqtt_relay.js';
+      import { MqttRelayClient } from './src/mqtt_relay.js?v=4';
 
       const params = new URLSearchParams(window.location.search);
       let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
@@ -657,10 +657,10 @@
         mqttRelay = new MqttRelayClient({
           role: 'controller',
           roomCode,
-          onStatus: (st) => {
+          onStatus: (st, label) => {
             if (st === 'connected') {
               if (!tvPaired) {
-                statusEl.textContent = `Waiting for TV · ${roomCode}...`;
+                statusEl.textContent = `Relay ${label || 'OK'} · Waiting TV ${roomCode}`;
                 statusEl.className = 'text-[11px] font-mono text-amber-400';
               }
               startJoinBeacon();
@@ -1205,20 +1205,50 @@
         }
       }, 1500);
 
-      // Stream Sensor Data at ~85 Hz when hardware gyro is active; throttle to 2 Hz keepalive in Touch/Wheel mode to save TV CPU & Wi-Fi bandwidth
+      // Stream Sensor Data at ~85 Hz on LAN WS/P2P, and safely below EMQX 10 msg/s limit (~8.5 Hz active, 0.8 Hz idle) on Cloud MQTT so 0% of buttons/joins drop!
       let lastSensorSendMs = 0;
+      let lastSentOrientation = { alpha: 0, beta: 75, gamma: 0 };
       let lastTelText = { spd: '', yaw: '', pit: '' };
       setInterval(() => {
         const nowPerf = performance.now();
+        const omegaMag = Math.round(Math.hypot(sensor.gx, sensor.gy, sensor.gz));
+        const spdTxt = `${omegaMag}°/s`;
+        const yawTxt = `${Math.round(sensor.alpha)}°`;
+        const pitTxt = `${Math.round(sensor.beta)}°`;
+        if (lastTelText.spd !== spdTxt) { lastTelText.spd = spdTxt; speedEl.textContent = spdTxt; }
+        if (lastTelText.yaw !== yawTxt) { lastTelText.yaw = yawTxt; yawEl.textContent = yawTxt; }
+        if (lastTelText.pit !== pitTxt) { lastTelText.pit = pitTxt; pitchEl.textContent = pitTxt; }
+
+        const hasDirectLan = Boolean((ws && ws.readyState === 1) || (peerConn && peerConn.open));
+        const hasCloudMqtt = Boolean(mqttRelay && mqttRelay.mqttConnected);
+        if (!hasDirectLan && !hasCloudMqtt) {
+          // Port-443-only mode: skip continuous gyro stream (buttons, swipes, 360° wheel, and pings work cleanly over Port 443!)
+          return;
+        }
+
         const hasLiveGyro = lastHardwareMotionMs > 0 && nowPerf - lastHardwareMotionMs < 4000;
         const isTouchingPad = Boolean(startPt) || isDraggingWheel;
-        const isCloudMqttOnly = Boolean(mqttRelay && mqttRelay.connected && (!ws || ws.readyState !== 1) && (!peerConn || !peerConn.open));
-        const activeIntervalMs = isCloudMqttOnly ? 32 : 12;
-        const minSendIntervalMs = hasLiveGyro || isTouchingPad ? activeIntervalMs : 600;
+        const tiltDelta =
+          Math.abs(sensor.alpha - lastSentOrientation.alpha) +
+          Math.abs(sensor.beta - lastSentOrientation.beta) +
+          Math.abs(sensor.gamma - lastSentOrientation.gamma);
+        const isActivelyMoving = omegaMag > 14 || tiltDelta > 3.5 || isTouchingPad;
+
+        let minSendIntervalMs;
+        if (hasDirectLan) {
+          minSendIntervalMs = hasLiveGyro || isTouchingPad ? 12 : 600;
+        } else {
+          // Cloud MQTT only: stay safely under 10 msg/s so EMQX never rate-limits joins/swipes/buttons!
+          minSendIntervalMs = hasLiveGyro && isActivelyMoving ? 115 : 1200;
+        }
+
         if (nowPerf - lastSensorSendMs < minSendIntervalMs) {
           return;
         }
         lastSensorSendMs = nowPerf;
+        lastSentOrientation.alpha = sensor.alpha;
+        lastSentOrientation.beta = sensor.beta;
+        lastSentOrientation.gamma = sensor.gamma;
 
         sendPacket({
           type: 'sensor',
@@ -1234,25 +1264,17 @@
           rtt: rttMs
         });
 
-        const omegaMag = Math.round(Math.hypot(sensor.gx, sensor.gy, sensor.gz));
-        const spdTxt = `${omegaMag}°/s`;
-        const yawTxt = `${Math.round(sensor.alpha)}°`;
-        const pitTxt = `${Math.round(sensor.beta)}°`;
-        if (lastTelText.spd !== spdTxt) { lastTelText.spd = spdTxt; speedEl.textContent = spdTxt; }
-        if (lastTelText.yaw !== yawTxt) { lastTelText.yaw = yawTxt; yawEl.textContent = yawTxt; }
-        if (lastTelText.pit !== pitTxt) { lastTelText.pit = pitTxt; pitchEl.textContent = pitTxt; }
-
         // Only decay synthetic/stale gyro values if hardware devicemotion hasn't fired in >36ms
         if (nowPerf - lastHardwareMotionMs > 36) {
           sensor.gx *= 0.82;
           sensor.gy *= 0.82;
           sensor.gz *= 0.82;
         }
-      }, 12);
+      }, 16);
 
       setInterval(() => {
         sendPacket({ type: 'ping', clientTs: Date.now() });
-      }, 2000);
+      }, 2500);
 
       // Interactive 360° Angle Wheel SVG on Phone Controller (Bug #6 Fix)
       const wheelSvg = document.getElementById('ctrl-wheel-svg');

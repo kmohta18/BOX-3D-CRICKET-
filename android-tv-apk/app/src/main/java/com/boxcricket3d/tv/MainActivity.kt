@@ -360,6 +360,9 @@ class MainActivity : AppCompatActivity() {
         val target = getConfiguredGameUrl()
         if (target == LOCAL_INDEX_URL) {
             fellBackToLocalThisSession = true
+            webView.settings.cacheMode = WebSettings.LOAD_DEFAULT
+        } else {
+            webView.settings.cacheMode = WebSettings.LOAD_NO_CACHE
         }
         webView.loadUrl(target)
     }
