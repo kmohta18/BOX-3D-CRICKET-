@@ -606,25 +606,46 @@ export class AliveBatsmanEnhancer {
     }
 
     // 2. Real-Time Batsman Head/Eye Tracking of the Approaching Cricket Ball
+    // Guard: ONLY apply during looping 'stance' (which keyframes mixamorigHead every frame) and dt > 0
+    // so it NEVER accumulates across frames or fights shot/celebration clips!
     const headBone = strikerPlayer?.bones?.headBone;
-    if (headBone && strikerMesh && !runnersInMotion) {
+    const isStanceClip = strikerPlayer?.currentClipName === 'stance';
+    if (headBone && strikerMesh && !runnersInMotion && isStanceClip && dt > 0.0001) {
       if (physics.state === 'bowled' || physics.state === 'runup') {
-        const dx = physics.pos.x - strikerMesh.position.x;
-        const dz = Math.max(0.8, strikerMesh.position.z - physics.pos.z);
+        const handSign = strikerMesh.scale.x < 0 ? -1 : 1;
+        // Striker faces -Z (rotation.y ≈ PI), so world +X maps to local -X (flipped again for LHB)
+        const dx = (physics.pos.x - strikerMesh.position.x) * -handSign;
+        const dz = Math.max(1.2, strikerMesh.position.z - physics.pos.z);
         const dy = physics.pos.y - 1.52;
 
-        const targetYaw = THREE.MathUtils.clamp(Math.atan2(dx, dz) * 0.65, -0.42, 0.42);
-        const targetPitch = THREE.MathUtils.clamp(-Math.atan2(dy, dz) * 0.55, -0.22, 0.38);
+        const targetYaw = THREE.MathUtils.clamp(Math.atan2(dx, dz) * 0.45, -0.26, 0.26);
+        const targetPitch = THREE.MathUtils.clamp(-Math.atan2(dy, dz) * 0.40, -0.14, 0.22);
 
-        this.headYawSmooth = THREE.MathUtils.damp(this.headYawSmooth, targetYaw, 16, dt);
-        this.headPitchSmooth = THREE.MathUtils.damp(this.headPitchSmooth, targetPitch, 16, dt);
+        this.headYawSmooth = THREE.MathUtils.damp(this.headYawSmooth, targetYaw, 14, dt);
+        this.headPitchSmooth = THREE.MathUtils.damp(this.headPitchSmooth, targetPitch, 14, dt);
 
-        headBone.rotation.y += this.headYawSmooth;
-        headBone.rotation.x += this.headPitchSmooth;
+        if (!this._headDeltaEuler) {
+          this._headDeltaEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+          this._headDeltaQuat = new THREE.Quaternion();
+          this._headClampEuler = new THREE.Euler(0, 0, 0, 'YXZ');
+        }
+        this._headDeltaEuler.set(this.headPitchSmooth, this.headYawSmooth, 0, 'YXZ');
+        this._headDeltaQuat.setFromEuler(this._headDeltaEuler);
+        headBone.quaternion.multiply(this._headDeltaQuat);
+
+        // Hard anatomical human neck clamp (prevents any gimbal wrap or 360° twist)
+        this._headClampEuler.setFromQuaternion(headBone.quaternion, 'YXZ');
+        this._headClampEuler.y = THREE.MathUtils.clamp(this._headClampEuler.y, -1.18, 1.18);
+        this._headClampEuler.x = THREE.MathUtils.clamp(this._headClampEuler.x, -0.52, 0.68);
+        this._headClampEuler.z = THREE.MathUtils.clamp(this._headClampEuler.z, -0.36, 0.36);
+        headBone.quaternion.setFromEuler(this._headClampEuler);
       } else {
         this.headYawSmooth = THREE.MathUtils.damp(this.headYawSmooth, 0, 10, dt);
         this.headPitchSmooth = THREE.MathUtils.damp(this.headPitchSmooth, 0, 10, dt);
       }
+    } else {
+      this.headYawSmooth = THREE.MathUtils.damp(this.headYawSmooth, 0, 12, dt || 0.016);
+      this.headPitchSmooth = THREE.MathUtils.damp(this.headPitchSmooth, 0, 12, dt || 0.016);
     }
 
     // 3. 45Hz Damped Willow Bat Vibration on Ball Contact

@@ -222,6 +222,16 @@ export function buildCricketMocapClips(baseAnimations = []) {
       [16, -10, 0],
       [16, 10, 0]
     ]),
+    makeBoneQuatTrack('mixamorigSpine1', [0, 0.28, 0.56], [
+      [4, -4, 0],
+      [4, 4, 0],
+      [4, -4, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHead', [0, 0.28, 0.56], [
+      [-12, 0, 0],
+      [-10, 0, 0],
+      [-12, 0, 0]
+    ]),
     makeBoneQuatTrack('mixamorigRightArm', [0, 0.28, 0.56], [
       [-45, 0, -10],
       [42, 0, -10],
@@ -740,6 +750,20 @@ export function buildCricketMocapClips(baseAnimations = []) {
       [-10, -12, 0],
       [-18, 8, 0],
       [8, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigSpine1', [0, 0.28, 0.55, 0.82, 1.1], [
+      [0, 0, 0],
+      [-6, 6, 0],
+      [-4, -6, 0],
+      [-6, 4, 0],
+      [0, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHead', [0, 0.28, 0.55, 0.82, 1.1], [
+      [-4, 0, 0],
+      [-16, 6, 0],
+      [-10, -6, 0],
+      [-14, 4, 0],
+      [-4, 0, 0]
     ]),
     makeBoneQuatTrack('mixamorigRightArm', [0, 0.25, 0.55, 0.82, 1.1], [
       [20, 0, -25],
@@ -2287,45 +2311,112 @@ function createCartoonRiggedCharacter({
   if (hairStyle === 3) hairDome.visible = false;
 
   if (isBat) {
-    // Sculpted Matte Pro Helmet + Brow Peak + Ear Flaps + Multi-Bar Steel Grille + Chin Strap
+    // Authentic ICC/IPL Pro Cricket Helmet (Masuri/Shrey silhouette: snug dome, tapered curved peak,
+    // sphere-hugging crown ridge, flush cheek/ear guards, dual StemGuard nape pods, titanium grille & under-chin strap)
     const helmetCol = teamColor.clone().multiplyScalar(0.68);
-    const helmetMat = new THREE.MeshStandardMaterial({ color: helmetCol, roughness: 0.34, metalness: 0.22 });
-    add(headG, new THREE.SphereGeometry(0.148, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.6), helmetMat, 0, 0.072, -0.008, {
-      scale: [0.97, 1.04, 1.07]
+    const helmetMat = new THREE.MeshStandardMaterial({ color: helmetCol, roughness: 0.30, metalness: 0.24 });
+    const stemGuardMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.62, metalness: 0.12 });
+
+    // 1. Snug anatomical helmet dome tilted slightly back so brow sits cleanly above the eyes & rear wraps low
+    add(headG, new THREE.SphereGeometry(0.138, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), helmetMat, 0, 0.064, -0.006, {
+      scale: [0.97, 0.99, 1.06],
+      rot: [-0.14, 0, 0]
     });
-    // Twin top air vent grooves & center stripe
-    [-0.035, 0.035].forEach((vx) => {
-      add(headG, new THREE.BoxGeometry(0.016, 0.012, 0.11), darkStrapMat, vx, 0.205, 0.01, { rot: [-0.15, 0, 0], noShadow: true });
+
+    // 2. Curved sphere-hugging center crest ridge & subtle twin air-vent ribs (follows dome curvature — zero flat boxes!)
+    const crestArc = add(
+      headG,
+      new THREE.TorusGeometry(0.136, 0.0065, 6, 16, Math.PI * 0.62),
+      stripeMat,
+      0,
+      0.066,
+      -0.006,
+      { rot: [0, Math.PI * 0.5, Math.PI * 0.19], scale: [1.05, 0.99, 1.0], noShadow: true }
+    );
+    crestArc.rotation.order = 'YXZ';
+    [-0.036, 0.036].forEach((vx) => {
+      add(
+        headG,
+        new THREE.TorusGeometry(0.132, 0.0042, 5, 12, Math.PI * 0.42),
+        darkStrapMat,
+        vx,
+        0.064,
+        -0.004,
+        { rot: [0, Math.PI * 0.5, Math.PI * 0.29], scale: [1.04, 0.98, 1.0], noShadow: true }
+      );
     });
-    add(headG, new THREE.BoxGeometry(0.022, 0.01, 0.18), stripeMat, 0, 0.214, -0.01, { noShadow: true });
-    // Curved peak visor
-    add(headG, new THREE.CylinderGeometry(0.145, 0.156, 0.022, 14, 1, false, -Math.PI * 0.42, Math.PI * 0.84), helmetMat, 0, 0.11, 0.034, {
-      rot: [0.16, 0, 0],
-      noShadow: true
-    });
-    // Contoured ear flaps & rear neck guard
+
+    // 3. Smoothly tapered curved cricket peak / visor (centered at phi=PI/2 => +Z front brow, clear eye window above grille)
+    add(
+      headG,
+      new THREE.SphereGeometry(0.130, 16, 8, Math.PI * 0.14, Math.PI * 0.72, Math.PI * 0.32, Math.PI * 0.22),
+      helmetMat,
+      0,
+      0.112,
+      0.026,
+      { scale: [0.98, 0.34, 1.36], rot: [0.16, 0, 0], noShadow: true }
+    );
+
+    // 4. Flush contoured side ear/temple shells angling smoothly into jawline
     [-1, 1].forEach((s) =>
-      add(headG, new THREE.CylinderGeometry(0.046, 0.038, 0.11, 8), helmetMat, s * 0.134, 0.024, -0.006, {
-        scale: [0.42, 1.0, 1.02],
+      add(headG, new THREE.SphereGeometry(0.056, 10, 8), helmetMat, s * 0.118, 0.024, -0.008, {
+        scale: [0.46, 1.08, 1.12],
+        rot: [0.08, 0, s * 0.14],
         noShadow: true
       })
     );
-    add(headG, new THREE.BoxGeometry(0.185, 0.082, 0.028), helmetMat, 0, -0.01, -0.132, { rot: [0.28, 0, 0], noShadow: true });
-    // Horizontal steel face grille bars + 2 vertical center-side support wires + chin guard
-    [0.036, 0.002, -0.028].forEach((gy, i) => {
-      const bar = add(headG, new THREE.TorusGeometry(0.138 - i * 0.003, 0.0048, 6, 14, Math.PI * 0.92), steelMat, 0, gy, 0.022, { noShadow: true });
-      bar.rotation.x = Math.PI * 0.5;
-      bar.rotation.z = Math.PI * 0.04;
+
+    // 5. Curved rear occipital wrap (centered at phi=1.5*PI => -Z back of skull) + dual ICC StemGuard nape pods
+    add(
+      headG,
+      new THREE.SphereGeometry(0.134, 14, 8, Math.PI * 1.12, Math.PI * 0.76, Math.PI * 0.44, Math.PI * 0.28),
+      helmetMat,
+      0,
+      0.056,
+      -0.008,
+      { scale: [0.96, 1.02, 1.04], noShadow: true }
+    );
+    [-0.048, 0.048].forEach((sx) =>
+      add(headG, new THREE.SphereGeometry(0.042, 8, 7), stemGuardMat, sx, -0.012, -0.118, {
+        scale: [1.05, 0.76, 0.52],
+        rot: [0.18, sx > 0 ? 0.26 : -0.26, 0],
+        noShadow: true
+      })
+    );
+
+    // 6. Authentic 3-bar titanium face grille curving cleanly from ear-flap to ear-flap + 2 flush vertical support wires
+    [
+      { y: 0.044, r: 0.133 },
+      { y: 0.014, r: 0.130 },
+      { y: -0.016, r: 0.124 }
+    ].forEach(({ y, r }) => {
+      const bar = add(
+        headG,
+        new THREE.TorusGeometry(r, 0.0042, 6, 16, Math.PI * 0.88),
+        steelMat,
+        0,
+        y,
+        0.016,
+        { noShadow: true }
+      );
+      bar.rotation.set(Math.PI * 0.5, 0, Math.PI * 0.06);
     });
     [-0.056, 0.056].forEach((vx) => {
-      add(headG, new THREE.CylinderGeometry(0.004, 0.004, 0.085, 6), steelMat, vx, 0.006, 0.145, { rot: [0.12, 0, 0], noShadow: true });
+      add(headG, new THREE.CylinderGeometry(0.0036, 0.0036, 0.064, 6), steelMat, vx, 0.014, 0.131, {
+        rot: [0.11, 0, 0],
+        noShadow: true
+      });
     });
-    // Chin strap + cup
-    add(headG, new THREE.TorusGeometry(0.105, 0.008, 6, 14, Math.PI), darkStrapMat, 0, 0.018, 0.016, {
-      rot: [Math.PI * 0.62, 0, Math.PI],
+
+    // 7. Under-chin safety strap & padded chin cup (properly angled DOWN under the jaw, never over the nose!)
+    add(headG, new THREE.TorusGeometry(0.106, 0.0058, 6, 14, Math.PI), darkStrapMat, 0, 0.006, -0.008, {
+      rot: [Math.PI * 0.72, 0, 0],
       noShadow: true
     });
-    add(headG, new THREE.BoxGeometry(0.046, 0.022, 0.028), darkStrapMat, 0, -0.068, 0.068, { noShadow: true });
+    add(headG, new THREE.SphereGeometry(0.022, 8, 6), darkStrapMat, 0, -0.062, 0.072, {
+      scale: [1.15, 0.55, 0.78],
+      noShadow: true
+    });
   } else {
     // Athletic Pro Cricket Cap
     if (jerseyNumber % 4 !== 0) {
@@ -2481,25 +2572,33 @@ function createLowPolyRiggedCharacter({
       });
 
       const helmetShell = new THREE.Mesh(
-        new THREE.SphereGeometry(0.155, 12, 10, 0, Math.PI * 2, 0, Math.PI * 0.62),
+        new THREE.SphereGeometry(0.152, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.58),
         helmetMat
       );
-      helmetShell.position.set(0, 0.07, 0);
+      helmetShell.position.set(0, 0.066, -0.006);
+      helmetShell.rotation.x = -0.12;
+      helmetShell.scale.set(0.98, 1.0, 1.06);
       helmetShell.castShadow = true;
       head.add(helmetShell);
 
-      const visorPeak = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.022, 0.10), helmetMat);
-      visorPeak.position.set(0, 0.10, 0.12);
-      visorPeak.rotation.x = 0.18;
+      const visorPeak = new THREE.Mesh(
+        new THREE.SphereGeometry(0.138, 12, 6, Math.PI * 0.14, Math.PI * 0.72, Math.PI * 0.34, Math.PI * 0.22),
+        helmetMat
+      );
+      visorPeak.position.set(0, 0.114, 0.030);
+      visorPeak.scale.set(0.98, 0.34, 1.30);
+      visorPeak.rotation.x = 0.16;
       head.add(visorPeak);
 
-      const grille = new THREE.Mesh(
-        new THREE.TorusGeometry(0.125, 0.009, 6, 12, Math.PI),
-        grilleMat
-      );
-      grille.rotation.x = Math.PI * 0.5;
-      grille.position.set(0, 0.01, 0.035);
-      head.add(grille);
+      [0.034, -0.004].forEach((gy, idx) => {
+        const grille = new THREE.Mesh(
+          new THREE.TorusGeometry(0.132 - idx * 0.006, 0.007, 6, 14, Math.PI * 0.88),
+          grilleMat
+        );
+        grille.rotation.set(Math.PI * 0.5, 0, Math.PI * 0.06);
+        grille.position.set(0, gy, 0.024);
+        head.add(grille);
+      });
     } else {
       const capDome = new THREE.Mesh(
         new THREE.SphereGeometry(0.135, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55),

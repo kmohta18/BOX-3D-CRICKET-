@@ -206,11 +206,16 @@ function applyPose(rig, p) {
   spine1.quaternion.copy(eulerYXZ(p.cy, p.cp, p.cr));
   hips.updateMatrixWorld(true);
 
-  // ---- head: look at the ball regardless of how far the shoulders turned ----
+  // ---- head: look at the ball regardless of how far the shoulders turned (clamped to human neck limits) ----
   const desired = eulerYXZ(-p.gy, p.gp, 0); // gaze yaw is authored off-side-positive
   const s1q = new THREE.Quaternion();
   spine1.getWorldQuaternion(s1q);
   head.quaternion.copy(s1q.invert().multiply(desired));
+  const neckE = new THREE.Euler(0, 0, 0, 'YXZ').setFromQuaternion(head.quaternion, 'YXZ');
+  neckE.y = THREE.MathUtils.clamp(neckE.y, -1.22, 1.22); // ±70° max natural human neck turn
+  neckE.x = THREE.MathUtils.clamp(neckE.x, -0.58, 0.76);
+  neckE.z = THREE.MathUtils.clamp(neckE.z, -0.38, 0.38);
+  head.quaternion.setFromEuler(neckE);
 
   // ---- arms: both gloves on the handle ----
   const blade = toRoot(p.b).normalize();
