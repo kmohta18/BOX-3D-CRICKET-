@@ -6,7 +6,7 @@
  * haptic vibration, and 30s reconnect pause.
  */
 
-import { MqttRelayClient } from './src/mqtt_relay.js?v=4';
+import { MqttRelayClient } from './src/mqtt_relay.js?v=5';
 
 const PUBLIC_GITHUB_PAGES_BASE = 'https://kmohta18.github.io/BOX-3D-CRICKET-';
 const PEERJS_ICE_SERVERS = [
@@ -118,6 +118,7 @@ export class NetworkManager {
       onBowlerTypeChange: null,
       onQuickFlick: null,
       onTouchSwipe: null,
+      onAirSwing: null,
       onCreaseStep: null,
       onWheelAim: null,
       onPhoneAction: null,
@@ -634,6 +635,11 @@ export class NetworkManager {
 
     if (msg.type === 'touch_swipe' && this.callbacks.onTouchSwipe) {
       this.callbacks.onTouchSwipe(msg, slot);
+      return;
+    }
+
+    if (msg.type === 'air_swing' && this.callbacks.onAirSwing) {
+      this.callbacks.onAirSwing(msg, slot);
       return;
     }
 

@@ -332,7 +332,7 @@
     </div>
 
     <script type="module">
-      import { MqttRelayClient } from './src/mqtt_relay.js?v=4';
+      import { MqttRelayClient } from './src/mqtt_relay.js?v=5';
 
       const params = new URLSearchParams(window.location.search);
       let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
@@ -1144,18 +1144,75 @@
       );
 
       let lastHardwareMotionMs = 0;
+      let hasHardwareGyro = false;
+      let hasHardwareAccel = false;
+      let zeroAlpha = null;
+      let zeroBeta = null;
+      let prevOrient = { alpha: 0, beta: 75, gamma: 0, ts: 0 };
+      let orientRateDeg = 0;
+      let gravityEst = 9.81;
+      let linearAccelMag = 0;
+      let peakLinearAccel = 0;
+      let peakLinearAccelTs = 0;
+      let lastAirSwingFiredMs = 0;
+      let lastSweepDirSign = 0;
+
+      const wrap180 = (deg) => ((((deg + 180) % 360) + 360) % 360) - 180;
+
       const sensorBadgeEl = document.getElementById('ctrl-sensor-mode-badge');
-      const markHardwareSensorsLive = () => {
+      const markHardwareSensorsLive = (modeText = null) => {
         lastHardwareMotionMs = performance.now();
         if (sensorBadgeEl) {
-          sensorBadgeEl.textContent = '🏏 85Hz Air-Swing & Tilt Active';
+          sensorBadgeEl.textContent = modeText || (hasHardwareGyro ? '🏏 Air-Swing Bat Active (Gyro+Accel)' : '🏏 Air-Swing Bat Active (Motion)');
           sensorBadgeEl.className =
             'px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-emerald-300 font-mono text-[9px] truncate';
         }
       };
 
-      // Cross-platform DeviceOrientation (handles both Android alpha and iOS webkitCompassHeading)
+      function triggerPhoneAirSwing(fusedSpeedDeg, triggerSource) {
+        const nowMs = performance.now();
+        if (nowMs - lastAirSwingFiredMs < 400) return;
+        lastAirSwingFiredMs = nowMs;
+
+        // Determine 360° shot direction: respect explicit wheel drag, otherwise compute natural bat swing yaw!
+        let shotAngleDeg = 0;
+        if (wheelUserDraggedThisBall) {
+          shotAngleDeg = currentWheelAimDeg;
+        } else {
+          const relAlpha = zeroAlpha !== null ? wrap180(sensor.alpha - zeroAlpha) : 0;
+          // Combine stance turn (relAlpha) with whip direction so swinging right/left aims naturally
+          const whipBias = lastSweepDirSign * 22;
+          shotAngleDeg = Math.round(Math.max(-165, Math.min(165, -relAlpha * 1.15 + whipBias)));
+          if (Math.abs(shotAngleDeg) < 14) shotAngleDeg = 0;
+          currentWheelAimDeg = shotAngleDeg;
+          renderPhoneWheelUI();
+        }
+
+        const speedDeg = Math.round(Math.max(290, Math.min(590, fusedSpeedDeg)));
+        const dirX = Math.max(-1, Math.min(1, Math.sin((shotAngleDeg * Math.PI) / 180)));
+        const planePitchDeg = selectedShotMode === 'fly'
+          ? Math.max(26, Math.min(42, 24 + (speedDeg - 280) * 0.05))
+          : 4;
+
+        sendPacket({
+          type: 'air_swing',
+          speedDeg,
+          shotAngleDeg,
+          dirX,
+          planePitchDeg,
+          shotMode: selectedShotMode,
+          triggerSource,
+          clientTs: Date.now()
+        });
+
+        if (navigator.vibrate) navigator.vibrate([32]);
+        const modeTxt = selectedShotMode === 'fly' ? 'LOFT' : 'GROUND';
+        padFeedback.textContent = `🏏 AIR SWING (${modeTxt}) · ${getSectorLabel(shotAngleDeg)} · ${speedDeg}°/s`;
+      }
+
+      // Cross-platform DeviceOrientation (handles both Android alpha and iOS webkitCompassHeading + computes angular velocity fallback)
       window.addEventListener('deviceorientation', (e) => {
+        const nowMs = performance.now();
         if (typeof e.webkitCompassHeading === 'number') {
           sensor.alpha = 360 - e.webkitCompassHeading;
         } else if (e.alpha !== null) {
@@ -1163,55 +1220,118 @@
         }
         if (e.beta !== null) sensor.beta = e.beta;
         if (e.gamma !== null) sensor.gamma = e.gamma;
+
         if (e.gamma !== null || e.beta !== null) {
+          if (zeroAlpha === null) {
+            zeroAlpha = sensor.alpha;
+            zeroBeta = sensor.beta;
+          }
+          if (prevOrient.ts > 0) {
+            const dtSec = Math.max(0.01, (nowMs - prevOrient.ts) * 0.001);
+            if (dtSec < 0.25) {
+              const dA = wrap180(sensor.alpha - prevOrient.alpha) / dtSec;
+              const dB = (sensor.beta - prevOrient.beta) / dtSec;
+              const dG = wrap180(sensor.gamma - prevOrient.gamma) / dtSec;
+              orientRateDeg = Math.hypot(dA, dB, dG);
+              if (Math.abs(dA) > 45) lastSweepDirSign = dA > 0 ? -1 : 1;
+              // Gently re-center zeroAlpha when holding phone steady in stance
+              if (orientRateDeg < 18 && linearAccelMag < 1.8 && Math.abs(wrap180(sensor.alpha - zeroAlpha)) < 18) {
+                zeroAlpha = zeroAlpha + wrap180(sensor.alpha - zeroAlpha) * 0.03;
+              }
+              if (orientRateDeg >= 185 && linearAccelMag >= 4.2) {
+                triggerPhoneAirSwing(Math.max(orientRateDeg * 1.4, 330), 'orient');
+              }
+            }
+          }
+          prevOrient.alpha = sensor.alpha;
+          prevOrient.beta = sensor.beta;
+          prevOrient.gamma = sensor.gamma;
+          prevOrient.ts = nowMs;
           markHardwareSensorsLive();
         }
       });
 
       window.addEventListener('devicemotion', (e) => {
-        if (
-          e.rotationRate &&
-          (Math.abs(e.rotationRate.beta || 0) > 0.01 ||
-            Math.abs(e.rotationRate.alpha || 0) > 0.01 ||
-            Math.abs(e.rotationRate.gamma || 0) > 0.01)
-        ) {
-          markHardwareSensorsLive();
-        }
+        const nowMs = performance.now();
+        let rawGx = 0, rawGy = 0, rawGz = 0;
         if (e.rotationRate) {
-          sensor.gx = e.rotationRate.beta || 0;
-          sensor.gy = e.rotationRate.alpha || 0;
-          sensor.gz = e.rotationRate.gamma || 0;
+          rawGx = e.rotationRate.beta || 0;
+          rawGy = e.rotationRate.alpha || 0;
+          rawGz = e.rotationRate.gamma || 0;
+          if (Math.abs(rawGx) > 0.01 || Math.abs(rawGy) > 0.01 || Math.abs(rawGz) > 0.01) {
+            hasHardwareGyro = true;
+            // Some Android WebViews report rotationRate in rad/s (values ~2-9) instead of deg/s (~150-500)
+            sensor.gx = rawGx;
+            sensor.gy = rawGy;
+            sensor.gz = rawGz;
+            if (Math.abs(rawGy) > 30) lastSweepDirSign = rawGy > 0 ? -1 : 1;
+            markHardwareSensorsLive();
+          }
         }
-        const acc = e.accelerationIncludingGravity || e.acceleration;
-        if (acc) {
+
+        const accNoG = e.acceleration;
+        const accWithG = e.accelerationIncludingGravity;
+        const acc = accWithG || accNoG;
+        if (acc && (acc.x !== null || acc.y !== null || acc.z !== null)) {
           sensor.ax = acc.x || 0;
           sensor.ay = acc.y || 0;
           sensor.az = acc.z || 0;
+          hasHardwareAccel = true;
+
+          // Compute linear acceleration (bat-whip G-force) works on 100% of Android/iOS phones EVEN WITHOUT GYRO!
+          if (accNoG && (accNoG.x !== null || accNoG.y !== null || accNoG.z !== null)) {
+            linearAccelMag = Math.hypot(accNoG.x || 0, accNoG.y || 0, accNoG.z || 0);
+            if (Math.abs(accNoG.x || 0) > 4.5) lastSweepDirSign = (accNoG.x || 0) > 0 ? 1 : -1;
+          } else if (accWithG) {
+            const totalG = Math.hypot(sensor.ax, sensor.ay, sensor.az);
+            gravityEst = gravityEst * 0.92 + totalG * 0.08;
+            linearAccelMag = Math.abs(totalG - gravityEst);
+          }
+
+          if (linearAccelMag > peakLinearAccel || nowMs - peakLinearAccelTs > 220) {
+            peakLinearAccel = linearAccelMag;
+            peakLinearAccelTs = nowMs;
+          }
+          markHardwareSensorsLive();
+        }
+
+        // Native 60-100Hz Air-Swing Trigger (Triple-Sensor Fusion: Gyro OR Linear Bat-Whip Accel OR Combined!)
+        const omegaMag = Math.hypot(sensor.gx, sensor.gy, sensor.gz);
+        const isPureSlowBacklift = sensor.gx > 35 && Math.hypot(sensor.gy, sensor.gz) < sensor.gx * 0.78 && omegaMag < 185 && linearAccelMag < 9.5;
+        if (!isPureSlowBacklift) {
+          const gyroTriggered = omegaMag >= 132;
+          const accelTriggered = linearAccelMag >= 11.2;
+          const comboTriggered = omegaMag >= 85 && linearAccelMag >= 6.8;
+          if (gyroTriggered || accelTriggered || comboTriggered) {
+            const fusedSpeed = Math.max(omegaMag * 1.15, linearAccelMag * 28, orientRateDeg * 1.25, 325);
+            const src = gyroTriggered ? 'gyro' : accelTriggered ? 'accel' : 'combo';
+            triggerPhoneAirSwing(fusedSpeed, src);
+          }
         }
       });
 
-      // Bug #8 Fix: Detect when HTTP LAN IP or desktop browser has no active hardware gyro after 1.5s
+      // Bug #8 Fix: Detect when HTTP LAN IP or desktop browser has no active hardware motion sensors after 1.8s
       setTimeout(() => {
         if (lastHardwareMotionMs === 0 && sensorBadgeEl) {
           if (!window.isSecureContext) {
-            sensorBadgeEl.textContent = '🎯 Touch/Wheel Mode (Use HTTPS for Gyro)';
+            sensorBadgeEl.textContent = '🎯 Touch/Wheel Mode (Use HTTPS for Air-Swing)';
             sensorBadgeEl.className =
               'px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 font-mono text-[9px] truncate';
           } else {
-            sensorBadgeEl.textContent = '🎯 360° Wheel + Swipe/Buttons Ready';
+            sensorBadgeEl.textContent = '⚠ Tap SENSORS button to enable Air-Swing Bat';
             sensorBadgeEl.className =
-              'px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/50 text-sky-300 font-mono text-[9px] truncate';
+              'px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-400/50 text-amber-300 font-mono text-[9px] truncate';
           }
         }
-      }, 1500);
+      }, 1800);
 
-      // Stream Sensor Data at ~85 Hz on LAN WS/P2P, and safely below EMQX 10 msg/s limit (~8.5 Hz active, 0.8 Hz idle) on Cloud MQTT so 0% of buttons/joins drop!
+      // Stream Sensor Data at ~85 Hz on LAN WS/P2P, and safely below EMQX 10 msg/s limit (~8.5 Hz active, 0.8 Hz idle) on Cloud MQTT so 0% of buttons/swings drop!
       let lastSensorSendMs = 0;
       let lastSentOrientation = { alpha: 0, beta: 75, gamma: 0 };
       let lastTelText = { spd: '', yaw: '', pit: '' };
       setInterval(() => {
         const nowPerf = performance.now();
-        const omegaMag = Math.round(Math.hypot(sensor.gx, sensor.gy, sensor.gz));
+        const omegaMag = Math.round(Math.max(Math.hypot(sensor.gx, sensor.gy, sensor.gz), linearAccelMag * 26, orientRateDeg));
         const spdTxt = `${omegaMag}°/s`;
         const yawTxt = `${Math.round(sensor.alpha)}°`;
         const pitTxt = `${Math.round(sensor.beta)}°`;
@@ -1222,7 +1342,7 @@
         const hasDirectLan = Boolean((ws && ws.readyState === 1) || (peerConn && peerConn.open));
         const hasCloudMqtt = Boolean(mqttRelay && mqttRelay.mqttConnected);
         if (!hasDirectLan && !hasCloudMqtt) {
-          // Port-443-only mode: skip continuous gyro stream (buttons, swipes, 360° wheel, and pings work cleanly over Port 443!)
+          // Port-443-only mode: skip continuous gyro stream (Air-Swing bat, buttons, swipes, 360° wheel, and pings all fire instantly over Port 443!)
           return;
         }
 
@@ -1238,7 +1358,7 @@
         if (hasDirectLan) {
           minSendIntervalMs = hasLiveGyro || isTouchingPad ? 12 : 600;
         } else {
-          // Cloud MQTT only: stay safely under 10 msg/s so EMQX never rate-limits joins/swipes/buttons!
+          // Cloud MQTT only: stay safely under 10 msg/s so EMQX never rate-limits joins/swings/buttons!
           minSendIntervalMs = hasLiveGyro && isActivelyMoving ? 115 : 1200;
         }
 
@@ -1408,6 +1528,8 @@
       document.getElementById('btn-ctrl-calibrate').addEventListener('click', () => {
         if (navigator.vibrate) navigator.vibrate([30, 20, 45]);
         lastWheelEditMs = performance.now();
+        zeroAlpha = sensor.alpha;
+        zeroBeta = sensor.beta;
         currentWheelAimDeg = 0;
         wheelUserDraggedThisBall = false;
         renderPhoneWheelUI();

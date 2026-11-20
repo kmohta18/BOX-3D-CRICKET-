@@ -2199,6 +2199,8 @@ export class BoxCricketApp {
           },
           onSwingPeak: (swingInfo) => {
             if (this.isReplaying || this.ui.cornerMenuOpen || this.ui.isAnyModalOpen()) return;
+            // Skip if native phone-side air_swing already triggered this exact swing within 450ms
+            if (performance.now() - (this._lastAirSwingEventMs || 0) < 450) return;
             const previewShotKey =
               swingInfo?.shotType?.shotKey ||
               this.batting.activeShotType?.shotKey ||
@@ -2366,6 +2368,73 @@ export class BoxCricketApp {
         planePitchDeg: typeof msg.planePitchDeg === 'number' ? msg.planePitchDeg : (this.batting.shotMode === 'fly' ? 28 : 4)
       });
       this.checkAndExecuteBattingContact();
+    };
+
+    // Instant Phone-Side Native 60-100Hz Air-Swing Handler (works over WSS, Mosquitto, AND Port-443 + Gyro/Accelerometer phones!)
+    this.net.callbacks.onAirSwing = (msg, slot) => {
+      sound.init();
+      if (this.ui.cornerMenuOpen || this.ui.isAnyModalOpen()) return;
+      if (this.isReplaying || this.pendingReplayStartTimer) return;
+      const nowMs = performance.now();
+      if (nowMs - (this._lastAirSwingEventMs || 0) < 300) return;
+      this._lastAirSwingEventMs = nowMs;
+
+      const dirSign = this.batting.screenRightSign || -1;
+      const speedDeg = THREE.MathUtils.clamp(Number(msg.speedDeg) || 410, 250, 620);
+
+      // Overarm bowling release when user is bowling!
+      if (this.match.userRole === 'bowl') {
+        if (this.physics.state === 'runup') {
+          const normSpd = THREE.MathUtils.clamp((speedDeg - 220) / 360, 0.78, 1.06);
+          const manualDelivery = this.bowling.triggerManualDelivery(normSpd);
+          this.releaseBowledBall(manualDelivery);
+        }
+        return;
+      }
+
+      if (msg.shotMode === 'ground' || msg.shotMode === 'fly' || msg.shotMode === 'defend') {
+        this.batting.setShotMode(msg.shotMode);
+      }
+
+      const shotAngleDeg = typeof msg.shotAngleDeg === 'number' ? msg.shotAngleDeg * dirSign : undefined;
+      const planePitchDeg = typeof msg.planePitchDeg === 'number'
+        ? msg.planePitchDeg
+        : (this.batting.shotMode === 'fly' ? 28 : 4);
+
+      if (this.physics.state === 'bowled') {
+        this.batting.triggerManualSwing({
+          speedDeg,
+          dirX: (Number(msg.dirX) || 0) * dirSign,
+          shotAngleDeg,
+          planePitchDeg
+        });
+        const shotKey = this.batting.activeShotType?.shotKey || (this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
+        this.triggerStrikerMocapShot(shotKey, {
+          isSweet: true,
+          isOnFire: typeof this.batting.isOnFire === 'function' && this.batting.isOnFire()
+        });
+        this.checkAndExecuteBattingContact();
+      } else if (this.physics.state === 'runup') {
+        // Visual swing feedback + smooth runup fast-forward while respecting fair timing when ball arrives
+        this.bowling.runupFastForward = true;
+        this.batting.triggerManualSwing({
+          speedDeg,
+          dirX: (Number(msg.dirX) || 0) * dirSign,
+          shotAngleDeg,
+          planePitchDeg
+        });
+        const shotKey = this.batting.activeShotType?.shotKey || (this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive');
+        this.triggerStrikerMocapShot(shotKey, {
+          isSweet: false,
+          isOnFire: false
+        });
+        sound.playBatWhoosh?.(speedDeg);
+      } else if (this.physics.state === 'idle' && !this.batting.runWindowActive) {
+        // Live visual practice swing in the crease so swinging phone immediately moves the 3D batsman!
+        const previewKey = this.batting.shotMode === 'fly' ? 'lofted_six' : 'straight_drive';
+        this.triggerStrikerMocapShot(previewKey, { isSweet: false, isOnFire: false });
+        sound.playBatWhoosh?.(speedDeg);
+      }
     };
 
     this.net.callbacks.onCreaseStep = (msg) => {

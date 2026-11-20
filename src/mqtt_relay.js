@@ -25,6 +25,7 @@ const PORT443_CRITICAL_TYPES = new Set([
   'shot_mode_lock',
   'phone_action',
   'touch_swipe',
+  'air_swing',
   'start_or_rematch',
   'calibrate',
   'calibrate_zero',
@@ -450,7 +451,12 @@ class Port443NtfyLane {
     while (this._postTimestamps.length > 0 && now - this._postTimestamps[0] > 10000) {
       this._postTimestamps.shift();
     }
-    const isUrgent = msgObj.type === 'join' || msgObj.type === 'joined_ack' || msgObj.type === 'phone_action' || msgObj.type === 'touch_swipe';
+    const isUrgent =
+      msgObj.type === 'join' ||
+      msgObj.type === 'joined_ack' ||
+      msgObj.type === 'phone_action' ||
+      msgObj.type === 'touch_swipe' ||
+      msgObj.type === 'air_swing';
     if (!isUrgent && this._postTimestamps.length >= 22) return false;
     this._postTimestamps.push(now);
 
