@@ -4,13 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       game_url:
-        description: "Leave as 'local' for built-in offline APK (zero 404), or paste your permanent Cloud Run https:// URL"
+        description: "Game URL (already set to your live GitHub Pages site)"
         required: false
-        default: "local"
+        default: "https://kmohta18.github.io/BOX-3D-CRICKET-/"
   push:
     paths:
       - "android-tv-apk/**"
-      - ".github/workflows/build-android-tv-apk.yml"
+      - ".github/workflows/**"
 
 jobs:
   build-tv-apk:
@@ -60,7 +60,7 @@ jobs:
       - name: Build Android TV Debug APK
         working-directory: android-tv-apk
         run: |
-          URL="${{ github.event.inputs.game_url || 'local' }}"
+          URL="${{ github.event.inputs.game_url || 'https://kmohta18.github.io/BOX-3D-CRICKET-/' }}"
           gradle assembleDebug -PappUrl="$URL" --no-daemon
 
       - name: Ensure /apks/BoxCricket3D.apk Exists
