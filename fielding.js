@@ -122,6 +122,10 @@ export class FieldingSystem {
     this.catchAttemptedThisBall = false;
     this.diveAttemptedThisBall = false;
     this.lastAdaptedZone = null;
+    this.qteBoostTimer = 0;
+    this._chaseTargetX = 0;
+    this._chaseTargetZ = 0;
+    this._chaseTargetInit = false;
 
     this.initFielders();
   }
@@ -332,11 +336,14 @@ export class FieldingSystem {
     this.isRelayLeg = false;
     this.catchAttemptedThisBall = false;
     this.diveAttemptedThisBall = false;
+    this.qteBoostTimer = 0;
+    this._chaseTargetInit = false;
     // Con #3 Fix: Wicketkeeper stands right up to the stumps (0.55m behind wickets) on Spin for authentic Stumping,
     // and stands back (2.85m behind wickets) for Fast / Medium pace bowlers.
     const keeperZ = bowlerType === 'spin' ? PITCH_HALF_LENGTH + 0.55 : PITCH_HALF_LENGTH + 2.85;
     this.keeper.homePos.set(0.15, 0, keeperZ);
     this.keeper.pos.copy(this.keeper.homePos);
+    this.keeper.rotY = Math.PI;
     this.keeper.state = 'idle';
 
     this.fielders.forEach((f) => {
@@ -478,11 +485,40 @@ export class FieldingSystem {
   }
 
   update(dt, ball, difficulty = 'pro', callbacks = {}) {
+    if (this.qteBoostTimer > 0) {
+      this.qteBoostTimer = Math.max(0, this.qteBoostTimer - dt);
+    }
+
     if (ball.state === 'idle' || ball.state === 'runup' || ball.state === 'bowled') {
+      this._chaseTargetInit = false;
+      this.activeChaserIndex = -1;
+      const lerpAlpha = Math.min(1, dt * 4);
       this.fielders.forEach((f) => {
-        f.pos.lerp(f.homePos, Math.min(1, dt * 4));
+        if (f.pos.distanceToSquared(f.homePos) > 0.0025) {
+          f.pos.lerp(f.homePos, lerpAlpha);
+        } else {
+          f.pos.copy(f.homePos);
+        }
+        // Keep fielders facing the batter/crease cleanly as they settle into position
+        f.rotY = Math.atan2(-f.pos.x, CREASE_Z - f.pos.z);
+        f.state = 'idle';
       });
-      this.keeper.pos.lerp(this.keeper.homePos, Math.min(1, dt * 6));
+      if (this.keeper.pos.distanceToSquared(this.keeper.homePos) > 0.0025) {
+        this.keeper.pos.lerp(this.keeper.homePos, Math.min(1, dt * 6));
+      } else {
+        this.keeper.pos.copy(this.keeper.homePos);
+      }
+      this.keeper.rotY = Math.PI;
+      return;
+    }
+
+    // Dead ball after boundary/wicket/throw: let fielders settle calmly facing the pitch instead of freezing weirdly
+    if (ball.state === 'dead') {
+      this._chaseTargetInit = false;
+      this.fielders.forEach((f) => {
+        f.rotY = Math.atan2(-f.pos.x, CREASE_Z - f.pos.z);
+        if (f.state === 'chasing') f.state = 'idle';
+      });
       return;
     }
 
@@ -655,12 +691,23 @@ export class FieldingSystem {
       }
     }
 
-    // 2. Find nearest fielder in the ball's region (prevents cross-region interception!)
+    // 2. Find nearest fielder in the ball's region with sticky hysteresis (prevents mid-flight zig-zag switching!)
     const diffProfile = getDifficultyProfile(difficulty);
-    const speedMultiplier = diffProfile ? diffProfile.fielderSpeedMultiplier : 0.92;
+    const qteMult = this.qteBoostTimer > 0 ? 1.38 : 1.0;
+    const speedMultiplier = (diffProfile ? diffProfile.fielderSpeedMultiplier : 0.92) * qteMult;
     const predictedSpot = this.predictAerialLandingSpot(ball);
-    const predictPosX = predictedSpot.x;
-    const predictPosZ = predictedSpot.z;
+    if (!this._chaseTargetInit) {
+      this._chaseTargetX = predictedSpot.x;
+      this._chaseTargetZ = predictedSpot.z;
+      this._chaseTargetInit = true;
+    } else {
+      // Smooth predicted spot transitions (especially across first bounce) so chaser never snaps backwards!
+      const spotLerp = 1 - Math.exp(-12.0 * dt);
+      this._chaseTargetX += (predictedSpot.x - this._chaseTargetX) * spotLerp;
+      this._chaseTargetZ += (predictedSpot.z - this._chaseTargetZ) * spotLerp;
+    }
+    const predictPosX = this._chaseTargetX;
+    const predictPosZ = this._chaseTargetZ;
 
     let bestIdx = -1;
     let bestDist = Infinity;
@@ -670,6 +717,16 @@ export class FieldingSystem {
       if (d < bestDist) {
         bestDist = d;
         bestIdx = i;
+      }
+    }
+
+    // Sticky chaser lock: keep current chaser unless another fielder is clearly >= 3.2m closer
+    if (this.activeChaserIndex >= 0 && this.activeChaserIndex < this.fielders.length) {
+      const curChaser = this.fielders[this.activeChaserIndex];
+      const curDist = Math.hypot(predictPosX - curChaser.pos.x, predictPosZ - curChaser.pos.z);
+      if (bestIdx !== this.activeChaserIndex && curDist <= bestDist + 3.2 && curDist <= 28.0) {
+        bestIdx = this.activeChaserIndex;
+        bestDist = curDist;
       }
     }
     this.activeChaserIndex = bestIdx;
@@ -686,27 +743,35 @@ export class FieldingSystem {
     for (let idx = 0; idx < this.fielders.length; idx++) {
       if (ball.state !== 'hit') return;
       const f = this.fielders[idx];
-      // Only chase if this is the nearest fielder in the region (or ball has already bounced and is rolling in outfield)
-      const isRegionalChaser = idx === bestIdx && (bestDist <= 22.5 || ball.bouncedAfterHit || !ball.aerialAfterHit);
-      const targetX = isRegionalChaser ? predictPosX : ball.pos.x * 0.10 + f.homePos.x * 0.90;
-      const targetZ = isRegionalChaser ? predictPosZ : ball.pos.z * 0.10 + f.homePos.z * 0.90;
-      const dx = targetX - f.pos.x;
-      const dz = targetZ - f.pos.z;
-      const dist = Math.hypot(dx, dz);
-
-      if (dist > 0.12) {
-        const moveRate = (isRegionalChaser ? f.sprintSpeed * speedMultiplier * 1.14 : 3.2) * dt;
-        f.pos.x += (dx / dist) * Math.min(dist, moveRate);
-        f.pos.z += (dz / dist) * Math.min(dist, moveRate);
-        // Keep every fielder strictly inside the 52m playable boundary!
-        const fRad = Math.hypot(f.pos.x, f.pos.z);
-        if (fRad > 50.5) {
-          const clampRatio = 50.5 / fRad;
-          f.pos.x *= clampRatio;
-          f.pos.z *= clampRatio;
+      // ONLY the designated regional chaser sprints after the ball; the other 8 fielders stay planted
+      // at their fielding spots and track the ball visually (no aimless 9-man chaotic running!)
+      const isRegionalChaser = idx === bestIdx && (bestDist <= 24.5 || ball.bouncedAfterHit || !ball.aerialAfterHit);
+      if (isRegionalChaser) {
+        const dx = predictPosX - f.pos.x;
+        const dz = predictPosZ - f.pos.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.22) {
+          const moveRate = f.sprintSpeed * speedMultiplier * 1.14 * dt;
+          f.pos.x += (dx / dist) * Math.min(dist, moveRate);
+          f.pos.z += (dz / dist) * Math.min(dist, moveRate);
+          // Keep every fielder strictly inside the 52m playable boundary!
+          const fRad = Math.hypot(f.pos.x, f.pos.z);
+          if (fRad > 50.5) {
+            const clampRatio = 50.5 / fRad;
+            f.pos.x *= clampRatio;
+            f.pos.z *= clampRatio;
+          }
+          f.rotY = Math.atan2(dx, dz);
+          f.state = 'chasing';
+        } else {
+          // Arrived at landing spot — face the incoming ball cleanly
+          f.rotY = Math.atan2(ball.pos.x - f.pos.x, ball.pos.z - f.pos.z);
+          f.state = 'idle';
         }
-        f.rotY = Math.atan2(dx, dz);
-        f.state = isRegionalChaser ? 'chasing' : 'idle';
+      } else {
+        // Non-chasing fielders hold position and watch the ball (natural broadcast cricket look)
+        f.rotY = Math.atan2(ball.pos.x - f.pos.x, ball.pos.z - f.pos.z);
+        f.state = 'idle';
       }
 
       const ballDist = Math.hypot(ball.pos.x - f.pos.x, ball.pos.z - f.pos.z);
@@ -749,9 +814,12 @@ export class FieldingSystem {
           (ball.edged && isSlipOrGully && ballDist > 0.45);
         const catchProb = this.computeCatchProbability(ball, f, difficulty);
         if (Math.random() < catchProb) {
-          if (isDivingCatch) {
-            f.pos.x = THREE.MathUtils.lerp(f.pos.x, ball.pos.x, 0.85);
-            f.pos.z = THREE.MathUtils.lerp(f.pos.z, ball.pos.z, 0.85);
+          if (isDivingCatch && ballDist > 0.05) {
+            // Bounded dive step (max 0.45m) so the dive animation reaches the ball without teleporting!
+            const stepFrac = Math.min(0.45, ballDist * 0.45) / ballDist;
+            f.pos.x += (ball.pos.x - f.pos.x) * stepFrac;
+            f.pos.z += (ball.pos.z - f.pos.z) * stepFrac;
+            f.rotY = Math.atan2(ball.pos.x - f.pos.x, ball.pos.z - f.pos.z);
           }
           f.state = 'fielded';
           ball.state = 'dead';
@@ -786,9 +854,12 @@ export class FieldingSystem {
         this.diveAttemptedThisBall = true;
         const diveSkill = diffProfile ? diffProfile.fielderCatchSkill * 0.68 : 0.52;
         if (Math.random() < diveSkill) {
-          // Fielder lunges to the ball position and stops it dead!
-          f.pos.x = THREE.MathUtils.lerp(f.pos.x, ball.pos.x, 0.78);
-          f.pos.z = THREE.MathUtils.lerp(f.pos.z, ball.pos.z, 0.78);
+          // Bounded dive lunge (max 0.55m) to match the visual dive hip slide without instant teleport
+          if (ballDist > 0.05) {
+            const stepFrac = Math.min(0.55, ballDist * 0.42) / ballDist;
+            f.pos.x += (ball.pos.x - f.pos.x) * stepFrac;
+            f.pos.z += (ball.pos.z - f.pos.z) * stepFrac;
+          }
           f.state = 'throwing';
           ball.state = 'fielded';
           ball.pos.set(f.pos.x, 0.45, f.pos.z);

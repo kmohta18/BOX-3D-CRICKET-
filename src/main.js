@@ -4401,11 +4401,11 @@ export class BoxCricketApp {
     }
   }
 
-  triggerTeamCelebration() {
+  triggerTeamCelebration(excludeFielderIdx = -1, excludeKeeper = false) {
     if (this.bowlerPlayer) this.bowlerPlayer.playClip('appeal', 0.12);
-    if (this.keeperPlayer) this.keeperPlayer.playClip('appeal', 0.15);
+    if (this.keeperPlayer && !excludeKeeper) this.keeperPlayer.playClip('appeal', 0.15);
     this.fielderPlayers.forEach((fp, i) => {
-      if (i % 2 === 0) fp.playClip('celebration', 0.2);
+      if (i !== excludeFielderIdx && i % 2 === 0) fp.playClip('celebration', 0.2);
     });
   }
 
@@ -4472,7 +4472,7 @@ export class BoxCricketApp {
         const angleDiff = Math.abs(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)));
         if (angleDiff < 1.05) {
           const avgAngle = Math.atan2(Math.sin(a0) + Math.sin(a1), Math.cos(a0) + Math.cos(a1));
-          const moved = this.fielding.adaptFieldToHotZone(avgAngle, this.match.isPowerplay);
+          const moved = this.fielding.adaptFieldToHotZone(avgAngle, this.match.isPowerplayActive());
           if (moved) {
             this.ui.showStatusToast(`🛡️ FIELD CHANGE · Captain plugs ${moved.zoneLabel}!`, false);
           }
@@ -4969,11 +4969,9 @@ export class BoxCricketApp {
 
     if (isSweetSpot) {
       sound.playUIClick(1680);
-      // Boost fielder speed & catch reflexes on perfect QTE tap!
-      this.fielding.fielders.forEach((f) => {
-        f.pos.lerp(this.physics.pos, 0.26);
-      });
-      this.ui.showStatusToast('PERFECT REFLEX! Fielder diving in!', true);
+      // Smoothly boost active chaser's sprint speed instead of teleporting all 9 fielders!
+      this.fielding.qteBoostTimer = 0.85;
+      this.ui.showStatusToast('PERFECT REFLEX! Fielder sprinting in!', true);
     } else {
       sound.playUIClick(620);
       this.ui.showStatusToast('Early/Late Reflex Tap', false);
@@ -5594,17 +5592,20 @@ export class BoxCricketApp {
         sound.playCrowdReaction('wicket', pan);
         this.net.vibratePhone('p1', [140, 60, 140]);
         const catchClip = isDivingCatch ? 'dive' : 'catch';
+        let caughtFielderIdx = -1;
+        let caughtByKeeper = false;
         if (fielder.id === 'keeper' && this.keeperPlayer) {
+          caughtByKeeper = true;
           this.keeperPlayer.playClip(catchClip, 0.06, isDivingCatch ? 1.25 : 1.0);
           if (isDivingCatch) this.spawnDustPuff(fielder.pos, 0.55);
         } else {
-          const fIdx = this.fielding.fielders.indexOf(fielder);
-          if (fIdx >= 0 && this.fielderPlayers[fIdx]) {
-            this.fielderPlayers[fIdx].playClip(catchClip, 0.06, isDivingCatch ? 1.25 : 1.0);
+          caughtFielderIdx = this.fielding.fielders.indexOf(fielder);
+          if (caughtFielderIdx >= 0 && this.fielderPlayers[caughtFielderIdx]) {
+            this.fielderPlayers[caughtFielderIdx].playClip(catchClip, 0.06, isDivingCatch ? 1.25 : 1.0);
             if (isDivingCatch) this.spawnDustPuff(fielder.pos, 0.55);
           }
         }
-        this.triggerTeamCelebration();
+        this.triggerTeamCelebration(caughtFielderIdx, caughtByKeeper);
 
         this.registerReplayHighlight({
           category: 'wicket',
@@ -6281,6 +6282,11 @@ export class BoxCricketApp {
     this.nonStrikerMesh.position.x = THREE.MathUtils.damp(this.nonStrikerMesh.position.x, targetNonStrikerX, 10, dt);
     this.nonStrikerMesh.position.z = THREE.MathUtils.damp(this.nonStrikerMesh.position.z, this.nonStrikerMeshZ + backupZ, 12, dt);
 
+    const dampAngle = (cur, target, lambda, stepDt) => {
+      const diff = Math.atan2(Math.sin(target - cur), Math.cos(target - cur));
+      return cur + diff * (1 - Math.exp(-lambda * stepDt));
+    };
+
     if (this.physics.state === 'fielded' && this.fielding.throwTargetEnd === 'nonStriker') {
       // Bowler moves right up behind the non-striker stumps to receive the incoming throw!
       this.bowlerMesh.position.x = THREE.MathUtils.damp(this.bowlerMesh.position.x, 0.14, 10, dt);
@@ -6288,14 +6294,15 @@ export class BoxCricketApp {
       this.bowlerMesh.position.y = 0;
       const throwerX = this.fielding.activeThrower?.pos?.x || this.physics.pos.x;
       const throwerZ = this.fielding.activeThrower?.pos?.z || this.physics.pos.z;
-      this.bowlerMesh.rotation.y = Math.atan2(
+      const targetBowlerRot = Math.atan2(
         throwerX - this.bowlerMesh.position.x,
         throwerZ - this.bowlerMesh.position.z
       );
+      this.bowlerMesh.rotation.y = dampAngle(this.bowlerMesh.rotation.y, targetBowlerRot, 14, dt);
     } else {
       this.bowlerMesh.position.z = this.bowling.runupZ;
       this.bowlerMesh.position.y = this.bowling.jumpY || 0;
-      this.bowlerMesh.rotation.y = 0;
+      this.bowlerMesh.rotation.y = dampAngle(this.bowlerMesh.rotation.y, 0, 14, dt);
       // Bowler runs in along authentic Over/Around-the-Wicket lane (±0.54m beside stumps/umpire) and veers off after release!
       const followSideOffset =
         this.bowling.state === 'released'
@@ -6305,40 +6312,74 @@ export class BoxCricketApp {
       this.bowlerMesh.position.x = THREE.MathUtils.damp(this.bowlerMesh.position.x, targetBowlerX, 12, dt);
     }
 
+    const prevKeeperX = this.keeperMesh.position.x;
+    const prevKeeperZ = this.keeperMesh.position.z;
     this.keeperMesh.position.copy(this.fielding.keeper.pos);
+    const keeperMoveDist = Math.hypot(this.keeperMesh.position.x - prevKeeperX, this.keeperMesh.position.z - prevKeeperZ);
+    const keeperSpeedMs = keeperMoveDist / Math.max(0.012, dt);
     if (this.physics.state === 'fielded' && this.fielding.throwTargetEnd === 'striker') {
       const throwerX = this.fielding.activeThrower?.pos?.x || this.physics.pos.x;
       const throwerZ = this.fielding.activeThrower?.pos?.z || this.physics.pos.z;
-      this.keeperMesh.rotation.y = Math.atan2(
+      const targetKeeperRot = Math.atan2(
         throwerX - this.keeperMesh.position.x,
         throwerZ - this.keeperMesh.position.z
       );
+      this.keeperMesh.rotation.y = dampAngle(this.keeperMesh.rotation.y, targetKeeperRot, 14, dt);
+    } else if (keeperSpeedMs > 1.5 && this.physics.state === 'hit') {
+      const chaseRot = Math.atan2(this.keeperMesh.position.x - prevKeeperX, this.keeperMesh.position.z - prevKeeperZ);
+      this.keeperMesh.rotation.y = dampAngle(this.keeperMesh.rotation.y, chaseRot, 14, dt);
     } else {
-      this.keeperMesh.rotation.y = Math.PI;
+      this.keeperMesh.rotation.y = dampAngle(this.keeperMesh.rotation.y, Math.PI, 14, dt);
+    }
+    if (this.keeperPlayer) {
+      const kClip = this.keeperPlayer.currentClipName;
+      if (kClip !== 'dive' && kClip !== 'catch' && kClip !== 'throw' && kClip !== 'appeal' && kClip !== 'celebration') {
+        this.keeperPlayer._smoothSpeed = THREE.MathUtils.damp(this.keeperPlayer._smoothSpeed || 0, keeperSpeedMs, 12, dt);
+        if (!this.keeperPlayer._isSprinting && this.keeperPlayer._smoothSpeed > 1.5) {
+          this.keeperPlayer._isSprinting = true;
+        } else if (this.keeperPlayer._isSprinting && this.keeperPlayer._smoothSpeed < 0.6) {
+          this.keeperPlayer._isSprinting = false;
+        }
+        if (this.keeperPlayer._isSprinting && this.physics.state === 'hit') {
+          this.keeperPlayer.playClip('bowling_runup', 0.14, Math.min(1.45, 0.85 + this.keeperPlayer._smoothSpeed * 0.08));
+        } else {
+          this.keeperPlayer.playClip('idle', 0.2, 1.0);
+        }
+      }
     }
 
-    // Update 9 Fielders & blend between Idle / Run / Dive / Throw clips
+    // Update 9 Fielders with smooth damped yaw & run/idle hysteresis (eliminates 180° snaps & run/idle flicker!)
     this.fielding.fielders.forEach((f, idx) => {
       const fp = this.fielderPlayers[idx];
       if (!fp) return;
       const prevX = fp.group.position.x;
       const prevZ = fp.group.position.z;
       fp.group.position.copy(f.pos);
-      fp.group.rotation.y = f.rotY;
+      fp.group.rotation.y = dampAngle(fp.group.rotation.y, f.rotY, 14, dt);
 
       const moveDist = Math.hypot(f.pos.x - prevX, f.pos.z - prevZ);
-      const speedMs = moveDist / Math.max(0.008, dt);
+      // Ignore single-frame reset snaps (> 1.6m in one frame) so fielders don't flash a run frame on ball reset
+      const rawSpeedMs = moveDist > 1.6 ? 0 : moveDist / Math.max(0.012, dt);
+      fp._smoothSpeed = THREE.MathUtils.damp(fp._smoothSpeed || 0, rawSpeedMs, 12, dt);
+
       if (
         fp.currentClipName !== 'dive' &&
         fp.currentClipName !== 'catch' &&
         fp.currentClipName !== 'throw' &&
         fp.currentClipName !== 'celebration'
       ) {
-        if (speedMs > 1.2) {
-          fp.playClip('bowling_runup', 0.15, Math.min(1.6, 0.8 + speedMs * 0.1));
+        if (!fp._isSprinting && fp._smoothSpeed > 1.45) {
+          fp._isSprinting = true;
+        } else if (fp._isSprinting && fp._smoothSpeed < 0.55) {
+          fp._isSprinting = false;
+        }
+        if (fp._isSprinting) {
+          fp.playClip('bowling_runup', 0.14, Math.min(1.55, 0.82 + fp._smoothSpeed * 0.09));
         } else {
           fp.playClip('idle', 0.2, 1.0);
         }
+      } else {
+        fp._isSprinting = false;
       }
       fp.update(dt, this.camera.position);
     });

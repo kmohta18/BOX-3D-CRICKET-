@@ -609,12 +609,30 @@ export function buildCricketMocapClips(baseAnimations = []) {
       [0, 0.84, -0.02],
       [0, 0.92, 0]
     ]),
+    makeBoneQuatTrack('mixamorigHips', [0, 0.18, 0.38, 0.78], [
+      [4, 0, 0],
+      [-6, 0, 0],
+      [12, 0, 0],
+      [4, 0, 0]
+    ]),
     makeBoneQuatTrack('mixamorigSpine', [0, 0.18, 0.38, 0.58, 0.78], [
       [10, 0, 0],
       [-22, 0, 0],
       [24, 0, 0],
       [14, 0, 0],
       [8, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigSpine1', [0, 0.18, 0.38, 0.78], [
+      [4, 0, 0],
+      [-8, 0, 0],
+      [8, 0, 0],
+      [4, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHead', [0, 0.18, 0.38, 0.78], [
+      [-6, 0, 0],
+      [-14, 0, 0],
+      [4, 0, 0],
+      [-4, 0, 0]
     ]),
     makeBoneQuatTrack('mixamorigRightArm', [0, 0.18, 0.38, 0.58, 0.78], [
       [20, 0, -25],
@@ -690,6 +708,20 @@ export function buildCricketMocapClips(baseAnimations = []) {
       [-22, 12, -18],
       [12, 4, -8],
       [8, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigSpine1', [0, 0.16, 0.38, 0.68, 0.96], [
+      [0, 0, 0],
+      [-6, 4, -6],
+      [-8, 6, -8],
+      [4, 2, -4],
+      [0, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHead', [0, 0.16, 0.38, 0.68, 0.96], [
+      [-4, 0, 0],
+      [-10, 8, 12],
+      [-12, 10, 16],
+      [-6, 4, 6],
+      [-4, 0, 0]
     ]),
     makeBoneQuatTrack('mixamorigRightArm', [0, 0.16, 0.38, 0.68, 0.96], [
       [20, 0, -25],
@@ -908,13 +940,37 @@ export function buildCricketMocapClips(baseAnimations = []) {
     ])
   ]);
 
-  // 14. THROW (Fielder pickup & flat overarm throw to the stumps)
+  // 14. THROW (Fielder pickup & flat overarm throw to the stumps — full upright hips/legs/head tracks so dive->throw recovers cleanly!)
   clips.throw = new THREE.AnimationClip('throw', 0.66, [
+    makeBonePosTrack('mixamorigHips', [0, 0.20, 0.42, 0.66], [
+      [0, 0.84, 0],
+      [0, 0.92, -0.04],
+      [0, 0.88, 0.08],
+      [0, 0.91, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHips', [0, 0.20, 0.42, 0.66], [
+      [12, -18, 0],
+      [6, -24, 0],
+      [14, 20, 0],
+      [6, 0, 0]
+    ]),
     makeBoneQuatTrack('mixamorigSpine', [0, 0.20, 0.42, 0.66], [
-      [25, -30, 0],
-      [-12, -42, -8],
-      [22, 35, 10],
+      [22, -24, 0],
+      [-10, -32, -6],
+      [20, 28, 8],
       [8, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigSpine1', [0, 0.20, 0.42, 0.66], [
+      [6, -10, 0],
+      [-6, -14, -4],
+      [8, 12, 4],
+      [2, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigHead', [0, 0.20, 0.42, 0.66], [
+      [-8, 18, 0],
+      [-6, 26, 0],
+      [-6, -16, 0],
+      [-4, 0, 0]
     ]),
     makeBoneQuatTrack('mixamorigRightArm', [0, 0.20, 0.40, 0.66], [
       [45, 15, -20],
@@ -927,6 +983,30 @@ export function buildCricketMocapClips(baseAnimations = []) {
       [-75, 25, 25],
       [35, -20, 20],
       [20, 0, 25]
+    ]),
+    makeBoneQuatTrack('mixamorigRightUpLeg', [0, 0.20, 0.42, 0.66], [
+      [-18, 0, -4],
+      [12, 0, -4],
+      [-26, 0, -4],
+      [-10, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigLeftUpLeg', [0, 0.20, 0.42, 0.66], [
+      [-14, 0, 4],
+      [-26, 0, 4],
+      [18, 0, 4],
+      [-10, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigRightLeg', [0, 0.20, 0.42, 0.66], [
+      [32, 0, 0],
+      [20, 0, 0],
+      [38, 0, 0],
+      [16, 0, 0]
+    ]),
+    makeBoneQuatTrack('mixamorigLeftLeg', [0, 0.20, 0.42, 0.66], [
+      [24, 0, 0],
+      [36, 0, 0],
+      [22, 0, 0],
+      [16, 0, 0]
     ])
   ]);
   clips.collect = clips.catch;
@@ -2946,7 +3026,10 @@ export class RiggedCricketPlayer {
       }
     }
     this.frameCounter++;
-    const isOneShot =
+    const isActiveMotion =
+      this.currentClipName === 'bowling_runup' ||
+      this.currentClipName === 'runup' ||
+      this.currentClipName === 'walk' ||
       this.currentClipName === 'throw' ||
       this.currentClipName === 'dive' ||
       this.currentClipName === 'catch' ||
@@ -2954,9 +3037,10 @@ export class RiggedCricketPlayer {
       this.currentClipName === 'bowl_spin' ||
       this.currentClipName === 'appeal' ||
       this.currentClipName === 'celebration';
-    if (this.lod && cameraPos && !isOneShot) {
+    // Only apply 2-frame LOD throttle to stationary distant idle fielders (>40m), NEVER to sprinting/chasing fielders!
+    if (this.lod && cameraPos && !isActiveMotion) {
       const distSq = this.group.position.distanceToSquared(cameraPos);
-      if (distSq > 784) {
+      if (distSq > 1600) {
         if (this.frameCounter % 2 !== 0) {
           return;
         }
