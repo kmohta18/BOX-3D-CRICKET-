@@ -578,6 +578,22 @@ export class BallPhysics {
         }
       }
 
+      // Sub-step Bat Contact Evaluation STRICTLY BEFORE Stump Collision Check:
+      // Prevents a fast delivery (35-43 m/s) from ever tunneling straight through the bat crease into
+      // the stumps during a single frame hitch!
+      if (
+        this.state === 'bowled' &&
+        this.pos.z >= CREASE_Z - 1.55 &&
+        this.pos.z < PITCH_HALF_LENGTH &&
+        callbacks.onEvaluateBatContact
+      ) {
+        callbacks.onEvaluateBatContact(this);
+        if (this.state !== 'bowled') {
+          // Ball was struck by the bat on this sub-step; let the new hit velocity integrate cleanly
+          continue;
+        }
+      }
+
       // Check Striker Stumps collision (z = +PITCH_HALF_LENGTH = 10.06) for both Bowled and Played-On Inside Edge!
       if (
         (this.state === 'bowled' || (this.state === 'hit' && this.isPlayedOn)) &&

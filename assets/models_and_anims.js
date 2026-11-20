@@ -1340,6 +1340,7 @@ export class ProgressivePitchSurface {
     }
 
     this.pitchType = 'normal';
+    this._pendingWearUpload = false;
     this.resetPitchTexture('normal');
   }
 
@@ -1461,7 +1462,7 @@ export class ProgressivePitchSurface {
     ctx.fill();
   }
 
-  stampBallBounceWear(worldX, worldZ) {
+  stampBallBounceWear(worldX, worldZ, { deferUpload = false } = {}) {
     const u = THREE.MathUtils.clamp((worldX + 1.6) / 3.2, 0.05, 0.95);
     const v = THREE.MathUtils.clamp((worldZ + 11.6) / 23.2, 0.05, 0.95);
     const px = u * 256;
@@ -1473,6 +1474,18 @@ export class ProgressivePitchSurface {
     ctx.ellipse(px, py, 4.5, 7.5, 0, 0, Math.PI * 2);
     ctx.fill();
 
+    if (deferUpload) {
+      // Avoid synchronous WebGL texImage2D + mipmap stall mid-flight right before bat contact!
+      this._pendingWearUpload = true;
+    } else {
+      this._pendingWearUpload = false;
+      this.map.needsUpdate = true;
+    }
+  }
+
+  flushPendingWear() {
+    if (!this._pendingWearUpload) return;
+    this._pendingWearUpload = false;
     this.map.needsUpdate = true;
   }
 }

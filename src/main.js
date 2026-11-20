@@ -972,58 +972,94 @@ export class BoxCricketApp {
 
     // Lightweight stadium & classic ground pass
     applyMiddledLook(this);
+    this.initDustPuffPool();
+  }
+
+  initDustPuffPool() {
+    if (this._dustPuffPool) return;
+    const poolSize = 4;
+    const count = 8;
+    const sharedGeo = new THREE.SphereGeometry(0.045, 6, 6);
+    this._dustPuffPool = [];
+    this._dustPoolCursor = 0;
+
+    for (let s = 0; s < poolSize; s++) {
+      const group = new THREE.Group();
+      group.visible = false;
+      const mat = new THREE.MeshBasicMaterial({
+        color: 0xd6b88a,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false
+      });
+      const particles = [];
+      for (let i = 0; i < count; i++) {
+        const mesh = new THREE.Mesh(sharedGeo, mat);
+        group.add(mesh);
+        particles.push({ mesh, vx: 0, vy: 0, vz: 0 });
+      }
+      this.scene.add(group);
+      this._dustPuffPool.push({
+        group,
+        mat,
+        particles,
+        age: 0,
+        active: false,
+        baseOpacity: 0.55
+      });
+    }
   }
 
   spawnDustPuff(pos, intensity = 0.5) {
     if (this.graphicsQuality === 'low') return;
-    const count = 8;
-    const group = new THREE.Group();
-    group.position.set(pos.x, 0.06, pos.z);
+    if (!this._dustPuffPool) this.initDustPuffPool();
+    const pool = this._dustPuffPool;
+    const slot = pool[this._dustPoolCursor % pool.length];
+    this._dustPoolCursor = (this._dustPoolCursor + 1) % pool.length;
 
-    const mat = new THREE.MeshBasicMaterial({
-      color: this.physics.pitchType === 'green' ? 0xa3b18a : 0xd6b88a,
-      transparent: true,
-      opacity: Math.min(0.75, 0.35 + intensity * 0.45),
-      depthWrite: false
-    });
+    slot.group.position.set(pos.x, 0.06, pos.z);
+    slot.mat.color.setHex(this.physics.pitchType === 'green' ? 0xa3b18a : 0xd6b88a);
+    slot.baseOpacity = Math.min(0.75, 0.35 + intensity * 0.45);
+    slot.mat.opacity = slot.baseOpacity;
+    slot.age = 0;
+    slot.active = true;
+    slot.group.visible = true;
 
-    const particles = [];
-    const geo = new THREE.SphereGeometry(0.045, 6, 6);
+    const count = slot.particles.length;
     for (let i = 0; i < count; i++) {
-      const m = new THREE.Mesh(geo, mat);
+      const p = slot.particles[i];
+      p.mesh.position.set(0, 0, 0);
+      p.mesh.scale.setScalar(1);
       const ang = (i / count) * Math.PI * 2 + Math.random() * 0.4;
       const spd = 0.6 + Math.random() * 1.1;
-      particles.push({
-        mesh: m,
-        vx: Math.cos(ang) * spd,
-        vy: 0.7 + Math.random() * 0.9,
-        vz: Math.sin(ang) * spd
-      });
-      group.add(m);
+      p.vx = Math.cos(ang) * spd;
+      p.vy = 0.7 + Math.random() * 0.9;
+      p.vz = Math.sin(ang) * spd;
     }
-
-    this.scene.add(group);
-    this.dustPuffs.push({ group, mat, particles, age: 0 });
   }
 
   updateDustPuffs(dt) {
-    for (let i = this.dustPuffs.length - 1; i >= 0; i--) {
-      const puff = this.dustPuffs[i];
+    const pool = this._dustPuffPool;
+    if (!pool) return;
+    for (let i = 0; i < pool.length; i++) {
+      const puff = pool[i];
+      if (!puff.active) continue;
       puff.age += dt;
       if (puff.age > 0.65) {
-        this.scene.remove(puff.group);
-        puff.mat.dispose();
-        this.dustPuffs.splice(i, 1);
+        puff.active = false;
+        puff.group.visible = false;
         continue;
       }
-      puff.mat.opacity = Math.max(0, (1 - puff.age / 0.65) * 0.55);
-      puff.particles.forEach((p) => {
+      puff.mat.opacity = Math.max(0, (1 - puff.age / 0.65) * puff.baseOpacity);
+      const scaleVal = 1 + puff.age * 2.2;
+      for (let j = 0; j < puff.particles.length; j++) {
+        const p = puff.particles[j];
         p.mesh.position.x += p.vx * dt;
         p.mesh.position.y += p.vy * dt;
         p.mesh.position.z += p.vz * dt;
         p.vy -= 2.4 * dt;
-        p.mesh.scale.setScalar(1 + puff.age * 2.2);
-      });
+        p.mesh.scale.setScalar(scaleVal);
+      }
     }
   }
 
@@ -4832,6 +4868,10 @@ export class BoxCricketApp {
       this._snapCameraNextFrame = true;
     }
     this.physics.reset();
+    if (this.pitchSurface && typeof this.pitchSurface.flushPendingWear === 'function') {
+      // Upload any pitch bounce wear marks cleanly between deliveries (zero GPU stall during ball flight!)
+      this.pitchSurface.flushPendingWear();
+    }
     this.bowling.resetForNextBall();
     const isActivelyDraggingCrease = this.creaseDragPointerId !== null && this.creaseDragPointerId !== undefined;
     this.batting.resetForNextBall({ preserveWheelAim: false, resetCreaseX: !isActivelyDraggingCrease });
@@ -4995,7 +5035,20 @@ export class BoxCricketApp {
     this.lastFrameTime = nowMs;
 
     const rawDt = this.clock.getDelta();
-    let dt = Math.min(rawDt, 0.05);
+    const maxStep = this.physics?.state === 'bowled' ? 0.033 : 0.05;
+    let dt = Math.min(rawDt, maxStep);
+    // Hitch-resilient timing clock parity: if an OS/browser frame stutter occurred while a delivery is flying,
+    // advance any armed pre-hitch swing timestamp by the clamped hitch delta so the player is never falsely
+    // penalized as "too early" when physics resumes.
+    if (this.physics?.state === 'bowled' && rawDt > maxStep + 0.012) {
+      const hitchShiftSec = Math.min(rawDt - maxStep, 0.35);
+      if (this.batting && !this.batting.shotExecutedThisBall && this.batting.swingPeakTime > 0) {
+        this.batting.swingPeakTime += hitchShiftSec;
+      }
+      if (this._ballReleaseTimeSec) {
+        this._ballReleaseTimeSec += hitchShiftSec;
+      }
+    }
 
     // Pause entire gameplay loop (bowler run-up, ball flight, fielding, running, replays & auto-bowl countdown)
     // whenever the user opens the Corner Menu or any Modal!
@@ -5282,32 +5335,24 @@ export class BoxCricketApp {
     this.physics.currentBatsmanX = this.batting.creaseX || 0;
     this.physics.currentHandedness = this.handedness || 'right';
     this.physics.update(physicsDt, {
+      onEvaluateBatContact: () => {
+        if (this.match.userRole === 'bat') {
+          this.checkAndExecuteBattingContact();
+        }
+      },
       onPitchBounce: (bouncePos, surface, localWear) => {
         const pan = THREE.MathUtils.clamp(bouncePos.x / 20.0, -0.9, 0.9);
         sound.playPitchBounce(surface, this.physics.speedKmh, pan);
         this.bounceMarker.position.set(bouncePos.x, 0.04, bouncePos.z);
         this.bounceMarker.visible = true;
-        this.pitchSurface.stampBallBounceWear(bouncePos.x, bouncePos.z);
+        // CRITICAL ZERO-STUTTER FIX:
+        // Never upload WebGL canvas textures, mutate DOM banners, redraw the 2D Field Radar, or send HUD
+        // network packets on the pitch-bounce frame right before bat contact!
+        this.pitchSurface.stampBallBounceWear(bouncePos.x, bouncePos.z, { deferUpload: true });
         this.spawnDustPuff(bouncePos, localWear);
         if (this.impactVFX) {
           this.impactVFX.spawnPitchBounceRipple(bouncePos, this.physics.speedKmh);
         }
-        if (this.match.userRole === 'bat') {
-          const bz = bouncePos.z;
-          const lengthTag =
-            bz < 3.2
-              ? { text: '🔴 SHORT BALL · PULL / HOOK / CUT', cat: 'short' }
-              : bz >= 7.5
-                ? { text: '🔵 YORKER · DIG / SCOOP', cat: 'yorker' }
-                : bz >= 5.0
-                  ? { text: '🟢 FULL · DRIVE / LOFT ZONE', cat: 'full' }
-                  : { text: '🟡 GOOD LENGTH · TIME THE SWING', cat: 'good' };
-          this.ui.showDeliveryPreview(
-            { customStatusText: lengthTag.text, lengthCategory: lengthTag.cat },
-            'briefly'
-          );
-        }
-        this.ui.updateHUD();
       },
       onOutfieldBounce: (pos) => {
         const pan = THREE.MathUtils.clamp(pos.x / 28.0, -0.92, 0.92);

@@ -1393,7 +1393,11 @@ export class BattingSystem {
           launchAngleDeg = THREE.MathUtils.randFloat(34, 48);
           launchSpeedMs = THREE.MathUtils.randFloat(12.2, 16.8);
           finalYaw = handSign * THREE.MathUtils.randFloat(0.18, 0.78);
-        } else if (isInsideHalf && Math.abs(ball.pos.x) < 0.28 && Math.random() < (assist === 'off' ? 0.44 : 0.34)) {
+        } else if (
+          isInsideHalf &&
+          Math.abs(ball.pos.x) < 0.22 &&
+          Math.random() < (assist === 'full' ? 0.14 : assist === 'light' ? 0.20 : 0.28)
+        ) {
           ball.edgeType = 'played_on';
           contactType = 'Played-On (Inside Edge)';
           timingLabelEn = 'INSIDE EDGE · PLAYED ON!';
@@ -1402,8 +1406,16 @@ export class BattingSystem {
           launchSpeedMs = 9.5;
           finalYaw = Math.PI;
           ball.isPlayedOn = true;
-          ball.pos.set(0, 0.36, CREASE_Z + 0.35);
-          ball.vel.set(0, 0.22, 13.5);
+          // Deflect naturally from the ball's real contact point toward the stumps (no jarring teleport!)
+          const startZ = Math.min(ball.pos.z, CREASE_Z + 0.08);
+          const startY = THREE.MathUtils.clamp(ball.pos.y, 0.14, 0.56);
+          ball.pos.set(ball.pos.x, startY, startZ);
+          const targetStumpX = THREE.MathUtils.clamp(ball.pos.x * 0.45, -0.09, 0.09);
+          const distToStumpsZ = Math.max(0.65, PITCH_HALF_LENGTH - startZ);
+          const travelTime = distToStumpsZ / 9.2;
+          const deflectVx = (targetStumpX - ball.pos.x) / travelTime;
+          const deflectVy = (0.34 - startY) / travelTime + 0.5 * 9.81 * travelTime;
+          ball.vel.set(deflectVx, THREE.MathUtils.clamp(deflectVy, -1.8, 2.2), 9.2);
         } else if (isInsideHalf) {
           ball.edgeType = 'inside_edge';
           contactType = 'Inside Edge (Past Leg Stump)';
