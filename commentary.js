@@ -25,8 +25,8 @@ export const COMMENTARY_LINES = {
       'मैच की पहली गेंद के लिए मंच तैयार—{batsman} स्ट्राइक पर हैं।'
     ],
     hinglish: [
-      'Swagat hai Box Cricket 3D mein! {teamA} vs {teamB} ka blockbuster मुकाबला shuru!',
-      'Stadium खचाखच bhara hai aur माहौल ekdum electric! {batsman} strike par taiyaar.',
+      'Swagat hai Box Cricket 3D mein! {teamA} vs {teamB} ka blockbuster muqabla shuru!',
+      'Stadium khachakhach bhara hai aur mahaul ekdum electric! {batsman} strike par taiyaar.',
       'Kya match hone wala hai aaj! {bowler} haath mein ball leke run-up mark par.',
       'Pehli ball ka intezaar khatam—dekhte hain kaun maarta hai baazi!'
     ]
@@ -208,7 +208,7 @@ export const COMMENTARY_LINES = {
       'डंडे बिखर गए! {batsman} के पास इस जादुई गेंद का कोई जवाब नहीं था!'
     ],
     hinglish: [
-      'CLEAN BOWLED!! Dandejeke ukhade {bowler} ne—bails hawa mein ud gayi!',
+      'CLEAN BOWLED!! Dande ukhade {bowler} ne—bails hawa mein ud gayi!',
       'TIMBER! Kya zabardast {delivery} daali {bowler} ne, {batsman} charon khane chit!',
       'Gilli udi! {bowler} ki is ball ka {batsman} ke paas koi jawab nahi tha!'
     ]
@@ -386,7 +386,7 @@ export const COMMENTARY_LINES = {
       'मैच समाप्त! {winner} के खिलाड़ियों और समर्थकों में जश्न का माहौल!'
     ],
     hinglish: [
-      'Kya shandaar finish! {winner} ne jeet liya yeh dhamakedaar मुकाबला!',
+      'Kya shandaar finish! {winner} ne jeet liya yeh dhamakedaar muqabla!',
       'Match khatam aur {winner} ka jashn shuru—kya kamaal ka cricket dekhne ko mila!'
     ]
   }
@@ -650,12 +650,21 @@ class CommentarySystem {
     // Play broadcast commentary desk chime on the Web Audio commentary bus
     sound.playCommentaryVoiceCadence(text, interrupt, false);
 
-    // If user explicitly picked a Cloud TV Broadcast Voice OR if on a Smart TV browser with 0 local speechSynthesis voices:
-    // Stream real spoken voice directly through /api/tts -> Web Audio / HTML5 Audio!
-    if (cloudVoice || !hasLocalSpeechEngine) {
+    // On static hosts (GitHub Pages / Android TV WebView APK) there is no /api/tts backend;
+    // prefer local Web Speech API whenever available, and never spam 404 network fetches!
+    const hostName = typeof window !== 'undefined' ? String(window.location?.hostname || '') : '';
+    const isStaticHost =
+      hostName.endsWith('github.io') ||
+      hostName === 'appassets.androidplatform.net' ||
+      (typeof window !== 'undefined' && window.location?.protocol === 'file:');
+
+    // If user explicitly picked a Cloud TV Broadcast Voice on a server-backed host OR local speech is missing:
+    if ((!isStaticHost && cloudVoice) || !hasLocalSpeechEngine) {
       if (!interrupt && performance.now() - this.lastSpokenMs < 1300) return;
       this.lastSpokenMs = performance.now();
-      sound.playCloudTTSAudio(text, cloudTl, rate, interrupt);
+      if (!isStaticHost) {
+        sound.playCloudTTSAudio(text, cloudTl, rate, interrupt);
+      }
       return;
     }
 

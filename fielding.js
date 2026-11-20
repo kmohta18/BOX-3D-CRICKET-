@@ -100,6 +100,7 @@ export class FieldingSystem {
     this.setting = 'normal';
     this.manualOverride = false;
     this.isPowerplay = true;
+    this.batterHand = 'right';
     this.fielders = [];
     this.keeper = {
       id: 'keeper',
@@ -196,11 +197,15 @@ export class FieldingSystem {
     this.applyFieldSetting(this.setting, this.isPowerplay);
   }
 
-  applyFieldSetting(setting = 'normal', isPowerplay = false, isManual = false) {
+  applyFieldSetting(setting = 'normal', isPowerplay = false, isManual = false, batterHand = null) {
     if (isManual) this.manualOverride = true;
+    if (batterHand === 'left' || batterHand === 'right') {
+      this.batterHand = batterHand;
+    }
     this.setting = FIELD_PRESETS[setting] ? setting : 'normal';
     this.isPowerplay = isPowerplay;
     const preset = FIELD_PRESETS[this.setting];
+    const handMirror = this.batterHand === 'left' ? -1 : 1;
 
     const circleRadius = 25.0;
     const maxOutsideCircle = isPowerplay ? 2 : 5;
@@ -232,7 +237,8 @@ export class FieldingSystem {
     }
 
     preset.positions.forEach((p, idx) => {
-      let fx = p.x;
+      // Bug Fix #4: Mirror X for Left-Handed batters so Slips, Gully, Point & Cover guard the true Off-Side (-X)!
+      let fx = p.x * handMirror;
       let fz = p.z;
       const dist = Math.hypot(fx, fz);
 
@@ -261,8 +267,9 @@ export class FieldingSystem {
     const modeId = matchContext.modeId || 'run_chase';
     const ballsRem = typeof matchContext.ballsRemaining === 'number' ? matchContext.ballsRemaining : 30;
     const bowlerType = matchContext.bowlerType || 'fast';
+    const batterHand = matchContext.batterHand === 'left' ? 'left' : matchContext.batterHand === 'right' ? 'right' : this.batterHand;
     const isOneOver = modeId === 'last_over' || modeId === 'super_over' || (matchContext.totalOvers || 5) <= 1;
-    const isDeathPhase = isOneOver || ballsRem <= 12;
+    const isDeathPhase = modeId !== 'practice' && (isOneOver || ballsRem <= 12);
 
     const recentShots = Array.isArray(matchContext.recentShots) ? matchContext.recentShots : [];
     const lastThree = recentShots.slice(-3);
@@ -279,9 +286,9 @@ export class FieldingSystem {
       } else if (bowlerType === 'spin') {
         autoPreset = 'spin_trap';
       }
-      this.applyFieldSetting(autoPreset, isPowerplay, false);
+      this.applyFieldSetting(autoPreset, isPowerplay, false, batterHand);
     } else {
-      this.applyFieldSetting(this.setting, isPowerplay, false);
+      this.applyFieldSetting(this.setting, isPowerplay, false, batterHand);
     }
 
     // Subtle Hot-Zone Plugging: if batter hit 2 consecutive boundaries in a sector, shift the closest fielder slightly (max 9°)

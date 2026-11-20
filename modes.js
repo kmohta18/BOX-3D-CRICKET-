@@ -167,6 +167,49 @@ export const FICTIONAL_TEAMS = [
   }
 ];
 
+export const LEFT_HAND_BATTERS = new Set([
+  'Yashasvi Jaiswal', 'Rishabh Pant', 'Ravindra Jadeja', 'Axar Patel', 'Kuldeep Yadav', 'Arshdeep Singh',
+  'Travis Head', 'David Warner', 'Matthew Wade', 'Mitchell Starc',
+  'Moeen Ali', 'Sam Curran',
+  'Quinton de Kock', 'David Miller', 'Marco Jansen', 'Keshav Maharaj', 'Tabraiz Shamsi',
+  'Devon Conway', 'Mark Chapman', 'Mitchell Santner', 'Trent Boult',
+  'Fakhar Zaman', 'Imad Wasim', 'Shaheen Afridi', 'Mohammad Amir',
+  'Nicholas Pooran', 'Sherfane Rutherford', 'Akeal Hosein', 'Gudakesh Motie',
+  'Kamindu Mendis', 'Charith Asalanka',
+  'Najibullah Zadran', 'Noor Ahmad', 'Fazalhaq Farooqi'
+]);
+
+export const SPIN_BOWLERS = new Set([
+  'Ravindra Jadeja', 'Axar Patel', 'Kuldeep Yadav',
+  'Glenn Maxwell', 'Adam Zampa',
+  'Moeen Ali', 'Liam Livingstone', 'Adil Rashid',
+  'Aiden Markram', 'Keshav Maharaj', 'Tabraiz Shamsi',
+  'Glenn Phillips', 'Mitchell Santner',
+  'Shadab Khan', 'Imad Wasim', 'Iftikhar Ahmed',
+  'Roston Chase', 'Akeal Hosein', 'Gudakesh Motie',
+  'Wanindu Hasaranga', 'Maheesh Theekshana', 'Kamindu Mendis',
+  'Mohammad Nabi', 'Rashid Khan', 'Noor Ahmad'
+]);
+
+export const MEDIUM_BOWLERS = new Set([
+  'Hardik Pandya', 'Mitchell Marsh', 'Marcus Stoinis',
+  'Sam Curran', 'Will Jacks',
+  'Daryl Mitchell', 'Angelo Mathews', 'Dasun Shanaka',
+  'Gulbadin Naib', 'Azmatullah Omarzai', 'Karim Janat',
+  'Andre Russell', 'Romario Shepherd'
+]);
+
+export function getPlayerProfile(name = '') {
+  const cleanName = String(name || '').trim();
+  const hand = LEFT_HAND_BATTERS.has(cleanName) ? 'left' : 'right';
+  const bowlStyle = SPIN_BOWLERS.has(cleanName)
+    ? 'spin'
+    : MEDIUM_BOWLERS.has(cleanName)
+      ? 'medium'
+      : 'fast';
+  return { name: cleanName, hand, bowlStyle };
+}
+
 export const GAME_MODES = {
   run_chase: {
     id: 'run_chase',
@@ -203,17 +246,33 @@ export const GAME_MODES = {
     overOptions: [2, 5, 10, 20],
     getBowlerMax: (overs = 20) => Math.max(1, Math.ceil(overs / 5)),
     getPowerplayOvers: (overs = 20) => Math.max(1, Math.round(overs * 0.3))
+  },
+  practice: {
+    id: 'practice',
+    nameEn: 'Net Practice (Bowling Machine)',
+    nameHi: 'नेट प्रैक्टिस (बॉलिंग मशीन)',
+    defaultOvers: 99,
+    overOptions: [99],
+    getBowlerMax: () => 99,
+    getPowerplayOvers: () => 0
   }
 };
 
 export class MatchEngine {
   constructor() {
-    this.modeId = ['t20', 'last_over', 'super_over', 'run_chase'].includes(gameConfig.modeId)
+    this.modeId = ['t20', 'last_over', 'super_over', 'run_chase', 'practice'].includes(gameConfig.modeId)
       ? gameConfig.modeId
       : 'run_chase';
-    this.totalOvers = this.modeId === 't20' ? 20 : this.modeId === 'last_over' || this.modeId === 'super_over' ? 1 : 5;
-    this.bowlerMaxOvers = this.modeId === 't20' ? 4 : 1;
-    this.powerplayOvers = this.modeId === 't20' ? 6 : this.modeId === 'last_over' || this.modeId === 'super_over' ? 0 : 2;
+    this.totalOvers =
+      this.modeId === 'practice'
+        ? 99
+        : this.modeId === 't20'
+          ? 20
+          : this.modeId === 'last_over' || this.modeId === 'super_over'
+            ? 1
+            : 5;
+    this.bowlerMaxOvers = this.modeId === 'practice' ? 99 : this.modeId === 't20' ? 4 : 1;
+    this.powerplayOvers = this.modeId === 't20' ? 6 : this.modeId === 'run_chase' ? 2 : 0;
 
     this.matchType = 'ai'; // 'ai' | 'local1v1' | 'online1v1'
     this.difficulty = normalizeDifficultyKey(gameConfig.difficulty || 'medium'); // 'easy' | 'medium' | 'hard'
@@ -268,11 +327,19 @@ export class MatchEngine {
     userBattedFirst = true,
     customTargetRuns = null
   }) {
-    const normalizedMode = ['t20', 'last_over', 'super_over', 'run_chase'].includes(modeId) ? modeId : 'run_chase';
+    const normalizedMode = ['t20', 'last_over', 'super_over', 'run_chase', 'practice'].includes(modeId)
+      ? modeId
+      : 'run_chase';
     const mode = GAME_MODES[normalizedMode] || GAME_MODES.run_chase;
     this.modeId = mode.id;
     this.totalOvers =
-      mode.id === 'run_chase' ? 5 : mode.id === 'last_over' || mode.id === 'super_over' ? 1 : overs || mode.defaultOvers;
+      mode.id === 'practice'
+        ? 99
+        : mode.id === 'run_chase'
+          ? 5
+          : mode.id === 'last_over' || mode.id === 'super_over'
+            ? 1
+            : overs || mode.defaultOvers;
     this.bowlerMaxOvers = mode.getBowlerMax(this.totalOvers);
     this.powerplayOvers = mode.getPowerplayOvers(this.totalOvers);
 
@@ -281,7 +348,9 @@ export class MatchEngine {
     this.stadium = ['eden_gardens', 'wankhede', 'narendra_modi'].includes(stadium) ? stadium : 'eden_gardens';
     this.timeOfDay = timeOfDay === 'day' ? 'day' : 'night';
 
-    gameConfig.modeId = this.modeId;
+    if (this.modeId !== 'practice') {
+      gameConfig.modeId = this.modeId;
+    }
     gameConfig.difficulty = this.difficulty;
     gameConfig.stadium = this.stadium;
     gameConfig.timeOfDay = this.timeOfDay;
@@ -298,12 +367,23 @@ export class MatchEngine {
     if (jerseyColorA) this.teamA.primaryColor = jerseyColorA;
     if (jerseyNumberA) this.teamA.defaultNumber = Number(jerseyNumberA) || this.teamA.defaultNumber;
 
-    this.isSuperOver = false;
+    // Bug Fix #1: Standalone Super Over must preserve isSuperOver = true so 2-wicket rule applies!
+    this.isSuperOver = this.modeId === 'super_over';
     this.isMatchOver = false;
     this.userWonMatch = null;
     this.longestSixMeters = 0;
 
-    if (this.modeId === 'run_chase' || this.modeId === 'last_over') {
+    if (this.modeId === 'practice') {
+      this.targetRuns = null;
+      this.firstInningsTeamNameEn = null;
+      this.firstInningsTeamNameHi = null;
+      this.firstInningsTeamShort = null;
+      this.firstInningsScore = null;
+      this.firstInningsWickets = 0;
+      this.firstInningsOvers = '0.0';
+      this.innings = 1;
+      this.userRole = 'bat';
+    } else if (this.modeId === 'run_chase' || this.modeId === 'last_over') {
       const profile = getDifficultyProfile(this.difficulty);
       const minAllowed = this.modeId === 'last_over' ? 10 : profile.chaseTargetMin;
       const maxAllowed = this.modeId === 'last_over' ? 32 : profile.chaseTargetMax;
@@ -321,7 +401,7 @@ export class MatchEngine {
       this.innings = 2;
       this.userRole = 'bat'; // User bats to chase the target
     } else {
-      // T20 Mode: Starts in Innings 1 according to the Coin Toss result
+      // T20 & Super Over: Starts in Innings 1 according to the Coin Toss / choice
       this.targetRuns = null;
       this.firstInningsTeamNameEn = null;
       this.firstInningsTeamNameHi = null;
@@ -350,41 +430,60 @@ export class MatchEngine {
 
     this.runs = 0;
     this.wickets = 0;
-    this.maxWickets = this.isSuperOver || this.modeId === 'last_over' ? 2 : 10;
+    this.maxWickets =
+      this.modeId === 'practice'
+        ? 999
+        : this.isSuperOver || this.modeId === 'super_over' || this.modeId === 'last_over'
+          ? 2
+          : 10;
     this.legalBalls = 0;
-    this.extras = { wides: 0, noBalls: 0, total: 0 };
+    this.extras = { wides: 0, noBalls: 0, byes: 0, legByes: 0, total: 0 };
     this.freeHit = false;
+    // Bug Fix #2: Always reset DRS Reviews (2 per innings) at the start of every match & innings!
+    this.drsReviewsRemaining = this.modeId === 'practice' ? 0 : 2;
+    this.partnershipRuns = 0;
+    this.partnershipBalls = 0;
+    this.bouncersThisOver = 0;
+    this.lastOverBowlerIndex = -1;
 
     this.strikerIndex = 0;
     this.nonStrikerIndex = 1;
-    this.currentBowlerIndex = 6; // Bowlers from index 6..10
+    this.currentBowlerIndex = 9; // Open with lead strike pacer (index 9, e.g. Bumrah/Starc/Rabada)
 
-    // Scorecard rows for all 11 batters
-    this.battingCard = battingTeam.roster.map((name, idx) => ({
-      index: idx,
-      name,
-      runs: 0,
-      balls: 0,
-      fours: 0,
-      sixes: 0,
-      statusEn: idx <= 1 ? 'Not Out' : 'Yet to Bat',
-      statusHi: idx <= 1 ? 'नाबाद' : 'बल्लेबाजी बाकी',
-      isOut: false
-    }));
+    // Scorecard rows for all 11 batters (with real LHB/RHB metadata)
+    this.battingCard = battingTeam.roster.map((name, idx) => {
+      const prof = getPlayerProfile(name);
+      return {
+        index: idx,
+        name,
+        hand: prof.hand,
+        runs: 0,
+        balls: 0,
+        fours: 0,
+        sixes: 0,
+        statusEn: idx <= 1 ? 'Not Out' : 'Yet to Bat',
+        statusHi: idx <= 1 ? 'नाबाद' : 'बल्लेबाजी बाकी',
+        isOut: false
+      };
+    });
 
-    // Bowling figures for 5 frontline bowlers
-    this.bowlingCard = bowlingTeam.roster.slice(6, 11).map((name, idx) => ({
-      rosterIndex: idx + 6,
-      name,
-      balls: 0,
-      runs: 0,
-      wickets: 0,
-      consecutiveWickets: 0,
-      confidence: 70, // 0..100 rhythm/confidence meter
-      stamina: 100    // 0..100 spell stamina
-    }));
+    // Bowling figures for 5 frontline bowlers (with authentic fast/medium/spin style)
+    this.bowlingCard = bowlingTeam.roster.slice(6, 11).map((name, idx) => {
+      const prof = getPlayerProfile(name);
+      return {
+        rosterIndex: idx + 6,
+        name,
+        bowlStyle: prof.bowlStyle,
+        balls: 0,
+        runs: 0,
+        wickets: 0,
+        consecutiveWickets: 0,
+        confidence: 70, // 0..100 rhythm/confidence meter
+        stamina: 100    // 0..100 spell stamina
+      };
+    });
 
-    // Current over ball-by-ball badges ('0', '1', '2', '4', '6', 'W', 'WD', 'NB')
+    // Current over ball-by-ball badges ('0', '1', '2', '4', '6', 'W', 'WD', 'NB', '1B', '1LB')
     this.currentOverBalls = [];
     // Wagon wheel shots [{ angleRad, distance, runs, batsmanName }]
     this.wagonWheel = [];
@@ -447,6 +546,8 @@ export class MatchEngine {
     isBoundary = false,
     isWide = false,
     isNoBall = false,
+    isBye = false,
+    isLegBye = false,
     isWicket = false,
     wicketTypeEn = 'Bowled',
     wicketTypeHi = 'बोल्ड',
@@ -484,6 +585,7 @@ export class MatchEngine {
       this.runs += 1 + runsScored;
       this.extras.wides += 1 + runsScored;
       this.extras.total += 1 + runsScored;
+      this.partnershipRuns += 1 + runsScored;
       bowler.runs += 1 + runsScored;
       bowler.confidence = Math.max(25, (bowler.confidence ?? 70) - 6);
       this.currentOverBalls.push(runsScored > 0 ? `WD+${runsScored}` : 'WD');
@@ -503,6 +605,7 @@ export class MatchEngine {
       this.runs += 1 + runsScored;
       this.extras.noBalls += 1;
       this.extras.total += 1;
+      this.partnershipRuns += 1 + runsScored;
       striker.runs += runsScored;
       striker.balls += 1;
       if (runsScored === 4 && isBoundary) striker.fours++;
@@ -564,6 +667,12 @@ export class MatchEngine {
     let milestoneReached = null;
     let hatTrickWicket = false;
 
+    // Net Practice Mode: Keep batting forever without dismissing the batter!
+    if (this.modeId === 'practice' && isWicket) {
+      isWicket = false;
+      runsScored = 0;
+    }
+
     if (isWicket) {
       // Save pre-dismissal snapshot so a successful DRS review can cleanly overturn this wicket
       this.lastDismissalSnapshot = {
@@ -573,6 +682,8 @@ export class MatchEngine {
         bowlerIndexBefore: this.currentBowlerIndex,
         bowlerWicketsBefore: bowler.wickets,
         bowlerConsecutiveBefore: bowler.consecutiveWickets || 0,
+        partnershipRunsBefore: this.partnershipRuns || 0,
+        partnershipBallsBefore: this.partnershipBalls || 0,
         wicketTypeEn,
         victimIsNonStriker: wicketTypeEn === 'Run Out' && runOutVictim === 'nonStriker' && Boolean(nonStriker)
       };
@@ -588,6 +699,8 @@ export class MatchEngine {
         }
       }
 
+      this.partnershipRuns = 0;
+      this.partnershipBalls = 0;
       this.wickets++;
       if (wicketTypeEn !== 'Run Out') {
         bowler.wickets++;
@@ -643,40 +756,55 @@ export class MatchEngine {
     } else {
       this.lastDismissalSnapshot = null;
       bowler.consecutiveWickets = 0;
-      if (runsScored === 0) {
-        bowler.confidence = Math.min(100, (bowler.confidence ?? 70) + 6);
-      } else if (runsScored >= 4) {
-        bowler.confidence = Math.max(20, (bowler.confidence ?? 70) - (runsScored === 6 ? 14 : 9));
-      }
-      this.runs += runsScored;
-      striker.runs += runsScored;
-      bowler.runs += runsScored;
-      if (runsScored === 4 && isBoundary) striker.fours++;
-      if (runsScored === 6 && isBoundary) {
-        striker.sixes++;
-        if (shotDistance > (this.longestSixMeters || 0)) {
-          this.longestSixMeters = Math.round(shotDistance);
+      this.partnershipRuns += runsScored;
+      this.partnershipBalls += 1;
+
+      if (isBye || isLegBye) {
+        // Real Cricket Rule: Byes & Leg-Byes add to Team Total & Extras, NOT to batter or bowler runs!
+        this.runs += runsScored;
+        if (isLegBye) {
+          this.extras.legByes = (this.extras.legByes || 0) + runsScored;
+        } else {
+          this.extras.byes = (this.extras.byes || 0) + runsScored;
+        }
+        this.extras.total += runsScored;
+        this.currentOverBalls.push(`${runsScored}${isLegBye ? 'LB' : 'B'}`);
+      } else {
+        if (runsScored === 0) {
+          bowler.confidence = Math.min(100, (bowler.confidence ?? 70) + 6);
+        } else if (runsScored >= 4) {
+          bowler.confidence = Math.max(20, (bowler.confidence ?? 70) - (runsScored === 6 ? 14 : 9));
+        }
+        this.runs += runsScored;
+        striker.runs += runsScored;
+        bowler.runs += runsScored;
+        if (runsScored === 4 && isBoundary) striker.fours++;
+        if (runsScored === 6 && isBoundary) {
+          striker.sixes++;
+          if (shotDistance > (this.longestSixMeters || 0)) {
+            this.longestSixMeters = Math.round(shotDistance);
+          }
+        }
+        this.currentOverBalls.push(String(runsScored));
+
+        milestoneReached =
+          prevStrikerRuns < 100 && striker.runs >= 100
+            ? 100
+            : prevStrikerRuns < 50 && striker.runs >= 50
+              ? 50
+              : null;
+
+        if (runsScored > 0 && shotDistance > 2) {
+          this.wagonWheel.push({
+            angleRad: shotAngleRad,
+            distance: shotDistance,
+            runs: runsScored,
+            batsmanName: striker.name
+          });
         }
       }
-      this.currentOverBalls.push(String(runsScored));
 
-      milestoneReached =
-        prevStrikerRuns < 100 && striker.runs >= 100
-          ? 100
-          : prevStrikerRuns < 50 && striker.runs >= 50
-            ? 50
-            : null;
-
-      if (runsScored > 0 && shotDistance > 2) {
-        this.wagonWheel.push({
-          angleRad: shotAngleRad,
-          distance: shotDistance,
-          runs: runsScored,
-          batsmanName: striker.name
-        });
-      }
-
-      if (runsScored % 2 === 1) {
+      if (runsScored % 2 === 1 && this.modeId !== 'practice') {
         this.swapStrike();
       }
     }
@@ -706,7 +834,11 @@ export class MatchEngine {
         balls: overBallsCopy,
         wagonShots: this.wagonWheel.slice(-6)
       };
-      this.swapStrike();
+      this.lastOverBowlerIndex = this.currentBowlerIndex;
+      this.bouncersThisOver = 0;
+      if (this.modeId !== 'practice') {
+        this.swapStrike();
+      }
       this.currentOverBalls = [];
       this.rotateBowler();
     }
@@ -727,6 +859,8 @@ export class MatchEngine {
     const snap = this.lastDismissalSnapshot;
     if (!snap) return false;
     this.wickets = Math.max(0, snap.wicketsBefore);
+    this.partnershipRuns = snap.partnershipRunsBefore || 0;
+    this.partnershipBalls = snap.partnershipBallsBefore || 0;
     this.isMatchOver = false;
     this.winnerTextEn = '';
     this.winnerTextHi = '';
@@ -775,7 +909,17 @@ export class MatchEngine {
   }
 
   rotateBowler() {
-    // Select next bowler who hasn't exceeded bowlerMaxOvers
+    // Select next bowler who hasn't exceeded bowlerMaxOvers AND did not bowl the previous over!
+    for (let offset = 1; offset <= 5; offset++) {
+      const candidateRosterIdx = 6 + ((this.currentBowlerIndex - 6 + offset) % 5);
+      if (candidateRosterIdx === this.lastOverBowlerIndex) continue;
+      const cardEntry = this.bowlingCard.find((b) => b.rosterIndex === candidateRosterIdx);
+      if (cardEntry && Math.floor(cardEntry.balls / 6) < this.bowlerMaxOvers) {
+        this.currentBowlerIndex = candidateRosterIdx;
+        return;
+      }
+    }
+    // Fallback if only 1 bowler has overs remaining
     for (let offset = 1; offset <= 5; offset++) {
       const candidateRosterIdx = 6 + ((this.currentBowlerIndex - 6 + offset) % 5);
       const cardEntry = this.bowlingCard.find((b) => b.rosterIndex === candidateRosterIdx);
@@ -808,12 +952,25 @@ export class MatchEngine {
   }
 
   getAvailableBowlers() {
+    // Real Cricket Rule: Exclude the bowler who just bowled the previous over
+    const nonConsecutive = this.bowlingCard.filter(
+      (b) => Math.floor(b.balls / 6) < this.bowlerMaxOvers && b.rosterIndex !== this.lastOverBowlerIndex
+    );
+    if (nonConsecutive.length > 0) return nonConsecutive;
     return this.bowlingCard.filter((b) => Math.floor(b.balls / 6) < this.bowlerMaxOvers);
   }
 
   selectNextBowler(rosterIndex) {
     const target = this.bowlingCard.find((b) => b.rosterIndex === Number(rosterIndex));
     if (!target) return false;
+    // Prevent consecutive overs by the same bowler if another eligible bowler exists
+    const eligibleOthers = this.bowlingCard.filter(
+      (b) => Math.floor(b.balls / 6) < this.bowlerMaxOvers && b.rosterIndex !== this.lastOverBowlerIndex
+    );
+    if (target.rosterIndex === this.lastOverBowlerIndex && eligibleOthers.length > 0) {
+      this.currentBowlerIndex = eligibleOthers[0].rosterIndex;
+      return true;
+    }
     this.currentBowlerIndex = target.rosterIndex;
     return true;
   }
@@ -825,7 +982,24 @@ export class MatchEngine {
         bestBatter = b;
       }
     });
-    return bestBatter;
+    let bestBowler = null;
+    this.bowlingCard.forEach((bw) => {
+      if (!bestBowler || bw.wickets > bestBowler.wickets || (bw.wickets === bestBowler.wickets && bw.runs < bestBowler.runs)) {
+        bestBowler = bw;
+      }
+    });
+    const batScore = (bestBatter.runs || 0) + (bestBatter.sixes || 0) * 3;
+    const bowlScore = bestBowler ? (bestBowler.wickets || 0) * 22 : 0;
+    if (bestBowler && bestBowler.wickets >= 2 && bowlScore > batScore) {
+      return {
+        ...bestBowler,
+        summary: `${bestBowler.wickets}/${bestBowler.runs}`
+      };
+    }
+    return {
+      ...bestBatter,
+      summary: `${bestBatter.runs} (${bestBatter.balls}b)`
+    };
   }
 
   /**
@@ -896,6 +1070,7 @@ export class MatchEngine {
   }
 
   checkInningsEnd() {
+    if (this.modeId === 'practice') return null;
     const maxBalls = this.totalOvers * 6;
     const allOut = this.wickets >= this.maxWickets;
     const oversDone = this.legalBalls >= maxBalls;

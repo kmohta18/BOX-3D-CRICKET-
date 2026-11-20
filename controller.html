@@ -53,6 +53,14 @@
           >
             ⛶ FS
           </button>
+          <button
+            id="btn-ctrl-toggle-pair"
+            type="button"
+            title="Show / Hide Room Pairing Row"
+            class="px-1.5 py-0.5 rounded-md bg-slate-800 active:bg-slate-700 border border-slate-700 text-slate-300 font-mono font-bold text-[10px] cursor-pointer shrink-0"
+          >
+            🔗
+          </button>
           <div id="ctrl-room-ping" class="font-mono text-[11px] font-bold text-white shrink-0">CRIC · 12ms</div>
         </div>
       </div>
@@ -68,8 +76,8 @@
         </span>
       </div>
 
-      <!-- Direct Room Code Pairing + In-App QR Camera Scanner + Motion Enable in 1 Compact Row -->
-      <div class="flex items-center gap-1 pt-0.5">
+      <!-- Direct Room Code Pairing + In-App QR Camera Scanner + Motion Enable (Auto-Collapses once paired for cleaner phone screen!) -->
+      <div id="ctrl-pair-row" class="flex items-center gap-1 pt-0.5">
         <input
           id="ctrl-room-input"
           type="text"
@@ -378,8 +386,41 @@
         </p>
       </div>
 
-      <!-- Bottom Hold-1s-to-Unlock Bar (Accidental tap proof!) -->
-      <div class="pb-[max(8px,env(safe-area-inset-bottom,8px))]">
+      <!-- Smart Context-Only Action Strip (Hidden while swinging — appears ONLY for RUN/NO RUN, DRS, or PLAY AGAIN!) -->
+      <div class="space-y-2 pb-[max(8px,env(safe-area-inset-bottom,8px))]">
+        <div id="grip-context-run-bar" class="hidden grid grid-cols-2 gap-2">
+          <button
+            id="btn-grip-run"
+            type="button"
+            class="py-3.5 rounded-2xl bg-emerald-500 active:bg-emerald-400 text-slate-950 font-display font-black text-sm shadow-lg cursor-pointer"
+          >
+            🏃 RUN
+          </button>
+          <button
+            id="btn-grip-norun"
+            type="button"
+            class="py-3.5 rounded-2xl bg-rose-500 active:bg-rose-400 text-white font-display font-black text-sm shadow-lg cursor-pointer"
+          >
+            🛑 NO RUN
+          </button>
+        </div>
+
+        <button
+          id="btn-grip-drs"
+          type="button"
+          class="hidden w-full py-3 rounded-2xl bg-amber-400 active:bg-amber-300 text-slate-950 font-display font-black text-sm shadow-lg cursor-pointer animate-pulse"
+        >
+          📺 TAKE DRS REVIEW
+        </button>
+
+        <button
+          id="btn-grip-rematch"
+          type="button"
+          class="hidden w-full py-3.5 rounded-2xl bg-emerald-400 active:bg-emerald-300 text-slate-950 font-display font-black text-sm shadow-lg cursor-pointer animate-pulse"
+        >
+          ▶ PLAY AGAIN ON TV
+        </button>
+
         <button
           id="btn-grip-unlock-hold"
           type="button"
@@ -392,7 +433,7 @@
     </div>
 
     <script type="module">
-      import { MqttRelayClient } from './src/mqtt_relay.js?v=6';
+      import { MqttRelayClient } from './src/mqtt_relay.js?v=7';
 
       const params = new URLSearchParams(window.location.search);
       let roomCode = (params.get('r') || params.get('room') || 'CRIC').toUpperCase().slice(0, 4);
@@ -442,6 +483,7 @@
 
       let selectedShotMode = 'ground'; // 'ground' | 'fly' | 'defend'
       let autoBatPathMode = true;      // True = Auto Ground / Loft / Defend directly from real bat swing arc!
+      let iosSensorsRequested = false;
       let isGripLocked = false;
       let isModeLocked = false;
       let currentWheelAimDeg = 0;
@@ -607,6 +649,42 @@
       const gripUnlockBtn = document.getElementById('btn-grip-unlock-hold');
       const gripUnlockFill = document.getElementById('grip-unlock-fill');
       const gripUnlockLbl = document.getElementById('grip-unlock-label');
+      const gripRunBarEl = document.getElementById('grip-context-run-bar');
+      const gripDrsBtnEl = document.getElementById('btn-grip-drs');
+      const gripRematchBtnEl = document.getElementById('btn-grip-rematch');
+      const ctrlPairRowEl = document.getElementById('ctrl-pair-row');
+      const ctrlTogglePairBtn = document.getElementById('btn-ctrl-toggle-pair');
+      let pairRowManuallyToggled = false;
+
+      ctrlTogglePairBtn?.addEventListener('click', () => {
+        pairRowManuallyToggled = true;
+        ctrlPairRowEl?.classList.toggle('hidden');
+      });
+
+      document.getElementById('btn-grip-run')?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate(30);
+        sendPacket({ type: 'run_hold', held: true });
+        sendPacket({ type: 'quick_flick' });
+        if (gripLastSwingEl) gripLastSwingEl.textContent = '🏃 SPRINTING FOR RUN!';
+      });
+      document.getElementById('btn-grip-norun')?.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        if (navigator.vibrate) navigator.vibrate([35, 25, 35]);
+        sendPacket({ type: 'run_hold', held: false });
+        sendPacket({ type: 'turn_back' });
+        if (gripLastSwingEl) gripLastSwingEl.textContent = '🛑 NO RUN — BACK IN CREASE!';
+      });
+      gripDrsBtnEl?.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate([50, 30, 60]);
+        sendPacket({ type: 'phone_action', action: 'drs_review' });
+        gripDrsBtnEl.classList.add('hidden');
+      });
+      gripRematchBtnEl?.addEventListener('click', () => {
+        if (navigator.vibrate) navigator.vibrate([40, 30, 50]);
+        sendPacket({ type: 'start_or_rematch' });
+        gripRematchBtnEl.classList.add('hidden');
+      });
 
       function setGripLockActive(active) {
         isGripLocked = Boolean(active);
@@ -779,6 +857,14 @@
         }
         statusEl.textContent = `${labelPrefix} · Room ${roomCode}`;
         statusEl.className = 'text-[11px] font-mono text-emerald-400';
+        // Auto-collapse pairing input row once connected (keep open on iOS Safari until motion permission is granted!)
+        const needsIosTap =
+          typeof DeviceMotionEvent !== 'undefined' &&
+          typeof DeviceMotionEvent.requestPermission === 'function' &&
+          !iosSensorsRequested;
+        if (ctrlPairRowEl && !pairRowManuallyToggled && !needsIosTap) {
+          ctrlPairRowEl.classList.add('hidden');
+        }
       }
 
       function startJoinBeacon() {
@@ -1218,6 +1304,26 @@
             tvPopupBarEl.classList.toggle('hidden', !showDrs && !showQte && !showModal);
           }
 
+          // Smart Context-Only Thumb Strip inside Real Bat Grip Lock Overlay
+          if (gripRunBarEl) {
+            const showRunStrip = Boolean(msg.runningAllowed || (msg.ballStatus && msg.ballStatus.includes('RUN')));
+            gripRunBarEl.classList.toggle('hidden', !showRunStrip);
+          }
+          if (gripDrsBtnEl) {
+            gripDrsBtnEl.classList.toggle('hidden', !showDrs);
+          }
+          if (gripRematchBtnEl) {
+            if (msg.gateState === 'waiting_play') {
+              gripRematchBtnEl.textContent = '▶ START MATCH ON TV';
+              gripRematchBtnEl.classList.remove('hidden');
+            } else if (msg.gateState === 'match_over') {
+              gripRematchBtnEl.textContent = '🔥 PLAY AGAIN ON TV';
+              gripRematchBtnEl.classList.remove('hidden');
+            } else {
+              gripRematchBtnEl.classList.add('hidden');
+            }
+          }
+
           if (streakBadgeEl && msg.streakText) {
             streakBadgeEl.textContent = msg.streakText;
             streakBadgeEl.className = `px-1.5 py-0.5 rounded font-mono font-bold text-[9px] shrink-0 ${
@@ -1263,7 +1369,6 @@
       }
 
       // iOS 13+ & Android Motion Sensor Permission Handler (Auto-requests on first screen tap!)
-      let iosSensorsRequested = false;
       async function ensureMotionSensorsPermission(fromExplicitBtn = false) {
         if (iosSensorsRequested && !fromExplicitBtn) return;
         iosSensorsRequested = true;
@@ -1280,6 +1385,9 @@
               await DeviceOrientationEvent.requestPermission();
             }
             if (fromExplicitBtn) padFeedback.textContent = `iOS Sensors: ${p1.toUpperCase()}`;
+            if (p1 === 'granted' && tvPaired && ctrlPairRowEl && !pairRowManuallyToggled) {
+              ctrlPairRowEl.classList.add('hidden');
+            }
           } else if (fromExplicitBtn) {
             padFeedback.textContent = 'Hardware Motion & Tilt Sensors Active (85 Hz)';
           }

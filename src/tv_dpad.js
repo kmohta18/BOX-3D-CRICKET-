@@ -241,10 +241,8 @@ export function initTvDpadNavigation(app, ui) {
     if (id === 'modal-setup') {
       if (app?.matchPlayConfirmed) {
         ui?.closeModal?.('modal-setup');
-      } else if (window.__middledMenu?.showModes) {
-        ui?.closeAllModals?.(true);
-        window.__middledMenu.showModes();
       } else {
+        ui?.closeAllModals?.(true);
         ui?.goToHomeScreen?.();
       }
       return true;

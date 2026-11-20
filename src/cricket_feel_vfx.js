@@ -488,9 +488,9 @@ function createSoftContactShadowTexture() {
   ctx.restore();
 
   // Grounding ambient-occlusion core directly beneath feet / stumps
-  const coreGrad = ctx.createRadialGradient(64, 64, 4, 64, 64, 34);
-  coreGrad.addColorStop(0.0, 'rgba(3, 10, 6, 0.72)');
-  coreGrad.addColorStop(0.55, 'rgba(3, 10, 6, 0.34)');
+  const coreGrad = ctx.createRadialGradient(64, 64, 4, 64, 64, 36);
+  coreGrad.addColorStop(0.0, 'rgba(2, 8, 5, 0.84)');
+  coreGrad.addColorStop(0.55, 'rgba(3, 10, 6, 0.42)');
   coreGrad.addColorStop(1.0, 'rgba(3, 10, 6, 0.0)');
   ctx.fillStyle = coreGrad;
   ctx.fillRect(0, 0, 128, 128);
@@ -504,7 +504,7 @@ export class PlayerContactShadowManager {
   constructor(scene) {
     this.scene = scene;
     this.shadowTex = createSoftContactShadowTexture();
-    this.shadowGeo = new THREE.PlaneGeometry(1.05, 1.05).rotateX(-Math.PI / 2);
+    this.shadowGeo = new THREE.PlaneGeometry(1.08, 1.08).rotateX(-Math.PI / 2);
     this.actorShadows = new Map();
   }
 
@@ -536,9 +536,16 @@ export class PlayerContactShadowManager {
     }
     entry.mesh.visible = true;
     entry.mesh.position.set(worldPos.x, 0.022, worldPos.z);
+    if (actorKey === 'ball') {
+      // Cricket ball shadow tightens & darkens right near the bounce, spreads softer when hit high in the sky
+      const spreadScale = THREE.MathUtils.clamp(1.0 + jumpHeight * 0.14, 0.9, 2.35);
+      entry.mesh.scale.setScalar(entry.baseRadius * 2.0 * spreadScale);
+      entry.mat.opacity = entry.baseOpacity * THREE.MathUtils.clamp(1.0 - jumpHeight * 0.085, 0.22, 0.95);
+      return;
+    }
     const heightScale = THREE.MathUtils.clamp(1.0 - jumpHeight * 0.25, 0.48, 1.12);
     entry.mesh.scale.setScalar(entry.baseRadius * 2.0 * heightScale);
-    entry.mat.opacity = entry.baseOpacity * THREE.MathUtils.clamp(1.0 - jumpHeight * 0.35, 0.25, 1.0);
+    entry.mat.opacity = entry.baseOpacity * THREE.MathUtils.clamp(1.0 - jumpHeight * 0.35, 0.28, 1.0);
   }
 }
 

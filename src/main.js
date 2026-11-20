@@ -56,7 +56,7 @@ import { BowlingSystem } from '../bowling.js';
 import { applyMiddledLook } from './middled_look.js';
 import { initMiddledMenu } from './middled_menu.js';
 import { FieldingSystem } from '../fielding.js';
-import { MatchEngine, FICTIONAL_TEAMS, INDIAN_STADIUMS } from '../modes.js';
+import { MatchEngine, FICTIONAL_TEAMS, INDIAN_STADIUMS, getPlayerProfile } from '../modes.js';
 import { NetworkManager } from '../net.js';
 import { UIManager } from '../ui.js';
 import { sound } from '../assets/audio.js';
@@ -131,6 +131,8 @@ export class BoxCricketApp {
     this.qualityPreset = 'high';
     this.dofEnabled = true;
     this.handedness = 'right'; // 'right' (default) | 'left'
+    this.manualHandednessOverride = false;
+    this.practiceMachine = 'mix'; // 'mix' | 'fast' | 'swing' | 'spin' | 'yorker' | 'bouncer'
     this.wavedashGraphicsMode = WAVEDASH_GRAPHICS_STATE.enabled;
     this.ledRibbonMats = [];
 
@@ -368,31 +370,13 @@ export class BoxCricketApp {
   }
 
   initPostProcessing() {
-    if (this.isHeadless) return;
-    try {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      this.composer = new EffectComposer(this.renderer);
-
-      this.renderPass = new RenderPass(this.scene, this.camera);
-      this.composer.addPass(this.renderPass);
-
-      this.bokehPass = new ShaderPass(BroadcastDOFShader);
-      this.composer.addPass(this.bokehPass);
-
-      this.bloomPass = new UnrealBloomPass(
-        new THREE.Vector2(Math.floor(w * 0.5), Math.floor(h * 0.5)),
-        0.38,
-        0.45,
-        0.82
-      );
-      this.composer.addPass(this.bloomPass);
-
-      this.outputPass = new OutputPass();
-      this.composer.addPass(this.outputPass);
-    } catch {
-      this.composer = null;
-    }
+    // Zero-Lag Smart TV Optimization: renderScene() renders directly to the hardware backbuffer
+    // so we intentionally skip allocating unused EffectComposer / Bloom / Bokeh FBOs to save GPU VRAM.
+    this.composer = null;
+    this.renderPass = null;
+    this.bokehPass = null;
+    this.bloomPass = null;
+    this.outputPass = null;
   }
 
   startAssetLoadingPipeline() {
@@ -2073,15 +2057,22 @@ export class BoxCricketApp {
     sound.setMatchTension(THREE.MathUtils.clamp(tension, 0.18, 1.0));
   }
 
-  setHandedness(hand = 'right') {
+  setHandedness(hand = 'right', options = {}) {
+    const { manual = false, rebuild = true } = options;
+    if (manual) {
+      this.manualHandednessOverride = true;
+    }
     const nextHand = hand === 'left' ? 'left' : 'right';
     const changed = this.handedness !== nextHand;
     this.handedness = nextHand;
     this.batting.setHandedness(this.handedness);
+    if (this.fielding) {
+      this.fielding.batterHand = this.handedness;
+    }
     if (this.strikerMesh) {
       this.strikerMesh.scale.x = this.handedness === 'left' ? -1 : 1;
     }
-    if (changed && this.actorsGroup) {
+    if (changed && rebuild && this.actorsGroup) {
       this.rebuildTeamCharacters();
     }
     const s1 = document.getElementById('setting-handedness');
@@ -2089,6 +2080,21 @@ export class BoxCricketApp {
     const s2 = document.getElementById('setup-handedness');
     if (s2) s2.value = this.handedness;
     this.ui.updateHUD();
+  }
+
+  /**
+   * Automatically matches the visual batting stance & mirrored field to the active striker's authentic LHB/RHB hand
+   * unless the player explicitly forced a manual stance override in Settings.
+   */
+  syncActiveStrikerHandedness({ rebuild = true } = {}) {
+    if (this.manualHandednessOverride) return false;
+    const striker = this.match?.getActiveStriker?.();
+    if (!striker) return false;
+    const profile = getPlayerProfile(striker.name);
+    const targetHand = striker.hand || profile.hand || 'right';
+    const changed = this.handedness !== targetHand;
+    this.setHandedness(targetHand, { manual: false, rebuild });
+    return changed;
   }
 
   setSoundEnabled(enabled) {
@@ -2551,7 +2557,7 @@ export class BoxCricketApp {
         const isSpin = this.bowling.bowlerType === 'spin';
         if (act === 'bowl_yorker') {
           this.bowling.aimBounceZ = 8.2;
-          this.bowling.setVariation(isSpin ? 'quicker_one' : 'yorker');
+          this.bowling.setVariation(isSpin ? 'flipper' : 'yorker');
           this.setAimRingColor(0x38bdf8);
         } else if (act === 'bowl_good') {
           this.bowling.aimBounceZ = 4.6;
@@ -2559,11 +2565,11 @@ export class BoxCricketApp {
           this.setAimRingColor(0xf59e0b);
         } else if (act === 'bowl_bouncer') {
           this.bowling.aimBounceZ = 1.45;
-          this.bowling.setVariation(isSpin ? 'top_spinner' : 'bouncer');
+          this.bowling.setVariation(isSpin ? 'topspinner' : 'bouncer');
           this.setAimRingColor(0xef4444);
         } else if (act === 'bowl_slower') {
           this.bowling.aimBounceZ = 5.3;
-          this.bowling.setVariation(isSpin ? 'wrong_un' : 'slower_ball');
+          this.bowling.setVariation(isSpin ? 'googly' : 'slower_ball');
           this.setAimRingColor(0x10b981);
         }
         this.aimRing.position.set(this.bowling.aimTargetX, 0.035, this.bowling.aimBounceZ);
@@ -3420,9 +3426,10 @@ export class BoxCricketApp {
     const jerseyColorA = teamAData?.primaryColor || '#0284c7';
     const jerseyNumberA = teamAData?.defaultNumber || 18;
     const isChaseFormat = modeId === 'run_chase' || modeId === 'last_over';
-    const roleChoice = isChaseFormat ? 'bat' : (document.getElementById('setup-role')?.value || 'bat');
-    const pitchType = document.getElementById('setup-pitch-type')?.value || 'normal';
-    const handedness = document.getElementById('setup-handedness')?.value || this.handedness;
+    const roleChoice = isChaseFormat || modeId === 'practice' ? 'bat' : (document.getElementById('setup-role')?.value || 'bat');
+    const stadiumDefaultPitch =
+      stadium === 'wankhede' ? 'green' : stadium === 'narendra_modi' ? 'dusty' : 'normal';
+    const pitchType = document.getElementById('setup-pitch-type')?.value || stadiumDefaultPitch;
 
     // Keep explicit user-rerolled target from Match Setup, otherwise roll a fresh target
     const freshChaseTarget = isChaseFormat
@@ -3438,7 +3445,7 @@ export class BoxCricketApp {
 
     this.match.configureMatch({
       modeId,
-      overs,
+      overs: modeId === 'practice' ? 99 : overs,
       matchType,
       difficulty,
       stadium,
@@ -3459,8 +3466,17 @@ export class BoxCricketApp {
     this.matchPlayConfirmed = Boolean(skipPlayGate);
     this.setStadium(this.match.stadium, this.match.timeOfDay);
     this.ui.syncStadiumAndDayNightUI(this.match.stadium, this.match.timeOfDay);
-    this.setHandedness(handedness);
+    if (!this.manualHandednessOverride) {
+      this.syncActiveStrikerHandedness({ rebuild: false });
+    } else {
+      const handedness = document.getElementById('setup-handedness')?.value || this.handedness;
+      this.setHandedness(handedness, { manual: true, rebuild: false });
+    }
     this.setPitchType(pitchType);
+    const openingBowlerStyle = this.match.getActiveBowler()?.bowlStyle;
+    if (openingBowlerStyle && typeof this.bowling.setBowlerType === 'function') {
+      this.bowling.setBowlerType(openingBowlerStyle);
+    }
     this.rebuildTeamCharacters();
     this.resetBallAndFielders();
     this.updateMatchTension();
@@ -3473,9 +3489,92 @@ export class BoxCricketApp {
       this.skipReplay();
     }
     this.ui.closeAllModals();
+    if (this.match.modeId === 'practice') {
+      this.startNetPracticeMode(this.practiceMachine || 'mix');
+      return;
+    }
     this.startConfiguredMatchFromUI(true);
     this.confirmPlayAndStartMatch();
     this.ui.showStatusToast('🔥 Instant Rematch Started! New Target Rolled!', true);
+  }
+
+  /**
+   * Launches 1-click Unlimited Net Practice (Bowling Machine) — zero dismissal game-over,
+   * live machine variation switcher (Mix / Fast / Swing / Spin / Yorker / Bouncer).
+   */
+  startNetPracticeMode(machineType = 'mix') {
+    sound.init();
+    if (this.isReplaying || this.pendingReplayStartTimer) {
+      this.skipReplay();
+    }
+    this.practiceMachine = machineType || 'mix';
+    this.ui.closeAllModals();
+    const modeSel = document.getElementById('setup-mode');
+    const prevMode = modeSel?.value || 'run_chase';
+
+    const difficulty = document.getElementById('setup-difficulty')?.value || 'medium';
+    const stadium = document.getElementById('setup-stadium')?.value || 'eden_gardens';
+    const timeOfDay = document.getElementById('setup-day-night')?.value || 'night';
+    const teamAIndex = Number(document.getElementById('setup-team-a')?.value) || 0;
+    const teamBIndex = Number(document.getElementById('setup-team-b')?.value) || 1;
+    const teamAData = FICTIONAL_TEAMS[teamAIndex % FICTIONAL_TEAMS.length];
+
+    this.match.configureMatch({
+      modeId: 'practice',
+      overs: 99,
+      matchType: 'ai',
+      difficulty,
+      stadium,
+      timeOfDay,
+      teamAIndex,
+      teamBIndex,
+      jerseyColorA: teamAData?.primaryColor || '#0284c7',
+      jerseyNumberA: teamAData?.defaultNumber || 18,
+      userBattedFirst: true,
+      customTargetRuns: null
+    });
+
+    if (modeSel) modeSel.value = prevMode; // keep normal setup default intact when returning to menu
+    this.batting.resetStreak();
+    this.batting.resetForNextBall({ preserveWheelAim: false, resetCreaseX: true });
+    this.fielding.manualOverride = false;
+    this.matchPlayConfirmed = true;
+    this.ui._inMenuFlow = false;
+    this._snapCameraNextFrame = true;
+
+    this.setStadium(this.match.stadium, this.match.timeOfDay);
+    this.ui.syncStadiumAndDayNightUI(this.match.stadium, this.match.timeOfDay);
+    if (!this.manualHandednessOverride) {
+      this.syncActiveStrikerHandedness({ rebuild: false });
+    }
+    this.rebuildTeamCharacters();
+    this.resetBallAndFielders();
+    this.updateMatchTension();
+    this.ui.updateHUD();
+    this.ui.syncPracticeBarUI?.();
+    this.scheduleAutoBowl(1.4);
+
+    this.ui.showEventBanner(
+      '🎯 NET PRACTICE · BOWLING MACHINE',
+      'Unlimited Batting · Swing 360° freely — switch Pace, Swing, Spin, Yorker or Bouncer anytime!',
+      'text-emerald-400'
+    );
+    this.ui.syncPhoneMatchHUD();
+  }
+
+  setPracticeMachine(machineType = 'mix') {
+    const valid = ['mix', 'fast', 'swing', 'spin', 'yorker', 'bouncer'];
+    this.practiceMachine = valid.includes(machineType) ? machineType : 'mix';
+    this.ui.syncPracticeBarUI?.();
+    const labelMap = {
+      mix: 'Random Mix',
+      fast: '145 km/h Express Pace',
+      swing: 'Outswing / Inswing',
+      spin: 'Off-Break / Googly Spin',
+      yorker: 'Death Yorkers',
+      bouncer: 'Short Bouncers'
+    };
+    this.ui.showStatusToast(`🎯 Bowling Machine: ${labelMap[this.practiceMachine]}`, true);
   }
 
   confirmPlayAndStartMatch() {
@@ -3490,7 +3589,13 @@ export class BoxCricketApp {
     const groundName = groundObj ? groundObj.shortEn : 'Eden Gardens';
     const timeLabel = this.match.timeOfDay === 'day' ? 'Day' : 'Night';
 
-    if (this.match.modeId === 'last_over') {
+    if (this.match.modeId === 'practice') {
+      this.ui.showEventBanner(
+        '🎯 NET PRACTICE · BOWLING MACHINE',
+        `Unlimited Balls · Practice 360° Real Bat Swings · ${groundName} (${timeLabel})`,
+        'text-emerald-400'
+      );
+    } else if (this.match.modeId === 'last_over') {
       this.ui.showEventBanner(
         `⚡ NEED ${this.match.targetRuns} IN 6 BALLS!`,
         `${this.match.battingTeam.short} v ${this.match.bowlingTeam.short} · 1-Over Finisher Thriller (2 Wickets in Hand) · ${groundName}`,
@@ -3691,6 +3796,9 @@ export class BoxCricketApp {
           : null,
       totalOvers: this.match.totalOvers,
       batterCreaseX: this.batting.creaseX || 0,
+      batterHand: this.handedness,
+      bowlerStyle: this.match.getActiveBowler()?.bowlStyle || null,
+      practiceMachine: this.match.modeId === 'practice' ? (this.practiceMachine || 'mix') : null,
       recentShots: this.match.wagonWheel || []
     };
 
@@ -3784,10 +3892,11 @@ export class BoxCricketApp {
       }
     }
 
-    // Apply phase-aware & hot-zone adaptive field placement (Powerplay, Spin Trap, Death Overs) now that bowlerType is set
+    // Apply phase-aware & hot-zone adaptive field placement (Powerplay, Spin Trap, Death Overs, LHB mirror)
     this.fielding.applyAdaptiveField({
       ...matchContext,
-      bowlerType: this.bowling.bowlerType
+      bowlerType: this.bowling.bowlerType,
+      batterHand: this.handedness
     });
     this.fielding.resetToHomePositions(this.bowling.bowlerType);
     const presetSel = document.getElementById('select-field-preset');
@@ -4113,8 +4222,9 @@ export class BoxCricketApp {
           if (isSweet) {
             const willowPattern = info.exitSpeedKmh >= 100 ? [75, 18, 115] : [55];
             this.net.vibratePhone('p1', willowPattern, `💥 ${info.shotNameEn} · ${info.exitSpeedKmh} KM/H!`);
-            this.hitStopTimer = 0.024;
-            this.cameraShakeIntensity = info.exitSpeedKmh >= 95 ? 0.09 : 0.05;
+            this.hitStopTimer = info.exitSpeedKmh >= 100 ? 0.032 : 0.024;
+            this.impactPunchFov = info.exitSpeedKmh >= 100 ? -2.8 : -1.4;
+            this.cameraShakeIntensity = info.exitSpeedKmh >= 95 ? 0.095 : 0.05;
             if (info.exitSpeedKmh >= 105 && this.crowdAnimator) {
               this.crowdAnimator.triggerCheerSurge(0.75);
             }
@@ -4533,8 +4643,12 @@ export class BoxCricketApp {
       this.lastDRSCandidate = null;
     }
 
-    // Rebuild jersey numbers if a new batter walked in serially, bowler rotated, or innings changed
+    // Sync active striker's authentic LHB/RHB stance after strike swap, wicket, or over end
+    const handChangedAfterBall = this.syncActiveStrikerHandedness({ rebuild: false });
+
+    // Rebuild jersey numbers if a new batter walked in serially, bowler rotated, stance flipped, or innings changed
     if (
+      handChangedAfterBall ||
       outcome.isWicket ||
       status.overCompleted ||
       status.inningsEndState === 'innings_break' ||
@@ -4549,7 +4663,8 @@ export class BoxCricketApp {
         if (outcome.isWicket && !status.freeHitDismissalPrevented) {
           const nextBatter = this.match.getActiveStriker();
           if (nextBatter) {
-            this.ui.showStatusToast(`Next Batsman In: #${nextBatter.index + 1} ${nextBatter.name}`, true);
+            const handTag = nextBatter.hand === 'left' ? ' (LHB)' : ' (RHB)';
+            this.ui.showStatusToast(`Next Batsman In: #${nextBatter.index + 1} ${nextBatter.name}${handTag}`, true);
           }
         }
       }
@@ -4558,8 +4673,16 @@ export class BoxCricketApp {
       outcome.isWicket ? 'OUT!' : outcome.runsScored === 6 ? 'MAXIMUM SIX!' : outcome.runsScored === 4 ? 'FOUR!' : ''
     );
 
-    // Feature 3: Show brief non-blocking toast on Over completion + Powerplay End notification
-    if (status.overCompleted && this.match.lastCompletedOverSummary && !this.match.isMatchOver) {
+    // Sync bowling system bowlerType with newly rotated bowler's authentic style (fast / medium / spin)
+    if (status.overCompleted && this.match.modeId !== 'practice') {
+      const nextBowlerStyle = this.match.getActiveBowler()?.bowlStyle;
+      if (nextBowlerStyle && typeof this.bowling.setBowlerType === 'function') {
+        this.bowling.setBowlerType(nextBowlerStyle);
+      }
+    }
+
+    // Feature 3: Show brief non-blocking toast on Over completion + Powerplay End notification (skipped in Net Practice)
+    if (status.overCompleted && this.match.lastCompletedOverSummary && !this.match.isMatchOver && this.match.modeId !== 'practice') {
       const ovSum = this.match.lastCompletedOverSummary;
       const ppJustEnded =
         (this.match.totalOvers >= 10 && ovSum.overNumber === 6) ||
@@ -4731,6 +4854,7 @@ export class BoxCricketApp {
     }
 
     // Bug 2 Fix + AI Captain Adaptive Field: Recalculate phase & hot-zone field immediately between deliveries
+    this.syncActiveStrikerHandedness({ rebuild: false });
     this.fielding.applyAdaptiveField({
       modeId: this.match.modeId,
       userRole: this.match.userRole,
@@ -4738,6 +4862,7 @@ export class BoxCricketApp {
       ballsRemaining: Math.max(0, this.match.totalOvers * 6 - this.match.legalBalls),
       totalOvers: this.match.totalOvers,
       bowlerType: this.bowling.bowlerType,
+      batterHand: this.handedness,
       recentShots: this.match.wagonWheel || []
     });
     this.fielding.resetToHomePositions(this.bowling.bowlerType);
@@ -4790,6 +4915,10 @@ export class BoxCricketApp {
    */
   simulateCurrentOver() {
     if (this.match.isMatchOver) return;
+    if (this.match.modeId === 'practice') {
+      this.ui.showStatusToast('🎯 Sim Over is disabled in Net Practice — keep batting!', false);
+      return;
+    }
     if (this.isReplaying || this.pendingReplayStartTimer) {
       this.skipReplay();
     }
@@ -5010,7 +5139,11 @@ export class BoxCricketApp {
             if (this.match.userRole === 'bat') {
               const aiDelivery =
                 this.pendingAIDelivery ||
-                this.bowling.generateAIDelivery(this.match.difficulty, this.match.legalBalls, this.handedness);
+                this.bowling.generateAIDelivery(this.match.difficulty, this.match.legalBalls, this.handedness, {
+                  modeId: this.match.modeId,
+                  bowlerStyle: this.match.getActiveBowler()?.bowlStyle || null,
+                  practiceMachine: this.match.modeId === 'practice' ? (this.practiceMachine || 'mix') : null
+                });
               this.pendingAIDelivery = null;
               this.releaseBowledBall(aiDelivery);
             } else {
@@ -5186,6 +5319,12 @@ export class BoxCricketApp {
       onStumpsHit: (end) => {
         this.dislodgeWickets(end);
         this.net.vibratePhone('p1', [150, 60, 200]);
+        if (this.match.modeId === 'practice') {
+          sound.playCrowdReaction('near_miss', 0);
+          this.ui.showEventBanner('TIMBER! · NETS', 'Clean bowled — shake it off, next ball coming!', 'text-amber-400');
+          this.completeDelivery({ runsScored: 0, isWicket: false });
+          return;
+        }
         if (this.physics.isNoBall || this.match.freeHit) {
           sound.playUmpireSignal('no_ball');
           this.ui.showEventBanner(
@@ -5233,6 +5372,18 @@ export class BoxCricketApp {
           this.completeDelivery({ runsScored: 0, isNoBall: true });
           return;
         }
+
+        // Bouncer limit rule (Max 2 shoulder-high bouncers per over -> 3rd called Wide!)
+        if (ball.isBouncerDelivery && !ball.isWide && this.match.modeId !== 'practice') {
+          this.match.bouncersThisOver = (this.match.bouncersThisOver || 0) + 1;
+          if (this.match.bouncersThisOver > 2) {
+            ball.isWide = true;
+            ball.wideReason = 'Bouncer Limit Exceeded (Max 2/Over)';
+          } else if (this.match.bouncersThisOver === 2) {
+            this.ui.showStatusToast('⚠️ 2nd Bouncer of the Over — Next Short Ball will be Wide!', false);
+          }
+        }
+
         if (ball.isWide) {
           sound.playUmpireSignal('whistle');
           const wideSub = ball.wideReason ? `${ball.wideReason} · +1 Extra Run & Re-Bowl` : '+1 Extra Run & Re-Bowl';
@@ -5242,8 +5393,14 @@ export class BoxCricketApp {
           return;
         }
 
-        // 1. LBW check when batter missed the ball in front of the stumps (not out on Free Hit!)
-        if (!this.batting.shotExecutedThisBall && !this.match.freeHit && ball.checkLBW(this.batting.creaseX, this.handedness)) {
+        // 1. LBW check when batter missed the ball in front of the stumps (respects shotOffered vs leaving the ball)
+        const shotOffered = Boolean(this.batting.isSwinging || this.batting.shotExecutedThisBall);
+        if (
+          this.match.modeId !== 'practice' &&
+          !this.batting.lastContact?.didHit &&
+          !this.match.freeHit &&
+          ball.checkLBW(this.batting.creaseX, this.handedness, shotOffered)
+        ) {
           sound.playPadHit(pan);
           sound.playCrowdReaction('wicket', pan);
           this.triggerTeamCelebration();
@@ -5265,9 +5422,32 @@ export class BoxCricketApp {
           return;
         }
 
+        // 1.5 Authentic Leg-Bye / Bye check: ball clips pad (not LBW) & deflects past keeper for a quick extra run
+        if (
+          this.match.modeId !== 'practice' &&
+          !this.batting.lastContact?.didHit &&
+          ball.creaseCrossPos
+        ) {
+          const padDist = Math.abs(ball.creaseCrossPos.x - (this.batting.creaseX || 0));
+          const hitPadHeight = ball.creaseCrossPos.y > 0.12 && ball.creaseCrossPos.y < 0.88;
+          if (padDist < 0.24 && hitPadHeight) {
+            sound.playPadHit(pan);
+            if (Math.random() < 0.24) {
+              this.ui.showEventBanner('1 LEG BYE', 'Clips the pads and sneaks past the keeper!', 'text-sky-300');
+              this.completeDelivery({ runsScored: 1, isLegBye: true });
+              return;
+            }
+          } else if (Math.abs(ball.creaseCrossPos.x) > 0.52 && ball.creaseCrossPos.y < 0.24 && Math.random() < 0.14) {
+            this.ui.showEventBanner('1 BYE', 'Beats the keeper low down — batters steal a bye!', 'text-sky-300');
+            this.completeDelivery({ runsScored: 1, isBye: true });
+            return;
+          }
+        }
+
         // 2. MCC Law 39 Stumping: If batter stepped out of their ground in front of the Popping Crease (CREASE_Z = 8.84m)
         // and missed the ball (not out on Free Hit or No-Ball!), Wicketkeeper whips off the bails!
         if (
+          this.match.modeId !== 'practice' &&
           !this.match.freeHit &&
           !ball.isNoBall &&
           (!this.batting.shotExecutedThisBall || !this.batting.lastContact.didHit) &&
@@ -5400,6 +5580,16 @@ export class BoxCricketApp {
           sound.playKeeperGloves(130, pan);
         } else {
           sound.playCatchThud(pan);
+        }
+        if (this.match.modeId === 'practice') {
+          sound.playCrowdReaction('near_miss', pan);
+          this.ui.showEventBanner(
+            'CAUGHT IN NETS · NOT OUT!',
+            `Caught by ${fielder.role} — shake it off, next ball coming!`,
+            'text-amber-400'
+          );
+          this.completeDelivery({ runsScored: 0, isWicket: false });
+          return;
         }
         sound.playCrowdReaction('wicket', pan);
         this.net.vibratePhone('p1', [140, 60, 140]);
@@ -5561,7 +5751,7 @@ export class BoxCricketApp {
           this.runnerProgress > safeReturnThreshold &&
           this.runnerProgress < safeProgressThreshold;
 
-        if (isOutOfCrease) {
+        if (isOutOfCrease && this.match.modeId !== 'practice') {
           this.dislodgeWickets(targetEnd);
           sound.playCrowdReaction('wicket', 0);
           this.triggerTeamCelebration();

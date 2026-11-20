@@ -127,21 +127,37 @@ export function initMiddledMenu(app) {
     app.confirmPlayAndStartMatch();
   };
 
+  const openCleanSetup = (preferredMode = null) => {
+    ui._inMenuFlow = true;
+    ui._userRerolledTarget = false;
+    hide();
+    ui.syncSettingsControlsFromConfig?.();
+    const targetMode = preferredMode || ui.setupMode || 'run_chase';
+    ui.updateSetupModeUI(targetMode);
+    if (targetMode === 'run_chase' || targetMode === 'last_over') {
+      ui.refreshRunChaseTargetPreview(true);
+    }
+    ui.openModal('modal-setup');
+  };
+
   const actions = {
     play: () => {
-      sound.playUIClick?.(1180);
-      showModes();
+      sound.playUIClick?.(1220);
+      openCleanSetup();
+    },
+    practice: () => {
+      sound.playUIClick?.(1260);
+      hide();
+      app.startNetPracticeMode('mix');
     },
     quick: startQuick,
     setup: () => {
       sound.playUIClick?.(1180);
-      showModes();
+      openCleanSetup();
     },
     t20: () => {
       sound.playUIClick?.(1180);
-      hide();
-      ui.updateSetupModeUI('t20');
-      ui.openModal('modal-setup');
+      openCleanSetup('t20');
     },
     qr: () => {
       sound.playUIClick?.(1180);

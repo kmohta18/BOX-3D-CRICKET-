@@ -1855,10 +1855,11 @@ export class UIManager {
 
     document.getElementById('btn-setup-back-modes')?.addEventListener('click', () => {
       sound.playUIClick(980);
-      if (window.__middledMenu?.showModes) {
-        window.__middledMenu.showModes();
-      } else {
+      if (this.app?.matchPlayConfirmed) {
         this.closeModal('modal-setup');
+      } else {
+        this.closeAllModals(true);
+        this.goToHomeScreen();
       }
     });
 
@@ -1866,6 +1867,24 @@ export class UIManager {
       sound.playUIClick();
       this.app.startConfiguredMatchFromUI(false);
       this.openQRModal();
+    });
+
+    document.getElementById('btn-setup-start-practice')?.addEventListener('click', () => {
+      sound.playUIClick(1240);
+      this.app.startNetPracticeMode('mix');
+    });
+
+    // Net Practice Bowling Machine Variation Switcher & Exit Button
+    document.querySelectorAll('[data-practice-machine]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        sound.playUIClick(1160);
+        const mType = btn.getAttribute('data-practice-machine') || 'mix';
+        this.app.setPracticeMachine?.(mType);
+      });
+    });
+    document.getElementById('btn-exit-practice')?.addEventListener('click', () => {
+      sound.playUIClick(980);
+      this.goToHomeScreen();
     });
 
     // Fast TV D-Pad Team Steppers (◀ / ▶ & Swap)
@@ -1956,13 +1975,19 @@ export class UIManager {
       });
     });
 
-    // Step 3 Visual Cards: Stadium, Day/Night, Pitch, Batter Hand
+    // Step 3 Visual Cards: Stadium (auto-maps authentic pitch) & Day/Night
     document.querySelectorAll('[data-stadium-card]').forEach((btn) => {
       btn.addEventListener('click', () => {
         sound.playUIClick();
         const st = btn.getAttribute('data-stadium-card') || 'eden_gardens';
         const stSel = document.getElementById('setup-stadium');
         if (stSel) stSel.value = st;
+        const autoPitch = st === 'wankhede' ? 'green' : st === 'narendra_modi' ? 'dusty' : 'normal';
+        const pSel = document.getElementById('setup-pitch-type');
+        if (pSel) pSel.value = autoPitch;
+        if (typeof this.app.setPitchType === 'function') {
+          this.app.setPitchType(autoPitch);
+        }
         const dn = document.getElementById('setup-day-night')?.value || this.app.match.timeOfDay;
         this.app.setStadium(st, dn);
         this.syncStadiumAndDayNightUI(st, dn);
@@ -2182,7 +2207,7 @@ export class UIManager {
       gameConfig.handedness = e.target.value;
       saveGameConfig();
       if (typeof this.app.setHandedness === 'function') {
-        this.app.setHandedness(e.target.value);
+        this.app.setHandedness(e.target.value, { manual: true });
       } else {
         this.app.batting.setHandedness(e.target.value);
       }
@@ -2195,7 +2220,7 @@ export class UIManager {
       gameConfig.handedness = e.target.value;
       saveGameConfig();
       if (typeof this.app.setHandedness === 'function') {
-        this.app.setHandedness(e.target.value);
+        this.app.setHandedness(e.target.value, { manual: true });
       } else {
         this.app.batting.setHandedness(e.target.value);
       }
@@ -2572,7 +2597,12 @@ export class UIManager {
       freeHitPill.classList.toggle('hidden', !match.freeHit);
     }
     if (flagsEl) {
-      if (match.freeHit) {
+      if (match.modeId === 'practice') {
+        flagsEl.textContent = '🎯 NETS';
+        flagsEl.className =
+          'px-2 py-0.5 rounded-full bg-emerald-400/20 text-emerald-300 font-mono text-[8px] font-bold uppercase tracking-wider';
+        flagsEl.classList.remove('hidden');
+      } else if (match.freeHit) {
         flagsEl.textContent = '🔥 FREE HIT';
         flagsEl.className =
           'px-2 py-0.5 rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-slate-950 font-mono text-[8px] font-black uppercase tracking-wider shadow animate-pulse';
@@ -2587,16 +2617,24 @@ export class UIManager {
       }
     }
 
+    // Toggle Net Practice Bowling Machine Bar cleanly
+    this.syncPracticeBarUI();
+
     // 2. Overs
     const oversEl = document.getElementById('hud-overs');
     if (oversEl) {
-      oversEl.textContent = `${match.getOversFormatted()}/${match.totalOvers}`;
+      oversEl.textContent =
+        match.modeId === 'practice'
+          ? `${match.legalBalls}b`
+          : `${match.getOversFormatted()}/${match.totalOvers}`;
     }
 
     // 3. Target or situation text ("NEED 54 (46b)" in 2nd innings, or run rate in 1st innings)
     const crrEl = document.getElementById('hud-crr');
     if (crrEl) {
-      if (match.innings === 2 && match.firstInningsScore !== null) {
+      if (match.modeId === 'practice') {
+        crrEl.textContent = `SR ${match.legalBalls > 0 ? Math.round((match.runs / match.legalBalls) * 100) : 0}`;
+      } else if (match.innings === 2 && match.firstInningsScore !== null) {
         const target = match.firstInningsScore + 1;
         const needRuns = Math.max(0, target - match.runs);
         const remBalls = Math.max(0, match.totalOvers * 6 - match.legalBalls);
@@ -2606,16 +2644,22 @@ export class UIManager {
       }
     }
 
-    // 4. Batsmen: Striker (with small bat icon) and Non-Striker
+    // 4. Batsmen: Striker (with small bat icon), Non-Striker & Live Partnership
     const striker = match.getActiveStriker();
     const nonStriker = match.getActiveNonStriker();
     const strikerEl = document.getElementById('hud-striker');
     const nonStrikerEl = document.getElementById('hud-nonstriker');
+    const pshipEl = document.getElementById('hud-partnership');
     if (strikerEl && striker) {
       strikerEl.textContent = `${shortSurname(striker.name)} ${striker.runs}(${striker.balls})`;
     }
     if (nonStrikerEl && nonStriker) {
       nonStrikerEl.textContent = `${shortSurname(nonStriker.name)} ${nonStriker.runs}(${nonStriker.balls})`;
+    }
+    if (pshipEl) {
+      const pRuns = match.partnershipRuns || 0;
+      const pBalls = match.partnershipBalls || 0;
+      pshipEl.textContent = match.modeId === 'practice' ? `4s:${striker?.fours || 0} 6s:${striker?.sixes || 0}` : `P'ship ${pRuns}(${pBalls})`;
     }
 
     // 5. Bowler with figures, rhythm/confidence icon, and last 6 balls as circular badges
@@ -2764,9 +2808,14 @@ export class UIManager {
     const batting = this.app.batting;
     const batShort = match.battingTeam.short;
     const bowlShort = match.bowlingTeam.short;
-    const scoreText = `${batShort} v ${bowlShort} ${match.runs}/${match.wickets} (${match.getOversFormatted()})`;
-    let needText = `CRR ${match.getCurrentRunRate()}`;
-    if (match.innings === 2 && match.firstInningsScore !== null) {
+    const isPractice = match.modeId === 'practice';
+    const scoreText = isPractice
+      ? `🎯 NETS · ${match.runs} Runs (${match.legalBalls}b)`
+      : `${batShort} v ${bowlShort} ${match.runs}/${match.wickets} (${match.getOversFormatted()})`;
+    let needText = isPractice
+      ? `MACHINE: ${(this.app.practiceMachine || 'mix').toUpperCase()}`
+      : `CRR ${match.getCurrentRunRate()}`;
+    if (!isPractice && match.innings === 2 && match.firstInningsScore !== null) {
       const needRuns = Math.max(0, match.firstInningsScore + 1 - match.runs);
       const remBalls = Math.max(0, match.totalOvers * 6 - match.legalBalls);
       needText = `NEED ${needRuns} (${remBalls}b)`;
@@ -2847,6 +2896,7 @@ export class UIManager {
       footwork: batting?.footwork || 'front',
       stepOutCharge: Boolean(batting?.stepOutCharge),
       isFreeHit: Boolean(match.freeHit),
+      runningAllowed: Boolean(pState === 'hit' || pState === 'fielded' || this.app.runnersInMotion),
       dirSign,
       handedness: batting?.handedness || 'right',
       cameraMode: this.app?.cameraMode === 'follow' ? (this.app?.savedCameraMode || 'pro') : (this.app?.cameraMode || 'pro'),
@@ -3166,9 +3216,37 @@ export class UIManager {
     this.updateDebugPanel();
   }
 
+  syncPracticeBarUI() {
+    const bar = document.getElementById('hud-practice-bar');
+    if (!bar) return;
+    const isPractice = this.app?.match?.modeId === 'practice' && !this._inMenuFlow;
+    bar.classList.toggle('hidden', !isPractice);
+    const simOverBtn = document.getElementById('btn-bar-sim-over');
+    if (simOverBtn) simOverBtn.classList.toggle('hidden', isPractice);
+    if (!isPractice) return;
+    const activeMachine = this.app?.practiceMachine || 'mix';
+    bar.querySelectorAll('[data-practice-machine]').forEach((btn) => {
+      const m = btn.getAttribute('data-practice-machine');
+      const active = m === activeMachine;
+      btn.className = active
+        ? 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-400 text-slate-950 cursor-pointer shrink-0 shadow'
+        : 'px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 hover:border-slate-500 cursor-pointer shrink-0';
+    });
+    const statsEl = document.getElementById('hud-practice-stats');
+    if (statsEl && this.app?.match) {
+      const striker = this.app.match.getActiveStriker?.();
+      const balls = this.app.match.legalBalls || 0;
+      const fours = striker?.fours || 0;
+      const sixes = striker?.sixes || 0;
+      statsEl.textContent = `${balls} Balls · ${fours}×4 · ${sixes}×6`;
+    }
+  }
+
   goToHomeScreen() {
     this._modalCacheTime = 0;
     this._inMenuFlow = true;
+    const practiceBar = document.getElementById('hud-practice-bar');
+    if (practiceBar) practiceBar.classList.add('hidden');
     this.toggleCornerMenu(false);
     this.closeAllModals(true);
     if (window.__middledMenu && typeof window.__middledMenu.show === 'function') {
@@ -3334,13 +3412,9 @@ export class UIManager {
       this.syncPhoneMatchHUD();
       return;
     }
-    // If dismissed while navigating menu flow or before a match has started, step back cleanly
+    // If dismissed while navigating menu flow or before a match has started, step back cleanly to Home Screen
     if ((!this.app.matchPlayConfirmed || this._inMenuFlow) && !this.isAnyModalOpen()) {
-      if (id === 'modal-setup' && window.__middledMenu?.showModes) {
-        window.__middledMenu.showModes();
-      } else {
-        this.goToHomeScreen();
-      }
+      this.goToHomeScreen();
       return;
     }
     if (!this.isAnyModalOpen()) {
@@ -3473,12 +3547,16 @@ export class UIManager {
         : '🏅 Play on to crown Match MVP';
       const longestSix = match.longestSixMeters || 0;
 
+      const ex = match.extras || { wides: 0, noBalls: 0, byes: 0, legByes: 0, total: 0 };
+      const extrasTag = `Extras: ${ex.total || 0} (WD ${ex.wides || 0}, NB ${ex.noBalls || 0}, LB ${ex.legByes || 0}, B ${ex.byes || 0})`;
+
       careerBanner.innerHTML = `
         <div class="text-xs text-slate-200">
           ${mvpText}
         </div>
-        <div class="font-mono text-xs text-slate-300">
-          🚀 Longest Six: <strong class="text-amber-300">${longestSix > 0 ? `${longestSix}m` : '—'}</strong>
+        <div class="flex flex-wrap items-center gap-3 font-mono text-xs text-slate-300">
+          <span class="text-sky-300">${extrasTag}</span>
+          <span>🚀 Longest Six: <strong class="text-amber-300">${longestSix > 0 ? `${longestSix}m` : '—'}</strong></span>
         </div>
       `;
     }

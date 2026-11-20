@@ -913,7 +913,16 @@ class SoundEngine {
    * window.speechSynthesis.getVoices() is empty!
    */
   async playCloudTTSAudio(text = '', tl = 'en-IN', playbackRate = 1.06, interrupt = false) {
-    if (this.muted || gameConfig.audio.muted) return false;
+    if (this.muted || gameConfig.audio.muted || this._cloudTtsUnavailable) return false;
+    const hostName = typeof window !== 'undefined' ? String(window.location?.hostname || '') : '';
+    if (
+      hostName.endsWith('github.io') ||
+      hostName === 'appassets.androidplatform.net' ||
+      (typeof window !== 'undefined' && window.location?.protocol === 'file:')
+    ) {
+      this._cloudTtsUnavailable = true;
+      return false;
+    }
     const cleanText = String(text || '')
       .replace(/[\u{1F300}-\u{1FAFF}]/gu, '')
       .replace(/\s+/g, ' ')
@@ -934,6 +943,11 @@ class SoundEngine {
     try {
       this.init();
       const resp = await fetch(url);
+      if (resp.status === 404) {
+        this._cloudTtsUnavailable = true;
+        this.activeCloudTTSPlaying = false;
+        return false;
+      }
       if (!resp.ok) throw new Error('TTS HTTP error');
       const arrayBuf = await resp.arrayBuffer();
 

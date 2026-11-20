@@ -237,6 +237,7 @@ export class BallPhysics {
     this.wideReason = '';
     this.isWide = false;
     this.isNoBall = false;
+    this.isBouncerDelivery = false;
     this.hitPad = false;
     this.edged = false;
     this.isPlayedOn = false;
@@ -527,10 +528,13 @@ export class BallPhysics {
           this.isNoBall = true;
           if (!this.noBallReason) this.noBallReason = 'Waist-High Full Toss (Beamer)';
         }
-        // 2. MCC Law 41.6: Dangerous head-high bouncer No-Ball (> 1.78m at popping crease)
+        // 2. MCC Law 41.6: Dangerous head-high bouncer No-Ball (> 1.78m at popping crease) + shoulder-high bouncer tracking
         if (this.bouncedOnPitch && this.creaseCrossPos.y > 1.78) {
           this.isNoBall = true;
           if (!this.noBallReason) this.noBallReason = 'Dangerous Bouncer Above Head Height';
+        }
+        if (this.bouncedOnPitch && this.pitchBouncePos.z < 2.8 && this.creaseCrossPos.y > 1.24) {
+          this.isBouncerDelivery = true;
         }
         // 2.5 Bug #2 Fix: Detect if unhit ball struck the striker's pads/body at the Popping Crease
         // so a ball hitting the pads is eligible for LBW and is NEVER falsely called a Leg-Side Wide!
@@ -697,19 +701,25 @@ export class BallPhysics {
    * Evaluates LBW rule at the batter's popping crease (z = CREASE_Z)
    * Returns true if the ball struck the batter's pads in front of the stumps and was projected to hit the wickets.
    */
-  checkLBW(batsmanX = 0, handedness = 'right') {
-    if (this.isNoBall || this.isWide) return false;
+  checkLBW(batsmanX = 0, handedness = 'right', shotOffered = false) {
+    if (this.isNoBall || this.isWide || this.edged) return false;
     const impactPos = this.crossedCrease ? this.creaseCrossPos : this.pos;
     const impactVel = this.crossedCrease ? this.creaseCrossVel : this.vel;
 
     // Must not pitch outside leg stump (leg side is -X for right-hander, +X for left-hander)
     const pitchedOutsideLeg =
-      handedness === 'left' ? this.pitchBouncePos.x > 0.20 : this.pitchBouncePos.x < -0.20;
+      handedness === 'left' ? this.pitchBouncePos.x > 0.19 : this.pitchBouncePos.x < -0.19;
     if (this.bouncedOnPitch && pitchedOutsideLeg) return false;
 
-    // Must impact pad near batter's legs and in line with or just outside off stump
+    // MCC Law 36.1.4: Playing a shot requires impact in-line with stumps; leaving allows impact outside off
     const distFromLegs = Math.abs(impactPos.x - batsmanX);
-    if (distFromLegs > 0.24 || Math.abs(impactPos.x) > 0.22) return false;
+    const offSign = handedness === 'left' ? -1 : 1;
+    const impactInLineLimit = STUMP_WIDTH * 0.5 + BALL_RADIUS + 0.025; // ~0.175m strict stump corridor
+    const impactOutsideOff = impactPos.x * offSign > impactInLineLimit;
+    if (distFromLegs > 0.24) return false;
+    if (shotOffered && Math.abs(impactPos.x) > impactInLineLimit) return false;
+    if (!shotOffered && !impactOutsideOff && Math.abs(impactPos.x) > impactInLineLimit) return false;
+    if (!shotOffered && Math.abs(impactPos.x) > 0.215) return false;
     if (impactPos.y > STUMP_HEIGHT + 0.03) return false;
 
     // Project from crease (8.84m) to stumps (10.06m => dz = 1.22m)

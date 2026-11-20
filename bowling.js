@@ -701,7 +701,8 @@ export class BowlingSystem {
     matchContext = {}
   ) {
     const diffProfile = getDifficultyProfile(difficulty);
-    const ballInOver = ballCount % 6;
+    const safeBallCount = Number.isFinite(ballCount) ? Math.max(0, Math.floor(ballCount)) : 0;
+    const ballInOver = safeBallCount % 6;
     if (ballInOver === 0) {
       this.overLooseBallUsed = false;
       this.activePlan = null;
@@ -709,28 +710,39 @@ export class BowlingSystem {
     }
 
     const modeId = matchContext.modeId || 'run_chase';
+    const practiceMachine = modeId === 'practice' ? (matchContext.practiceMachine || 'mix') : null;
     const isOneOver = modeId === 'last_over' || modeId === 'super_over' || (matchContext.totalOvers || 5) <= 1;
     const ballsRem = typeof matchContext.ballsRemaining === 'number' ? matchContext.ballsRemaining : 30;
-    const isDeathPhase = isOneOver || ballsRem <= 12;
+    const isDeathPhase = modeId !== 'practice' && (isOneOver || ballsRem <= 12);
     const isPowerplay = Boolean(matchContext.isPowerplay);
 
-    // Rotate bowler style every over (in 1-Over / Death phase, prefer Fast/Medium pace specialists 85% of the time)
-    if (isOneOver) {
-      this.bowlerType = ballInOver >= 4 ? 'fast' : 'fast';
+    // Match real bowler's authentic style (Bumrah=fast, Kuldeep=spin, Hardik=medium), or practice machine preset!
+    if (practiceMachine === 'spin') {
+      this.bowlerType = 'spin';
+    } else if (practiceMachine === 'swing') {
+      this.bowlerType = 'medium';
+    } else if (practiceMachine === 'fast' || practiceMachine === 'yorker' || practiceMachine === 'bouncer') {
+      this.bowlerType = 'fast';
+    } else if (practiceMachine === 'mix') {
+      const mixTypes = ['fast', 'medium', 'spin'];
+      this.bowlerType = mixTypes[safeBallCount % mixTypes.length];
+    } else if (matchContext.bowlerStyle && BOWLER_TYPES[matchContext.bowlerStyle]) {
+      this.bowlerType = matchContext.bowlerStyle;
+    } else if (isOneOver) {
+      this.bowlerType = ballInOver >= 4 ? 'fast' : 'medium';
     } else {
       const types = isDeathPhase ? ['fast', 'medium', 'fast'] : ['fast', 'medium', 'spin'];
-      this.bowlerType = types[Math.floor(ballCount / 6) % types.length];
+      this.bowlerType = types[Math.floor(safeBallCount / 6) % types.length];
     }
 
     // Filter eligible variations by bowler type and difficulty tier
-    // In Death Overs / 1-Over Finisher, unlock at least Tier 3/4 yorkers & slower balls so the climax feels authentic!
     const baseTier =
       diffProfile.id === 'easy' || diffProfile.id === 'rookie'
         ? 2
         : diffProfile.id === 'medium' || diffProfile.id === 'club'
           ? 3
           : 4;
-    const maxTier = isDeathPhase ? Math.max(3, baseTier) : baseTier;
+    const maxTier = isDeathPhase || practiceMachine ? Math.max(3, baseTier) : baseTier;
 
     const eligible = VARIATION_LIST.filter(
       (v) => v.bowlerTypes.includes(this.bowlerType) && v.tier <= maxTier
@@ -739,14 +751,14 @@ export class BowlingSystem {
 
     let chosenVar = pool[0];
 
-    // Phase-Specific Priority Pool (inspired by Last Over & The Final Overs)
+    // Bug Fix #3: Use exact valid variation IDs from DELIVERY_VARIATIONS (googly, topspinner, flipper, slider!)
     const deathSpecialistIds =
       this.bowlerType === 'spin'
-        ? ['quicker_one', 'wrong_un', 'arm_ball', 'yorker', 'carrom_ball']
+        ? ['flipper', 'googly', 'arm_ball', 'slider', 'carrom_ball']
         : ['yorker', 'slower_ball', 'wide_yorker', 'in_swinging_yorker', 'slower_bouncer', 'off_cutter', 'knuckleball'];
     const powerplaySpecialistIds =
       this.bowlerType === 'spin'
-        ? ['off_break', 'leg_break', 'top_spinner', 'arm_ball']
+        ? ['off_break', 'leg_break', 'topspinner', 'arm_ball']
         : ['outswinger', 'inswinger', 'bouncer', 'leg_cutter'];
 
     const pickFromIds = (idList) => {
@@ -754,7 +766,15 @@ export class BowlingSystem {
       return matches.length > 0 ? matches[Math.floor(Math.random() * matches.length)] : null;
     };
 
-    if (isDeathPhase && Math.random() < 0.68) {
+    if (practiceMachine === 'yorker') {
+      chosenVar = pickFromIds(['yorker', 'in_swinging_yorker', 'wide_yorker']) || DELIVERY_VARIATIONS.yorker;
+    } else if (practiceMachine === 'bouncer') {
+      chosenVar = pickFromIds(['bouncer', 'slower_bouncer']) || DELIVERY_VARIATIONS.bouncer;
+    } else if (practiceMachine === 'swing') {
+      chosenVar = pickFromIds(['outswinger', 'inswinger', 'reverse_swing']) || DELIVERY_VARIATIONS.outswinger;
+    } else if (practiceMachine === 'spin') {
+      chosenVar = pickFromIds(['off_break', 'leg_break', 'googly', 'topspinner', 'carrom_ball', 'arm_ball']) || pool[0];
+    } else if (isDeathPhase && Math.random() < 0.68) {
       chosenVar = pickFromIds(deathSpecialistIds) || pool[Math.floor(Math.random() * pool.length)];
     } else if (isPowerplay && Math.random() < 0.60) {
       chosenVar = pickFromIds(powerplaySpecialistIds) || pool[Math.floor(Math.random() * pool.length)];
@@ -789,10 +809,10 @@ export class BowlingSystem {
     const counterChance = twoBoundariesInRow
       ? (diffProfile.id === 'easy' ? 0.50 : 0.85)
       : (diffProfile.id === 'easy' ? 0.30 : diffProfile.id === 'medium' ? 0.58 : 0.72);
-    if (lastShot && (lastShot.runs || 0) >= 4 && ballInOver > 0 && Math.random() < counterChance) {
+    if (!practiceMachine && lastShot && (lastShot.runs || 0) >= 4 && ballInOver > 0 && Math.random() < counterChance) {
       const counter = pickFromIds(
         this.bowlerType === 'spin'
-          ? ['wrong_un', 'quicker_one', 'arm_ball', 'top_spinner', 'carrom_ball']
+          ? ['googly', 'flipper', 'arm_ball', 'topspinner', 'carrom_ball']
           : twoBoundariesInRow
             ? ['yorker', 'slower_ball', 'wide_yorker', 'slower_bouncer', 'off_cutter']
             : ['slower_ball', 'bouncer', 'yorker', 'off_cutter', 'leg_cutter']

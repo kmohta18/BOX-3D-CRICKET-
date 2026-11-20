@@ -1233,22 +1233,22 @@
             <div class="md-nav-left">
               <span class="md-nav-icon">▶</span>
               <div>
-                <div class="md-nav-label">PLAY</div>
-                <div class="md-nav-sub">Select Game Mode, Teams &amp; Stadium</div>
+                <div class="md-nav-label">PLAY MATCH</div>
+                <div class="md-nav-sub">5-Over Chase, Last Over, Super Over &amp; T20</div>
               </div>
             </div>
             <span class="md-nav-badge">OK</span>
           </button>
 
-          <button type="button" class="md-nav-btn md-nav-btn-quick" data-md="quick">
+          <button type="button" class="md-nav-btn md-nav-btn-quick" data-md="practice">
             <div class="md-nav-left">
-              <span class="md-nav-icon">⚡</span>
+              <span class="md-nav-icon">🎯</span>
               <div>
-                <div class="md-nav-label">QUICK MATCH</div>
-                <div class="md-nav-sub">Jump straight into a 5-Over Chase</div>
+                <div class="md-nav-label">NET PRACTICE</div>
+                <div class="md-nav-sub">Unlimited 360° Real Bat Bowling Machine</div>
               </div>
             </div>
-            <span class="md-nav-badge">5 OV</span>
+            <span class="md-nav-badge">NETS</span>
           </button>
 
           <button type="button" class="md-nav-btn" data-md="qr" id="md-phone-pill">
@@ -1474,6 +1474,17 @@
           <span id="hud-nonstriker" class="font-mono text-xs tabular-nums">Gill 0 (0)*</span>
         </div>
 
+        <span class="text-slate-700 hidden lg:inline" aria-hidden="true">·</span>
+
+        <!-- Live Partnership Pill -->
+        <span
+          id="hud-partnership"
+          class="hidden lg:inline font-mono text-[11px] text-emerald-300/95 font-semibold tabular-nums"
+          title="Current Batting Partnership"
+        >
+          P'ship 0(0)
+        </span>
+
         <span class="text-slate-700 hidden sm:inline" aria-hidden="true">|</span>
 
         <!-- ON FIRE / Power Surge Streak Badge -->
@@ -1551,6 +1562,22 @@
         </button>
       </div>
     </footer>
+
+    <!-- NET PRACTICE BOWLING MACHINE FLOATING BAR (Visible ONLY in Net Practice mode) -->
+    <div
+      id="hud-practice-bar"
+      class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 bg-slate-950/90 backdrop-blur-md border border-emerald-500/50 rounded-2xl px-2.5 py-1.5 shadow-2xl max-w-[96vw] overflow-x-auto no-scrollbar"
+    >
+      <span class="font-display font-extrabold text-[11px] text-emerald-400 uppercase tracking-wider px-1 shrink-0">🎯 NETS</span>
+      <button type="button" data-practice-machine="mix" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-emerald-400 text-slate-950 cursor-pointer shrink-0">Mix</button>
+      <button type="button" data-practice-machine="fast" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 cursor-pointer shrink-0">Fast</button>
+      <button type="button" data-practice-machine="swing" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 cursor-pointer shrink-0">Swing</button>
+      <button type="button" data-practice-machine="spin" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 cursor-pointer shrink-0">Spin</button>
+      <button type="button" data-practice-machine="yorker" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 cursor-pointer shrink-0">Yorker</button>
+      <button type="button" data-practice-machine="bouncer" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-900 border border-slate-700 text-slate-200 cursor-pointer shrink-0">Bouncer</button>
+      <span id="hud-practice-stats" class="hidden md:inline font-mono text-[11px] text-amber-300 font-bold px-2 shrink-0">0 Balls · 0×4 · 0×6</span>
+      <button id="btn-exit-practice" type="button" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-rose-500/20 border border-rose-400/50 text-rose-300 hover:bg-rose-500/30 cursor-pointer shrink-0">Exit</button>
+    </div>
 
     <!-- ==========================================================================================
          MODAL 1: Ready to Play Gate & QR Code Phone Controller Pairing (Origin URL Default First)
@@ -1732,10 +1759,10 @@
     </div>
 
     <!-- ==========================================================================================
-         SCREEN 3: UNIFIED SINGLE-SCREEN MATCH SETUP (Teams, Overs, Stadium, Difficulty, Toss & Launch)
+         SCREEN 2: CLEAN CONSOLE MATCH LAUNCHER (Zero-Scroll 2-Column Setup: Format, Teams, Venue & Play)
          ========================================================================================== -->
     <div id="modal-setup" class="modal-backdrop wd-setup-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="title-modal-setup">
-      <div class="modal-card wd-setup-shell" style="--modal-w: 1020px">
+      <div class="modal-card wd-setup-shell" style="--modal-w: 980px">
         <!-- HEADER RIBBON -->
         <div class="wd-top-ribbon flex flex-wrap items-center justify-between gap-2.5">
           <div class="flex items-center gap-2.5">
@@ -1744,7 +1771,7 @@
               type="button"
               class="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 cursor-pointer"
             >
-              ← Change Mode
+              ← Home
             </button>
             <div>
               <div class="flex items-center gap-2">
@@ -1756,7 +1783,7 @@
                 </span>
               </div>
               <p id="setup-wizard-subtitle" class="text-[11px] text-slate-400">
-                Customize Teams, Overs, Stadium &amp; Difficulty on one screen
+                Pick format, teams &amp; venue — pitch &amp; LHB/RHB stances set automatically
               </p>
             </div>
           </div>
@@ -1778,13 +1805,48 @@
 
         <div class="modal-body p-3 sm:p-4 overflow-y-auto">
           <div class="wd-unified-grid">
-            <!-- LEFT COLUMN: ALL MATCH OPTIONS -->
+            <!-- LEFT COLUMN: 3 CLEAN CONSOLE BLOCKS -->
             <div class="wd-setup-panel-col">
-              <!-- 1. TEAMS VS STEPPER -->
+              <!-- 1. MATCH FORMAT -->
+              <div class="wd-setup-box space-y-2">
+                <div class="wd-setup-label">
+                  <span class="text-sky-300">1 · Match Format</span>
+                </div>
+                <div class="wd-chip-grid-4">
+                  <button id="btn-setup-mode-chase" type="button" data-setup-mode="run_chase" class="wd-scenario-card wd-scenario-active-amber" style="padding:9px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🎯 5-Ov Chase</div>
+                    <div class="text-[10px] font-mono text-slate-400">30 Balls</div>
+                  </button>
+                  <button id="btn-setup-mode-last-over" type="button" data-setup-mode="last_over" class="wd-scenario-card" style="padding:9px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🔥 Last Over</div>
+                    <div class="text-[10px] font-mono text-slate-400">6 Balls · 2 Wkt</div>
+                  </button>
+                  <button id="btn-setup-mode-super-over" type="button" data-setup-mode="super_over" class="wd-scenario-card" style="padding:9px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">⚡ Super Over</div>
+                    <div class="text-[10px] font-mono text-slate-400">Shootout</div>
+                  </button>
+                  <button id="btn-setup-mode-t20" type="button" data-setup-mode="t20" class="wd-scenario-card" style="padding:9px 10px">
+                    <div class="font-display font-extrabold text-xs text-white">🏆 T20 Match</div>
+                    <div class="text-[10px] font-mono text-slate-400">Bat &amp; Bowl</div>
+                  </button>
+                </div>
+
+                <div id="setup-step1-t20-overs-wrap" class="hidden pt-1 flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-[11px] font-bold text-sky-300">Overs per side:</span>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" data-t20-overs-btn="2" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">2 Ov</button>
+                    <button type="button" data-t20-overs-btn="5" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">5 Ov</button>
+                    <button type="button" data-t20-overs-btn="10" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">10 Ov</button>
+                    <button type="button" data-t20-overs-btn="20" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-400 text-slate-950 border border-sky-300 cursor-pointer">20 Ov</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 2. TEAMS VS STEPPER -->
               <div class="wd-setup-box">
                 <div class="wd-setup-label">
-                  <span class="text-amber-300">1 · Teams (Player 1 vs CPU)</span>
-                  <span class="font-mono text-[10px] text-slate-400">Use ◀ ▶ to cycle</span>
+                  <span class="text-amber-300">2 · Teams (You vs Opponent)</span>
+                  <span class="font-mono text-[10px] text-slate-400">◀ ▶ to switch</span>
                 </div>
                 <div class="wd-team-stepper-row">
                   <div class="wd-team-stepper">
@@ -1820,134 +1882,65 @@
                     <button id="btn-team-b-next" type="button" aria-label="Next Opponent Team" class="wd-step-arrow">▶</button>
                   </div>
                 </div>
-
-                <!-- Optional Full Team Grid -->
-                <details class="mt-2 bg-slate-950/70 border border-slate-800 rounded-xl px-2.5 py-1.5">
-                  <summary class="text-[11px] font-bold text-slate-300 cursor-pointer flex items-center justify-between">
-                    <span>All Teams Roster Grid</span>
-                    <span class="font-mono text-[10px] text-amber-300"><span id="lbl-selected-team-a">India</span> v <span id="lbl-selected-team-b">Australia</span></span>
-                  </summary>
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mt-2">
-                    <div>
-                      <div class="text-[10px] font-bold text-amber-400 mb-1">Your Team</div>
-                      <div id="grid-team-a-cards" class="grid grid-cols-2 gap-1.5"></div>
-                    </div>
-                    <div>
-                      <div class="text-[10px] font-bold text-sky-400 mb-1">Opponent</div>
-                      <div id="grid-team-b-cards" class="grid grid-cols-2 gap-1.5"></div>
-                    </div>
-                  </div>
-                </details>
               </div>
 
-              <!-- 2. FORMAT QUICK SWITCHER & T20 OVERS -->
-              <div class="wd-setup-box space-y-2">
+              <!-- 3. DIFFICULTY & STADIUM -->
+              <div class="wd-setup-box space-y-2.5">
                 <div class="wd-setup-label">
-                  <span class="text-sky-300">2 · Mode &amp; Overs</span>
-                </div>
-                <div class="wd-chip-grid-4">
-                  <button id="btn-setup-mode-chase" type="button" data-setup-mode="run_chase" class="wd-scenario-card wd-scenario-active-amber" style="padding:8px 10px">
-                    <div class="font-display font-extrabold text-xs text-white">🎯 5-Ov Chase</div>
-                  </button>
-                  <button id="btn-setup-mode-last-over" type="button" data-setup-mode="last_over" class="wd-scenario-card" style="padding:8px 10px">
-                    <div class="font-display font-extrabold text-xs text-white">🔥 Last Over</div>
-                  </button>
-                  <button id="btn-setup-mode-t20" type="button" data-setup-mode="t20" class="wd-scenario-card" style="padding:8px 10px">
-                    <div class="font-display font-extrabold text-xs text-white">🏆 T20 Match</div>
-                  </button>
-                  <button id="btn-setup-mode-super-over" type="button" data-setup-mode="super_over" class="wd-scenario-card" style="padding:8px 10px">
-                    <div class="font-display font-extrabold text-xs text-white">⚡ Super Over</div>
-                  </button>
-                </div>
-
-                <div id="setup-step1-t20-overs-wrap" class="hidden pt-1 flex flex-wrap items-center justify-between gap-2">
-                  <span class="text-[11px] font-bold text-sky-300">T20 Overs:</span>
+                  <span class="text-emerald-300">3 · Difficulty &amp; Stadium</span>
                   <div class="flex items-center gap-1.5">
-                    <button type="button" data-t20-overs-btn="2" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">2 Ov</button>
-                    <button type="button" data-t20-overs-btn="5" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">5 Ov</button>
-                    <button type="button" data-t20-overs-btn="10" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-slate-900 border border-slate-700 text-slate-300 cursor-pointer">10 Ov</button>
-                    <button type="button" data-t20-overs-btn="20" class="px-3 py-1.5 rounded-lg text-xs font-bold bg-sky-400 text-slate-950 border border-sky-300 cursor-pointer">20 Ov</button>
+                    <button type="button" data-daynight-card="night" class="py-1 px-2.5 rounded-lg border text-[11px] font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300">🌙 Night</button>
+                    <button type="button" data-daynight-card="day" class="py-1 px-2.5 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">☀️ Day</button>
                   </div>
-                </div>
-              </div>
-
-              <!-- 3. DIFFICULTY -->
-              <div class="wd-setup-box">
-                <div class="wd-setup-label">
-                  <span class="text-emerald-300">3 · Difficulty &amp; AI Bowling Pace</span>
                 </div>
                 <div class="wd-chip-grid-3">
-                  <button type="button" data-diff-card="easy" class="wd-scenario-card" style="padding:9px 11px">
-                    <div class="font-display font-extrabold text-xs sm:text-sm text-emerald-400">ROOKIE</div>
-                    <div class="text-[10px] font-mono text-slate-300">90–118 KPH · Assist</div>
+                  <button type="button" data-diff-card="easy" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-emerald-400">ROOKIE</div>
+                    <div class="text-[10px] font-mono text-slate-300">Easy · Assist</div>
                   </button>
-                  <button type="button" data-diff-card="medium" class="wd-scenario-card wd-scenario-active-amber" style="padding:9px 11px">
-                    <div class="font-display font-extrabold text-xs sm:text-sm text-amber-300">PRO</div>
-                    <div class="text-[10px] font-mono text-amber-200">115–136 KPH · Balanced</div>
+                  <button type="button" data-diff-card="medium" class="wd-scenario-card wd-scenario-active-amber" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-amber-300">PRO</div>
+                    <div class="text-[10px] font-mono text-amber-200">Balanced Pace</div>
                   </button>
-                  <button type="button" data-diff-card="hard" class="wd-scenario-card" style="padding:9px 11px">
-                    <div class="font-display font-extrabold text-xs sm:text-sm text-rose-400">LEGEND</div>
-                    <div class="text-[10px] font-mono text-slate-300">132–150 KPH · Manual</div>
+                  <button type="button" data-diff-card="hard" class="wd-scenario-card" style="padding:8px 10px">
+                    <div class="font-display font-extrabold text-xs text-rose-400">LEGEND</div>
+                    <div class="text-[10px] font-mono text-slate-300">145+ KPH · Raw</div>
                   </button>
                 </div>
-              </div>
 
-              <!-- 4. STADIUM, LIGHTING, PITCH & STANCE -->
-              <div class="wd-setup-box space-y-2">
-                <div class="wd-setup-label">
-                  <span class="text-amber-300">4 · Stadium, Lighting &amp; Pitch</span>
-                </div>
                 <div class="wd-chip-grid-3">
                   <button type="button" data-stadium-card="eden_gardens" class="wd-scenario-card wd-scenario-active-emerald" style="padding:8px 10px">
                     <div class="font-display font-extrabold text-xs text-white">EDEN GARDENS</div>
-                    <div class="text-[10px] text-emerald-300 font-mono">Kolkata · Fast</div>
+                    <div class="text-[10px] text-emerald-300 font-mono">Kolkata · Balanced</div>
                   </button>
                   <button type="button" data-stadium-card="wankhede" class="wd-scenario-card" style="padding:8px 10px">
                     <div class="font-display font-extrabold text-xs text-white">WANKHEDE</div>
                     <div class="text-[10px] text-sky-300 font-mono">Mumbai · Swing</div>
                   </button>
                   <button type="button" data-stadium-card="narendra_modi" class="wd-scenario-card" style="padding:8px 10px">
-                    <div class="font-display font-extrabold text-xs text-white">NARENDRA MODI</div>
-                    <div class="text-[10px] text-amber-300 font-mono">Ahmedabad · Bowl</div>
+                    <div class="font-display font-extrabold text-xs text-white">AHMEDABAD</div>
+                    <div class="text-[10px] text-amber-300 font-mono">Dusty · Spin</div>
                   </button>
-                </div>
-
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  <div class="wd-chip-grid-2">
-                    <button type="button" data-daynight-card="night" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300">🌙 Night</button>
-                    <button type="button" data-daynight-card="day" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">☀️ Day</button>
-                  </div>
-                  <div class="wd-chip-grid-2">
-                    <button type="button" data-hand-card="right" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-amber-400/15 border-amber-400 text-amber-300">Right-Hand</button>
-                    <button type="button" data-hand-card="left" class="py-2 px-2.5 rounded-lg border-2 text-xs font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Left-Hand</button>
-                  </div>
-                </div>
-
-                <div class="wd-chip-grid-4">
-                  <button type="button" data-pitch-card="normal" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-emerald-500/20 border-emerald-400 text-emerald-300">Balanced Pitch</button>
-                  <button type="button" data-pitch-card="green" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Green Seam</button>
-                  <button type="button" data-pitch-card="dusty" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Dusty Spin</button>
-                  <button type="button" data-pitch-card="hard" class="py-1.5 px-2 rounded-lg border text-[11px] font-bold cursor-pointer bg-slate-900 border-slate-800 text-slate-300">Hard Bounce</button>
                 </div>
               </div>
             </div>
 
-            <!-- RIGHT COLUMN: LIVE SUMMARY, TOSS / TARGET & START MATCH -->
+            <!-- RIGHT COLUMN: MATCH BRIEFING, TOSS / TARGET & LAUNCH -->
             <div class="wd-setup-panel-col">
               <div class="wd-vs-banner space-y-1.5">
-                <div class="text-[10px] font-mono uppercase tracking-widest text-amber-300">OFFICIAL MATCH BRIEFING</div>
+                <div class="text-[10px] font-mono uppercase tracking-widest text-amber-300">READY ON THE PITCH</div>
                 <div id="setup-summary-matchup" class="font-display text-lg sm:text-2xl font-extrabold text-white leading-tight">
                   India (IND) vs Australia (AUS)
                 </div>
                 <div id="setup-summary-meta" class="text-xs text-amber-200 font-mono font-bold">
-                  5-Over Run Chase · MEDIUM · Eden Gardens · Night
+                  5-Over Run Chase · PRO · Eden Gardens · Night
                 </div>
               </div>
 
               <!-- Scenario Chase Target Briefing -->
               <div id="setup-chase-card" class="p-4 bg-slate-950/95 border-2 border-amber-400/70 rounded-2xl space-y-3 shadow-xl">
                 <div class="flex items-center justify-between gap-2">
-                  <span class="wd-tag-pill bg-amber-400/20 text-amber-300 border border-amber-400/40">TARGET BRIEFING</span>
+                  <span class="wd-tag-pill bg-amber-400/20 text-amber-300 border border-amber-400/40">CHASE TARGET</span>
                   <div id="setup-chase-target-badge" class="px-3 py-1.5 rounded-xl bg-amber-400/20 border border-amber-400 font-mono text-sm sm:text-base font-black text-amber-300">
                     Target: 48 Runs
                   </div>
@@ -1960,7 +1953,7 @@
                   type="button"
                   class="w-full py-2 px-3 text-xs font-extrabold bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-100 rounded-xl cursor-pointer transition-colors"
                 >
-                  🎲 Reroll Chase Target
+                  🎲 Reroll Target
                 </button>
               </div>
 
@@ -2008,9 +2001,9 @@
                   id="btn-start-match"
                   type="button"
                   data-tv-default="true"
-                  class="w-full wd-launch-btn py-3 px-4 text-sm sm:text-base rounded-xl cursor-pointer"
+                  class="w-full wd-launch-btn py-3.5 px-4 text-sm sm:text-base rounded-xl cursor-pointer"
                 >
-                  🏏 START MATCH
+                  🏏 PLAY NOW
                 </button>
                 <div class="grid grid-cols-2 gap-2">
                   <button
@@ -2021,11 +2014,11 @@
                     📱 Pair Phone (QR)
                   </button>
                   <button
+                    id="btn-setup-start-practice"
                     type="button"
-                    data-close-modal="modal-setup"
-                    class="py-2 px-3 text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 rounded-xl cursor-pointer"
+                    class="py-2 px-3 text-xs font-bold bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 text-emerald-300 rounded-xl cursor-pointer"
                   >
-                    ✕ Cancel / Back
+                    🎯 Net Practice
                   </button>
                 </div>
               </div>
@@ -2562,6 +2555,6 @@
       <span>Offline Mode — Cached Stadium Ready</span>
     </div>
 
-    <script type="module" src="./src/main.js?v=6"></script>
+    <script type="module" src="./src/main.js?v=7"></script>
   </body>
 </html>
