@@ -31,7 +31,7 @@ jobs:
           DEST="android-tv-apk/app/src/main/assets"
           rm -rf "$DEST"
           mkdir -p "$DEST/node_modules/three/build" "$DEST/node_modules/three/examples"
-          cp index.html styles.css middled_menu.css manifest.webmanifest "$DEST/"
+          cp index.html controller.html styles.css middled_menu.css manifest.webmanifest "$DEST/"
           cp batting.js bowling.js commentary.js config.js fielding.js modes.js net.js physics.js ui.js "$DEST/"
           cp -r src assets fonts icons "$DEST/"
           cp /tmp/three-pkg/node_modules/three/build/three.module.js "$DEST/node_modules/three/build/"

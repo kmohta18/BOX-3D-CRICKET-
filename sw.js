@@ -1,15 +1,16 @@
 // Box Cricket 3D — Lightweight Network-First Service Worker (Zero-Lag for Hosted Android TV APK & PWA)
-const CACHE_NAME = 'box-cricket-3d-v1';
+const CACHE_NAME = 'box-cricket-3d-v2';
 const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-  '/manifest.webmanifest',
-  '/styles.css',
-  '/middled_menu.css',
-  '/icons/icon.svg',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/apple-touch-icon.png'
+  './',
+  './index.html',
+  './controller.html',
+  './manifest.webmanifest',
+  './styles.css',
+  './middled_menu.css',
+  './icons/icon.svg',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -39,10 +40,10 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   // Never intercept WebSockets, API calls, TTS proxy, or cross-origin requests
   if (url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws')) return;
+  if (url.pathname.includes('/api/') || url.pathname.includes('/ws')) return;
 
   // Cache-first for fonts and icons
-  if (url.pathname.startsWith('/fonts/') || url.pathname.startsWith('/icons/')) {
+  if (url.pathname.includes('/fonts/') || url.pathname.includes('/icons/')) {
     event.respondWith(
       caches.match(req).then((cached) => {
         if (cached) return cached;
@@ -58,7 +59,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Network-first for HTML/JS/CSS so Hosted Android TV APK always receives instant live updates
+  // Network-first for HTML/JS/CSS so Hosted Android TV APK & GitHub Pages receive live updates
   event.respondWith(
     fetch(req)
       .then((res) => {
@@ -68,6 +69,6 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(req).then((cached) => cached || caches.match('/index.html')))
+      .catch(() => caches.match(req).then((cached) => cached || caches.match('./index.html')))
   );
 });

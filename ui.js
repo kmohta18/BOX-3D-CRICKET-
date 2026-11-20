@@ -3394,7 +3394,7 @@ export class UIManager {
     }
     const openCtrlBtn = document.getElementById('btn-open-ctrl-tab');
     if (openCtrlBtn) {
-      openCtrlBtn.href = `/controller.html?r=${this.app.net.roomCode}`;
+      openCtrlBtn.href = urlP1;
     }
     const roomEl = document.getElementById('qr-room-code');
     if (roomEl) {

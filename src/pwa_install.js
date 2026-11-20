@@ -26,7 +26,7 @@ export function initPwaInstall(app, ui) {
     'serviceWorker' in navigator &&
     (window.location.protocol === 'https:' || window.location.hostname === 'localhost')
   ) {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {
       // Ignore SW errors in restricted preview iframes
     });
   }

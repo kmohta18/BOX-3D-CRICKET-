@@ -6,11 +6,77 @@
  * haptic vibration, and 30s reconnect pause.
  */
 
+const PUBLIC_GITHUB_PAGES_BASE = 'https://kmohta18.github.io/BOX-3D-CRICKET-';
+const PEERJS_ICE_SERVERS = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' }
+];
+
+function getStaticAppBaseUrl() {
+  if (typeof window === 'undefined') return PUBLIC_GITHUB_PAGES_BASE;
+  const host = window.location.hostname || '';
+  if (host === 'appassets.androidplatform.net') {
+    return PUBLIC_GITHUB_PAGES_BASE;
+  }
+  const path = (window.location.pathname || '/').replace(/\/(?:index\.html|controller\.html)?$/, '');
+  return `${window.location.origin}${path}`.replace(/\/$/, '');
+}
+
+function isStaticOrApkOrigin() {
+  if (typeof window === 'undefined') return false;
+  const host = window.location.hostname || '';
+  return (
+    Boolean(window.Wavedash) ||
+    host === 'appassets.androidplatform.net' ||
+    host.endsWith('.github.io') ||
+    host.endsWith('.vercel.app') ||
+    host.endsWith('.netlify.app') ||
+    host.endsWith('.pages.dev')
+  );
+}
+
+let peerJsLoadPromise = null;
+function ensurePeerJsLoaded() {
+  if (typeof window === 'undefined') return Promise.resolve(null);
+  if (window.Peer) return Promise.resolve(window.Peer);
+  if (peerJsLoadPromise) return peerJsLoadPromise;
+
+  const sources = [
+    'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
+    'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'
+  ];
+
+  peerJsLoadPromise = new Promise((resolve) => {
+    let idx = 0;
+    const tryNext = () => {
+      if (window.Peer) return resolve(window.Peer);
+      if (idx >= sources.length) return resolve(null);
+      const s = document.createElement('script');
+      s.src = sources[idx++];
+      s.async = true;
+      s.onload = () => resolve(window.Peer || null);
+      s.onerror = () => tryNext();
+      document.head.appendChild(s);
+    };
+    // Give deferred script tag in <head> a brief moment before injecting fallback
+    setTimeout(() => {
+      if (window.Peer) resolve(window.Peer);
+      else tryNext();
+    }, 150);
+  });
+  return peerJsLoadPromise;
+}
+
 export class NetworkManager {
   constructor(role = 'host') {
     this.role = role; // 'host' | 'controller' | 'online_peer'
     this.roomCode = this.generateRoomCode();
     this.ws = null;
+    this.peer = null;
+    this.peerConns = new Set();
+    this.p2pReady = false;
+    this._p2pRetryTimer = null;
     this.bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('box_cricket_3d_bus') : null;
     this.connected = false;
     this.controllers = {
@@ -28,9 +94,12 @@ export class NetworkManager {
 
     // URL modes for QR code generation: 'origin' (default first) | 'shared' | 'lan'
     this.urlMode = 'origin';
-    this.originBaseUrl = window.location.origin;
-    this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
-    this.lanBaseUrl = window.location.origin;
+    const initialBase = getStaticAppBaseUrl();
+    this.originBaseUrl = initialBase;
+    this.sharedBaseUrl = isStaticOrApkOrigin()
+      ? initialBase
+      : window.location.origin.replace('//ais-dev-', '//ais-pre-');
+    this.lanBaseUrl = initialBase;
     this.customBaseUrl = '';
 
     this.callbacks = {
@@ -73,6 +142,16 @@ export class NetworkManager {
   }
 
   async fetchServerInfo() {
+    // On static hosts (GitHub Pages / Vercel) or bundled Android TV APK, skip /api/info and use the HTTPS GitHub Pages URL!
+    if (isStaticOrApkOrigin()) {
+      const staticBase = getStaticAppBaseUrl();
+      this.originBaseUrl = staticBase;
+      this.sharedBaseUrl = staticBase;
+      this.lanBaseUrl = staticBase;
+      this.urlMode = 'origin';
+      return this.getControllerUrl();
+    }
+
     try {
       const res = await fetch('/api/info');
       if (res.ok) {
@@ -87,14 +166,13 @@ export class NetworkManager {
           }
           this.urlMode = 'lan';
         } else {
-          // Keep exact current browser origin (e.g. https://boxcricket.ai.studio) as Origin URL!
           this.originBaseUrl = window.location.origin;
           this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
         }
       }
     } catch {
-      this.originBaseUrl = window.location.origin;
-      this.sharedBaseUrl = window.location.origin.replace('//ais-dev-', '//ais-pre-');
+      this.originBaseUrl = getStaticAppBaseUrl();
+      this.sharedBaseUrl = this.originBaseUrl;
     }
     return this.getControllerUrl();
   }
@@ -104,16 +182,27 @@ export class NetworkManager {
       return this.customBaseUrl.trim().replace(/\/$/, '');
     }
     if (this.urlMode === 'origin') {
-      return (this.originBaseUrl || window.location.origin).replace(/\/$/, '');
+      return (this.originBaseUrl || getStaticAppBaseUrl()).replace(/\/$/, '');
     }
     if (this.urlMode === 'lan') {
-      return (this.lanBaseUrl || this.originBaseUrl || window.location.origin).replace(/\/$/, '');
+      return (this.lanBaseUrl || this.originBaseUrl || getStaticAppBaseUrl()).replace(/\/$/, '');
     }
-    return (this.sharedBaseUrl || this.originBaseUrl || window.location.origin).replace(/\/$/, '');
+    return (this.sharedBaseUrl || this.originBaseUrl || getStaticAppBaseUrl()).replace(/\/$/, '');
   }
 
   getControllerUrl(slot = 'p1') {
     const base = this.getActiveBaseUrl();
+    // Static hosts (GitHub Pages / Vercel) and Android TV APK use controller.html?r=XXXX&p2p=1 (WebRTC PeerJS!)
+    const useStaticP2P =
+      isStaticOrApkOrigin() ||
+      base.includes('.github.io') ||
+      base.includes('.vercel.app') ||
+      base.includes('.netlify.app');
+    if (useStaticP2P) {
+      return slot === 'p1'
+        ? `${base}/controller.html?r=${this.roomCode}&p2p=1`
+        : `${base}/controller.html?r=${this.roomCode}&slot=${slot}&p2p=1`;
+    }
     return slot === 'p1'
       ? `${base}/c?r=${this.roomCode}`
       : `${base}/c?r=${this.roomCode}&slot=${slot}`;
@@ -125,10 +214,11 @@ export class NetworkManager {
     }
     this.slot = slot;
 
-    // Static hosts & bundled offline Android TV APK do not run a local /ws relay.
-    // Keep local BroadcastChannel controls available without retrying a missing socket forever.
-    if (window.Wavedash || window.location.hostname === 'appassets.androidplatform.net') {
-      this.connected = false;
+    // Always start WebRTC PeerJS P2P channel so Mobile-as-Controller works on GitHub Pages, Vercel, AND Android TV APK!
+    this.connectPeerJS(this.roomCode, slot);
+
+    // Static hosts & bundled offline Android TV APK do not run a local /ws Express relay.
+    if (isStaticOrApkOrigin()) {
       return;
     }
 
@@ -163,12 +253,133 @@ export class NetworkManager {
       };
 
       this.ws.onclose = () => {
-        this.connected = false;
-        setTimeout(() => this.connect(this.roomCode, this.slot), 800);
+        this.connected = this.p2pReady;
+        setTimeout(() => this.connect(this.roomCode, this.slot), 1200);
       };
 
       this.ws.onerror = () => {};
     } catch {}
+  }
+
+  async connectPeerJS(roomCode = this.roomCode, slot = 'p1') {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return;
+    }
+    if (this._p2pRetryTimer) {
+      clearTimeout(this._p2pRetryTimer);
+      this._p2pRetryTimer = null;
+    }
+
+    const PeerCtor = await ensurePeerJsLoaded();
+    if (!PeerCtor) return;
+
+    const targetHostId = `boxcricket3d-host-${roomCode}`;
+    const desiredPeerId = this.role === 'host' ? targetHostId : undefined;
+
+    // Reuse existing open peer if already registered on the exact same host room ID
+    if (this.peer && !this.peer.destroyed && this.role === 'host' && this.peer.id === targetHostId) {
+      return;
+    }
+
+    this.destroyPeerJS();
+
+    try {
+      const peer = new PeerCtor(desiredPeerId, {
+        debug: 0,
+        config: { iceServers: PEERJS_ICE_SERVERS }
+      });
+      this.peer = peer;
+
+      const attachConn = (conn) => {
+        if (!conn) return;
+        const onReady = () => {
+          this.peerConns.add(conn);
+          this.connected = true;
+          if (this.role !== 'host') {
+            this.send({
+              type: 'join',
+              room: this.roomCode,
+              role: this.role,
+              slot: slot || this.slot || 'p1',
+              ts: Date.now()
+            });
+          }
+        };
+        if (conn.open) onReady();
+        else conn.on('open', onReady);
+
+        conn.on('data', (data) => {
+          try {
+            const msg = typeof data === 'string' ? JSON.parse(data) : data;
+            this.handleMessage(msg);
+          } catch {}
+        });
+
+        const cleanup = () => {
+          this.peerConns.delete(conn);
+        };
+        conn.on('close', cleanup);
+        conn.on('error', cleanup);
+      };
+
+      peer.on('open', () => {
+        this.p2pReady = true;
+        this.connected = true;
+        if (this.role !== 'host') {
+          const outConn = peer.connect(targetHostId, { reliable: true, serialization: 'json' });
+          attachConn(outConn);
+        }
+      });
+
+      peer.on('connection', (incomingConn) => {
+        attachConn(incomingConn);
+      });
+
+      peer.on('disconnected', () => {
+        this.p2pReady = false;
+        if (!peer.destroyed) {
+          this._p2pRetryTimer = setTimeout(() => {
+            try {
+              peer.reconnect();
+            } catch {}
+          }, 2500);
+        }
+      });
+
+      peer.on('error', (err) => {
+        const errType = err?.type || '';
+        if (errType === 'unavailable-id' && this.role === 'host') {
+          // Room ID collision on global PeerJS broker: seamlessly pick a fresh room code and re-bind!
+          this.roomCode = this.generateRoomCode();
+          this.destroyPeerJS();
+          this._p2pRetryTimer = setTimeout(() => this.connectPeerJS(this.roomCode, slot), 400);
+          return;
+        }
+        if (errType === 'peer-unavailable' && this.role !== 'host') {
+          this._p2pRetryTimer = setTimeout(() => this.connectPeerJS(this.roomCode, slot), 2000);
+          return;
+        }
+        this.p2pReady = false;
+      });
+    } catch {
+      this.p2pReady = false;
+    }
+  }
+
+  destroyPeerJS() {
+    this.p2pReady = false;
+    this.peerConns.forEach((conn) => {
+      try {
+        conn.close();
+      } catch {}
+    });
+    this.peerConns.clear();
+    if (this.peer) {
+      try {
+        this.peer.destroy();
+      } catch {}
+      this.peer = null;
+    }
   }
 
   send(payload) {
@@ -179,6 +390,15 @@ export class NetworkManager {
     }
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));
+    }
+    if (this.peerConns.size > 0) {
+      this.peerConns.forEach((conn) => {
+        if (conn && conn.open) {
+          try {
+            conn.send(msg);
+          } catch {}
+        }
+      });
     }
   }
 

@@ -14,10 +14,10 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="BoxCricket" />
-    <link rel="manifest" href="/manifest.webmanifest" />
-    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-    <link rel="icon" type="image/svg+xml" href="/icons/icon.svg" />
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png" />
+    <link rel="icon" type="image/svg+xml" href="./icons/icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -25,15 +25,34 @@
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./middled_menu.css" />
 
-    <!-- Plain ES Module Import Map (Served directly from local server, no build step required) -->
-    <script type="importmap">
-      {
-        "imports": {
-          "three": "/node_modules/three/build/three.module.js",
-          "three/addons/": "/node_modules/three/examples/jsm/"
-        }
-      }
+    <!-- Smart ES Module Import Map: local node_modules on dev/APK (offline), jsDelivr CDN on GitHub Pages / static hosts -->
+    <script>
+      (function () {
+        var h = window.location.hostname || '';
+        var useLocalThree =
+          h === 'localhost' ||
+          h === '127.0.0.1' ||
+          h === 'appassets.androidplatform.net' ||
+          h.endsWith('.run.app') ||
+          /^\d+\.\d+\.\d+\.\d+$/.test(h);
+        var map = useLocalThree
+          ? {
+              imports: {
+                three: './node_modules/three/build/three.module.js',
+                'three/addons/': './node_modules/three/examples/jsm/'
+              }
+            }
+          : {
+              imports: {
+                three: 'https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js',
+                'three/addons/': 'https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/'
+              }
+            };
+        document.write('<script type="importmap">' + JSON.stringify(map) + '<\/script>');
+      })();
     </script>
+    <!-- Lightweight WebRTC PeerJS SDK for zero-server Phone <-> TV controller pairing -->
+    <script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 
     <style>
       body {

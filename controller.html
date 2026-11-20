@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@600;700&family=JetBrains+Mono:wght@500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="./styles.css" />
+    <script defer src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
     <style>
       body {
         margin: 0;
@@ -590,33 +591,184 @@
         }
       });
 
+      const PEERJS_ICE_SERVERS = [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' }
+      ];
+      let peer = null;
+      let peerConn = null;
+      let peerRetryTimer = null;
+      let wsRetryTimer = null;
+
+      function isP2PPreferredHost() {
+        const h = window.location.hostname || '';
+        return (
+          params.get('p2p') === '1' ||
+          h.endsWith('.github.io') ||
+          h.endsWith('.vercel.app') ||
+          h.endsWith('.netlify.app') ||
+          h.endsWith('.pages.dev')
+        );
+      }
+
+      let peerJsPromise = null;
+      function loadPeerJs() {
+        if (window.Peer) return Promise.resolve(window.Peer);
+        if (peerJsPromise) return peerJsPromise;
+        const urls = [
+          'https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js',
+          'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'
+        ];
+        peerJsPromise = new Promise((resolve) => {
+          let i = 0;
+          const next = () => {
+            if (window.Peer) return resolve(window.Peer);
+            if (i >= urls.length) return resolve(null);
+            const s = document.createElement('script');
+            s.src = urls[i++];
+            s.async = true;
+            s.onload = () => resolve(window.Peer || null);
+            s.onerror = () => next();
+            document.head.appendChild(s);
+          };
+          setTimeout(() => (window.Peer ? resolve(window.Peer) : next()), 150);
+        });
+        return peerJsPromise;
+      }
+
+      function cleanupPeer() {
+        if (peerRetryTimer) {
+          clearTimeout(peerRetryTimer);
+          peerRetryTimer = null;
+        }
+        if (peerConn) {
+          try { peerConn.close(); } catch {}
+          peerConn = null;
+        }
+        if (peer) {
+          try { peer.destroy(); } catch {}
+          peer = null;
+        }
+      }
+
+      async function connectPeerJS() {
+        cleanupPeer();
+        statusEl.textContent = `Pairing P2P · ${roomCode}...`;
+        statusEl.className = 'text-[11px] font-mono text-amber-400';
+
+        const PeerCtor = await loadPeerJs();
+        if (!PeerCtor) {
+          statusEl.textContent = 'P2P SDK offline · Check Internet';
+          statusEl.className = 'text-[11px] font-mono text-red-400';
+          return;
+        }
+
+        const targetHostId = `boxcricket3d-host-${roomCode}`;
+        try {
+          peer = new PeerCtor(undefined, {
+            debug: 0,
+            config: { iceServers: PEERJS_ICE_SERVERS }
+          });
+
+          peer.on('open', () => {
+            if (!peer || peer.destroyed) return;
+            const conn = peer.connect(targetHostId, { reliable: true, serialization: 'json' });
+            peerConn = conn;
+
+            conn.on('open', () => {
+              statusEl.textContent = `P2P Connected · Room ${roomCode}`;
+              statusEl.className = 'text-[11px] font-mono text-emerald-400';
+              sendPacket({ type: 'join', role: 'controller', slot });
+              sendPacket({ type: 'shot_mode', mode: selectedShotMode });
+            });
+
+            conn.on('data', (data) => {
+              try {
+                handleIncoming(typeof data === 'string' ? JSON.parse(data) : data);
+              } catch {}
+            });
+
+            conn.on('close', () => {
+              statusEl.textContent = `Reconnecting · ${roomCode}...`;
+              statusEl.className = 'text-[11px] font-mono text-amber-400';
+              peerRetryTimer = setTimeout(() => connectPeerJS(), 1400);
+            });
+
+            conn.on('error', () => {
+              statusEl.textContent = `Waiting for TV · ${roomCode}...`;
+              statusEl.className = 'text-[11px] font-mono text-amber-400';
+              peerRetryTimer = setTimeout(() => connectPeerJS(), 1800);
+            });
+          });
+
+          peer.on('error', (err) => {
+            const t = err?.type || '';
+            statusEl.textContent = t === 'peer-unavailable'
+              ? `Waiting for TV Room ${roomCode}...`
+              : `Retrying P2P · ${roomCode}...`;
+            statusEl.className = 'text-[11px] font-mono text-amber-400';
+            peerRetryTimer = setTimeout(() => connectPeerJS(), 1800);
+          });
+        } catch {
+          peerRetryTimer = setTimeout(() => connectPeerJS(), 2000);
+        }
+      }
+
       function connectWS() {
-        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${proto}//${window.location.host}/ws?room=${roomCode}&role=controller&slot=${slot}`;
+        if (wsRetryTimer) {
+          clearTimeout(wsRetryTimer);
+          wsRetryTimer = null;
+        }
         if (ws) {
           ws.onclose = null;
-          ws.close();
+          ws.onerror = null;
+          try { ws.close(); } catch {}
+          ws = null;
         }
-        ws = new WebSocket(url);
 
-        ws.onopen = () => {
-          statusEl.textContent = `Connected · Room ${roomCode}`;
-          statusEl.className = 'text-[11px] font-mono text-emerald-400';
-          sendPacket({ type: 'join', role: 'controller', slot });
-          sendPacket({ type: 'shot_mode', mode: selectedShotMode });
-        };
+        // On GitHub Pages / Vercel / static HTTPS hosts (or when ?p2p=1), connect directly via WebRTC PeerJS!
+        if (isP2PPreferredHost()) {
+          connectPeerJS();
+          return;
+        }
 
-        ws.onmessage = (ev) => {
-          try {
-            handleIncoming(JSON.parse(ev.data));
-          } catch {}
-        };
+        const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const url = `${proto}//${window.location.host}/ws?room=${roomCode}&role=controller&slot=${slot}`;
+        let openedOnce = false;
+        try {
+          ws = new WebSocket(url);
 
-        ws.onclose = () => {
-          statusEl.textContent = 'Reconnecting...';
-          statusEl.className = 'text-[11px] font-mono text-amber-400';
-          setTimeout(connectWS, 800);
-        };
+          ws.onopen = () => {
+            openedOnce = true;
+            cleanupPeer();
+            statusEl.textContent = `Connected · Room ${roomCode}`;
+            statusEl.className = 'text-[11px] font-mono text-emerald-400';
+            sendPacket({ type: 'join', role: 'controller', slot });
+            sendPacket({ type: 'shot_mode', mode: selectedShotMode });
+          };
+
+          ws.onmessage = (ev) => {
+            try {
+              handleIncoming(JSON.parse(ev.data));
+            } catch {}
+          };
+
+          ws.onclose = () => {
+            if (!openedOnce) {
+              // No Express WebSocket server available -> seamlessly switch to WebRTC PeerJS!
+              connectPeerJS();
+              return;
+            }
+            statusEl.textContent = 'Reconnecting...';
+            statusEl.className = 'text-[11px] font-mono text-amber-400';
+            wsRetryTimer = setTimeout(connectWS, 1000);
+          };
+
+          ws.onerror = () => {};
+        } catch {
+          connectPeerJS();
+        }
       }
 
       if (bc) {
@@ -631,6 +783,11 @@
         }
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify(msg));
+        }
+        if (peerConn && peerConn.open) {
+          try {
+            peerConn.send(msg);
+          } catch {}
         }
       }
 

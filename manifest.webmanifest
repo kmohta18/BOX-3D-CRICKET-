@@ -1,10 +1,10 @@
 {
-  "id": "/",
+  "id": "./",
   "name": "Box Cricket 3D",
   "short_name": "BoxCricket",
   "description": "3D Stadium Cricket game for Android TV & Mobile with TV Remote D-Pad and Phone Gyro Bat controls.",
-  "start_url": "/",
-  "scope": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "fullscreen",
   "display_override": ["fullscreen", "standalone"],
   "orientation": "landscape",
@@ -13,19 +13,19 @@
   "categories": ["games", "sports"],
   "icons": [
     {
-      "src": "/icons/icon-192.png",
+      "src": "./icons/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-512.png",
+      "src": "./icons/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icons/icon-maskable-512.png",
+      "src": "./icons/icon-maskable-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
